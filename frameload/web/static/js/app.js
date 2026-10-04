@@ -57,6 +57,19 @@ function setupTabs() {
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
     });
   });
+
+  // Handle URL hash on load (e.g. #library, #system, #downloads)
+  const hash = window.location.hash.replace("#", "");
+  if (hash) {
+    const tabEl = document.querySelector(`.tab-btn[data-tab="${hash}"]`);
+    if (tabEl) tabEl.click();
+    if (hash === "modal") {
+      setTimeout(() => {
+        const first = state.installed[0] || state.catalog.items[0];
+        if (first) openGameModal(first.package || first.id, state.installed.length ? "installed" : "catalog");
+      }, 400);
+    }
+  }
 }
 
 // --- Search & Filters ---

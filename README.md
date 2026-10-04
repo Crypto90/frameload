@@ -60,6 +60,20 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 
 ---
 
+## 📸 App Screenshots
+
+| 🌐 Browse Mirror Catalog | 🎮 Installed Library |
+|:---:|:---:|
+| ![Browse Catalog](docs/images/screenshot_catalog.png) | ![Installed Library](docs/images/screenshot_library.png) |
+| *Browse, filter, and queue VR titles with one click* | *Manage installed games, launch in VR, and configure settings* |
+
+| 🛠️ System & VR Diagnostics | ⚙️ Game Details & Sideloading |
+|:---:|:---:|
+| ![System & Diagnostics](docs/images/screenshot_system.png) | ![Game Details Modal](docs/images/screenshot_modal.png) |
+| *Live telemetry: Lepton status, Proton ARM64, and storage* | *Quick install modal and per-game FrameBridge tweaks* |
+
+---
+
 ## 🚀 Quick Start (On Your Steam Frame)
 
 ### 1-Click Install
