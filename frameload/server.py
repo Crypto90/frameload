@@ -19,6 +19,7 @@ from .manager.launcher import GameLauncher
 from .manager.settings import SettingsManager
 from .manager.storage import StorageManager
 from .manager.uninstaller import Uninstaller
+from .manager.updates import UpdateManager
 from .system.steamos import (
     ensure_host_podman_fixes,
     get_system_summary,
@@ -84,6 +85,13 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/storage":
             device_id = params.get("device", [None])[0]
             self.send_json(StorageManager.get_storage_overview(device_id))
+        elif path == "/api/updates":
+            app_status = UpdateManager.check_app_update()
+            game_status = UpdateManager.check_game_updates(self.mirror)
+            self.send_json({
+                "app": app_status,
+                "games": game_status
+            })
         elif path == "/" or path == "/index.html":
             index_file = os.path.join(WEB_DIR, "templates", "index.html")
             self.serve_file(index_file, "text/html; charset=utf-8")
@@ -173,6 +181,22 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             clear_shaders = body.get("clear_shaders", False)
             try:
                 res = StorageManager.clean_cache(clear_downloads, clear_shaders)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/updates/app":
+            res = UpdateManager.perform_app_update()
+            self.send_json(res)
+        elif path == "/api/updates/game":
+            pkg = body.get("package", "")
+            try:
+                res = UpdateManager.update_game(pkg, self.mirror)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/updates/all-games":
+            try:
+                res = UpdateManager.update_all_games(self.mirror)
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)

@@ -44,6 +44,9 @@
       <div id="header-lepton" class="telemetry-chip lepton missing">
         Lepton Checking...
       </div>
+      <div id="header-update-alert" class="telemetry-chip update-alert clickable" style="display:none;" onclick="openUpdateModal()" title="FrameLoad Update Available!">
+        ⚡ Update: <strong id="header-update-tag" style="margin-left:4px; color:#fff;">v1.0.0</strong>
+      </div>
     </div>
   </header>
 
@@ -146,9 +149,30 @@
 
     <!-- 2. Installed Library Tab -->
     <section id="tab-library" class="tab-panel">
+      <!-- 1-Click Game Updates Banner -->
+      <div id="library-updates-banner" class="updates-banner" style="display:none;">
+        <div class="updates-banner-info">
+          <span class="pulse-dot" style="background:var(--accent-amber); box-shadow:0 0 10px var(--accent-amber);"></span>
+          <span><strong id="library-updates-count">0</strong> Game Updates Available on VRP Mirror</span>
+        </div>
+        <button class="btn-primary compact" onclick="updateAllGames()">
+          ⚡ Update All Games (1-Click)
+        </button>
+      </div>
+
       <div class="control-bar">
         <h2 style="font-size:1.15rem; font-weight:700;">Installed on Steam Frame</h2>
-        <button class="btn-secondary" onclick="loadInstalled()">Refresh List</button>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="btn-check-updates" class="btn-secondary compact" onclick="checkForUpdates(true)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            Check for Updates
+          </button>
+          <button class="btn-secondary compact" onclick="loadInstalled()">Refresh List</button>
+        </div>
       </div>
       <div id="library-grid" class="games-grid"></div>
     </section>
@@ -206,6 +230,18 @@
           <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Proton ARM64 &amp; PCVR</h3>
           <p style="margin-bottom:8px;"><strong>Proton Status:</strong> <span id="sys-proton">--</span></p>
           <p style="font-size:0.85rem; color:var(--text-muted);">Runs Windows VR games via Proton + WineOpenXR.</p>
+        </div>
+        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Updates Management (OTA)</h3>
+            <span id="sys-update-badge" class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Up to Date</span>
+          </div>
+          <p style="margin-bottom:8px;"><strong>FrameLoad Version:</strong> <span id="sys-version">v1.0.0</span></p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">Checks Forgejo releases &amp; VRP mirror for on-device 1-click upgrades.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-secondary compact" onclick="checkForUpdates(true)">Check for Updates</button>
+            <button id="btn-system-update" class="btn-primary compact" style="display:none;" onclick="triggerAppUpdate()">⚡ 1-Click Update</button>
+          </div>
         </div>
       </div>
     </section>
@@ -422,6 +458,36 @@
       <div style="display:flex; justify-content:flex-end; gap:12px;">
         <button class="btn-secondary" onclick="closeCleanCacheModal()">Cancel</button>
         <button class="btn-primary" onclick="executeCleanCache()">Clean Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FrameLoad App Update Modal -->
+  <div id="update-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:540px;">
+      <button class="modal-close" onclick="closeUpdateModal()">&times;</button>
+      <h2 style="font-size:1.35rem; font-weight:800; color:#fff; margin-bottom:6px; display:flex; align-items:center; gap:10px;">
+        <span style="color:var(--accent-cyan);">🚀</span> FrameLoad Update Available
+      </h2>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
+        A new version of FrameLoad is ready to install directly on your Steam Frame.
+      </p>
+
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; margin-bottom:18px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span>Installed: <strong id="modal-update-cur-ver">v1.0.0</strong></span>
+          <span style="color:var(--accent-cyan);">Latest: <strong id="modal-update-new-ver">v1.0.1</strong></span>
+        </div>
+        <div style="font-size:0.8rem; color:var(--text-muted); max-height:160px; overflow-y:auto; white-space:pre-wrap; border-top:1px solid var(--border-subtle); padding-top:10px; margin-top:10px;" id="modal-update-notes">
+          Checking release changelog...
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px;">
+        <button class="btn-secondary" onclick="closeUpdateModal()">Later</button>
+        <button id="modal-update-confirm-btn" class="btn-primary" onclick="triggerAppUpdate()">
+          ⚡ Update &amp; Restart Service (1-Click)
+        </button>
       </div>
     </div>
   </div>

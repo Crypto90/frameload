@@ -66,6 +66,10 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - Multi-selection checkboxes with floating batch action bar and space reclaimed calculation.
   - Safe batch uninstallation with automatic save game archiving.
   - 1-click download cache cleanup and Lepton shader cache reset.
+- **⚡ 1-Click Updates Management (OTA & Games):**
+  - **FrameLoad App Self-Updater:** Automatically checks Forgejo releases for new versions, with a 1-click update button that pulls updates, refreshes container configurations, and reloads the service.
+  - **Installed VR Game Updates:** Compares installed titles against the VRP catalog mirror, highlighting games with newer releases.
+  - **1-Click Game Upgrades:** Upgrade individual games or batch update all titles with one click while safely preserving all save data (`lepton-data/`).
 
 ---
 

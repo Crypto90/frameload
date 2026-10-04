@@ -1406,3 +1406,60 @@ input:checked + .slider:before {
   color: var(--accent-cyan);
 }
 
+/* ==========================================================================
+   Updates Management Styles
+   ========================================================================== */
+
+.updates-banner {
+  background: linear-gradient(135deg, rgba(255, 183, 3, 0.14), rgba(0, 242, 254, 0.08));
+  border: 1px solid rgba(255, 183, 3, 0.35);
+  border-radius: var(--radius-md);
+  padding: 12px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.3s ease;
+}
+
+.updates-banner-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.telemetry-chip.update-alert {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.22), rgba(157, 78, 221, 0.25));
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 16px rgba(0, 242, 254, 0.4);
+  animation: pulseGlow 2.5s infinite;
+}
+
+@keyframes pulseGlow {
+  0% { transform: scale(1); box-shadow: 0 0 14px rgba(0, 242, 254, 0.3); }
+  50% { transform: scale(1.04); box-shadow: 0 0 24px rgba(0, 242, 254, 0.6); }
+  100% { transform: scale(1); box-shadow: 0 0 14px rgba(0, 242, 254, 0.3); }
+}
+
+.card-btn.update {
+  background: linear-gradient(135deg, var(--accent-amber), #f59e0b);
+  color: #080c16;
+  font-weight: 700;
+}
+
+.card-btn.update:hover {
+  box-shadow: 0 4px 16px rgba(255, 183, 3, 0.45);
+}
+
+.badge.update {
+  background: rgba(255, 183, 3, 0.2);
+  color: var(--accent-amber);
+  border: 1px solid rgba(255, 183, 3, 0.35);
+}
+

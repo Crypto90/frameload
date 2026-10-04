@@ -23,6 +23,10 @@ const state = {
     searchQuery: "",
     sortBy: "size_desc"
   },
+  updates: {
+    app: null,
+    games: []
+  },
   activeTab: "catalog",
   selectedGame: null
 };
@@ -40,8 +44,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadInstalled();
   loadStorageOverview();
   loadSystemTelemetry();
+  checkForUpdates(false);
   startPollingDownloads();
   setInterval(loadSystemTelemetry, 8000);
+  setInterval(() => checkForUpdates(false), 60000);
 });
 
 // --- Tab Switching ---
@@ -348,28 +354,37 @@ function renderInstalledGrid() {
     return;
   }
 
-  container.innerHTML = state.installed.map(game => `
-    <div class="game-card" data-package="${game.package}" onclick="openGameModal('${game.package}', 'installed')">
-      <div class="card-poster">
-        <img src="${game.thumbnail_url || '/static/assets/fallback_cover.svg'}" alt="${game.title}" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
-        <div class="badge-overlay">
-          <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
-          ${game.is_running ? '<span class="badge installed" style="background:#00f2fe;">Running</span>' : ''}
+  container.innerHTML = state.installed.map(game => {
+    const updateInfo = (state.updates && state.updates.games)
+      ? state.updates.games.find(u => u.package === game.package)
+      : null;
+
+    return `
+      <div class="game-card" data-package="${game.package}" onclick="openGameModal('${game.package}', 'installed')">
+        <div class="card-poster">
+          <img src="${game.thumbnail_url || '/static/assets/fallback_cover.svg'}" alt="${game.title}" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+          <div class="badge-overlay">
+            <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
+            ${game.is_running ? '<span class="badge installed" style="background:#00f2fe;">Running</span>' : ''}
+            ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">${game.title}</div>
+          <div class="card-meta">
+            <span>Engine: ${game.engine}</span>
+            <span>AppID: ${game.appid}</span>
+          </div>
+          <div class="card-actions">
+            ${updateInfo 
+              ? `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame('${game.package}')">⚡ Update</button>`
+              : `<button class="card-btn play" onclick="event.stopPropagation(); launchGame('${game.package}')">Launch</button>`}
+            <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal('${game.package}')">Config</button>
+          </div>
         </div>
       </div>
-      <div class="card-body">
-        <div class="card-title">${game.title}</div>
-        <div class="card-meta">
-          <span>Engine: ${game.engine}</span>
-          <span>AppID: ${game.appid}</span>
-        </div>
-        <div class="card-actions">
-          <button class="card-btn play" onclick="event.stopPropagation(); launchGame('${game.package}')">Launch</button>
-          <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal('${game.package}')">Config</button>
-        </div>
-      </div>
-    </div>
-  `).join("");
+    `;
+  }).join("");
 
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
 }
@@ -1091,3 +1106,205 @@ async function cleanShaderCaches() {
   }
 }
 window.cleanShaderCaches = cleanShaderCaches;
+
+// ==========================================================================
+// Updates Management (1-Click OTA & Game Updates)
+// ==========================================================================
+
+async function checkForUpdates(userTriggered = false) {
+  const checkBtn = document.getElementById("btn-check-updates");
+  if (checkBtn && userTriggered) {
+    checkBtn.disabled = true;
+    checkBtn.textContent = "Checking...";
+  }
+
+  try {
+    const res = await fetch("/api/updates");
+    const data = await res.json();
+    state.updates = data;
+
+    // 1. App Update Banner & Telemetry Chip
+    const appUpdate = data.app || {};
+    const alertChip = document.getElementById("header-update-alert");
+    const alertTag = document.getElementById("header-update-tag");
+    const sysBadge = document.getElementById("sys-update-badge");
+    const sysUpdateBtn = document.getElementById("btn-system-update");
+    const sysVersion = document.getElementById("sys-version");
+
+    if (sysVersion && appUpdate.current_version) {
+      sysVersion.textContent = `v${appUpdate.current_version}`;
+    }
+
+    if (appUpdate.has_update) {
+      if (alertChip) {
+        alertChip.style.display = "inline-flex";
+        if (alertTag) alertTag.textContent = `v${appUpdate.latest_version}`;
+      }
+      if (sysBadge) {
+        sysBadge.style.background = "rgba(255, 183, 3, 0.15)";
+        sysBadge.style.color = "var(--accent-amber)";
+        sysBadge.textContent = `Update: v${appUpdate.latest_version}`;
+      }
+      if (sysUpdateBtn) sysUpdateBtn.style.display = "inline-flex";
+    } else {
+      if (alertChip) alertChip.style.display = "none";
+      if (sysBadge) {
+        sysBadge.style.background = "rgba(0, 245, 212, 0.15)";
+        sysBadge.style.color = "var(--accent-emerald)";
+        sysBadge.textContent = "Up to Date";
+      }
+      if (sysUpdateBtn) sysUpdateBtn.style.display = "none";
+    }
+
+    // 2. Installed Game Updates Banner
+    const gameUpdates = (data.games && data.games.games) ? data.games.games : [];
+    const updatesBanner = document.getElementById("library-updates-banner");
+    const updatesCountEl = document.getElementById("library-updates-count");
+
+    if (gameUpdates.length > 0) {
+      if (updatesBanner) updatesBanner.style.display = "flex";
+      if (updatesCountEl) updatesCountEl.textContent = gameUpdates.length;
+    } else {
+      if (updatesBanner) updatesBanner.style.display = "none";
+    }
+
+    // Refresh game cards to show badges and 1-click update buttons
+    if (state.installed && state.installed.length > 0) {
+      renderInstalledGrid();
+    }
+
+    if (userTriggered) {
+      if (appUpdate.has_update || gameUpdates.length > 0) {
+        showToast(`Updates available! (${gameUpdates.length} games, FrameLoad v${appUpdate.latest_version})`, "info");
+      } else {
+        showToast("FrameLoad and all installed games are up to date!", "success");
+      }
+    }
+
+  } catch (err) {
+    console.error("Error checking for updates:", err);
+    if (userTriggered) showToast("Could not check for updates. Check internet connection.", "error");
+  } finally {
+    if (checkBtn && userTriggered) {
+      checkBtn.disabled = false;
+      checkBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        Check for Updates
+      `;
+    }
+  }
+}
+window.checkForUpdates = checkForUpdates;
+
+function openUpdateModal() {
+  const modal = document.getElementById("update-modal");
+  if (!modal) return;
+
+  const appUpdate = (state.updates && state.updates.app) ? state.updates.app : {};
+  const curVerEl = document.getElementById("modal-update-cur-ver");
+  const newVerEl = document.getElementById("modal-update-new-ver");
+  const notesEl = document.getElementById("modal-update-notes");
+
+  if (curVerEl) curVerEl.textContent = `v${appUpdate.current_version || '1.0.0'}`;
+  if (newVerEl) newVerEl.textContent = `v${appUpdate.latest_version || '1.0.1'}`;
+  if (notesEl) {
+    notesEl.textContent = appUpdate.release_notes || "Bug fixes, stability enhancements, and performance optimizations.";
+  }
+
+  modal.classList.add("open");
+}
+window.openUpdateModal = openUpdateModal;
+
+function closeUpdateModal() {
+  const modal = document.getElementById("update-modal");
+  if (modal) modal.classList.remove("open");
+}
+window.closeUpdateModal = closeUpdateModal;
+
+async function triggerAppUpdate() {
+  const btn = document.getElementById("modal-update-confirm-btn");
+  const sysBtn = document.getElementById("btn-system-update");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Updating FrameLoad...";
+  }
+  if (sysBtn) {
+    sysBtn.disabled = true;
+    sysBtn.textContent = "Updating...";
+  }
+
+  showToast("Downloading FrameLoad update...", "info");
+
+  try {
+    const res = await fetch("/api/updates/app", { method: "POST" });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast("FrameLoad updated successfully! Restarting service and reloading page...", "success");
+      setTimeout(() => {
+        window.location.reload();
+      }, 3500);
+    } else {
+      showToast(data.error || "Update failed. Check system logs.", "error");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "⚡ Update & Restart Service (1-Click)";
+      }
+      if (sysBtn) {
+        sysBtn.disabled = false;
+        sysBtn.textContent = "⚡ 1-Click Update";
+      }
+    }
+  } catch (err) {
+    showToast(`Update error: ${err.message}`, "error");
+  }
+}
+window.triggerAppUpdate = triggerAppUpdate;
+
+async function updateGame(pkg) {
+  showToast(`Queuing 1-click update for ${pkg}...`, "info");
+  try {
+    const res = await fetch("/api/updates/game", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package: pkg })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast("Game update added to download queue! Saves will be preserved.", "success");
+      // Switch to downloads tab to see progress
+      const dlTab = document.querySelector('.tab-btn[data-tab="downloads"]');
+      if (dlTab) dlTab.click();
+    } else {
+      showToast(data.error || "Failed to queue game update", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.updateGame = updateGame;
+
+async function updateAllGames() {
+  showToast("Queuing 1-click updates for all games...", "info");
+  try {
+    const res = await fetch("/api/updates/all-games", { method: "POST" });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`Queued ${data.queued_count} game updates!`, "success");
+      const dlTab = document.querySelector('.tab-btn[data-tab="downloads"]');
+      if (dlTab) dlTab.click();
+    } else {
+      showToast(data.error || "Failed to batch queue updates", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.updateAllGames = updateAllGames;
