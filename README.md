@@ -4,9 +4,9 @@
 
 **All-in-One On-Device VR Sideloading, Catalog Downloader & Library Manager for the Steam Frame**
 
-[![Steam Frame](https://img.shields.io/badge/Steam%20Frame-Supported-1b2838?logo=steam&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad)
-[![Releases](https://img.shields.io/badge/Release-v1.0.0-00f2fe?logo=forgejo&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases)
-[![CI/CD](https://img.shields.io/badge/CI%2FCD-Docker%20Runner-22c55e?logo=docker&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad/actions)
+[![Steam Frame](https://img.shields.io/badge/Steam%20Frame-Supported-1b2838?logo=steam&logoColor=white)](https://github.com/Crypto90/frameload)
+[![GitHub Release](https://img.shields.io/github/v/release/Crypto90/frameload?color=00f2fe&logo=github&logoColor=white)](https://github.com/Crypto90/frameload/releases)
+[![CI/CD](https://img.shields.io/github/actions/workflow/status/Crypto90/frameload/release.yml?logo=githubactions&logoColor=white)](https://github.com/Crypto90/frameload/actions)
 [![Platform](https://img.shields.io/badge/Platform-SteamOS%20%7C%20Linux%20ARM64-blue)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](#)
 
@@ -101,7 +101,7 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - Safe batch uninstallation with automatic save game archiving.
   - 1-click download cache cleanup and Lepton shader cache reset.
 - **⚡ 1-Click Updates Management (OTA & Games):**
-  - **FrameLoad App Self-Updater:** Automatically checks Forgejo releases for new versions, with a 1-click update button that pulls updates, refreshes container configurations, and reloads the service.
+  - **FrameLoad App Self-Updater:** Automatically checks GitHub releases for new versions, with a 1-click update button that pulls updates, refreshes container configurations, and reloads the service.
   - **Installed VR Game Updates:** Compares installed titles against the VRP catalog mirror, highlighting games with newer releases.
   - **1-Click Game Upgrades:** Upgrade individual games or batch update all titles with one click while safely preserving all save data (`lepton-data/`).
 
@@ -161,7 +161,7 @@ FrameLoad includes high-resolution, pixel-perfect artwork tailored for **SteamOS
 Open **Konsole** in SteamOS Desktop Mode (or connect via SSH) and run:
 
 ```bash
-curl -fsSL https://forgejo.shieldserver.de/Crypto90/FrameLoad/raw/branch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/install.sh | bash
 ```
 
 > [!TIP]
@@ -174,7 +174,7 @@ curl -fsSL https://forgejo.shieldserver.de/Crypto90/FrameLoad/raw/branch/main/in
 If you prefer downloading a single pre-built installer package without needing `git`:
 
 ```bash
-curl -fsSLO https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases/download/v1.0.0/frameload-installer.sh
+curl -fsSLO https://github.com/Crypto90/frameload/releases/download/v1.0.0/frameload-installer.sh
 bash frameload-installer.sh
 ```
 
@@ -184,8 +184,8 @@ bash frameload-installer.sh
 
 ```bash
 cd ~/
-git clone https://forgejo.shieldserver.de/Crypto90/FrameLoad.git
-cd FrameLoad
+git clone https://github.com/Crypto90/frameload.git
+cd frameload
 ./install.sh
 ```
 
@@ -222,7 +222,7 @@ If you ever wish to completely remove FrameLoad and all its traces from your dev
 ### ⚡ 1-Click Clean Uninstall (Single Command)
 
 ```bash
-curl -fsSL https://forgejo.shieldserver.de/Crypto90/FrameLoad/raw/branch/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/uninstall.sh | bash
 ```
 
 Or from your terminal if already installed:

@@ -17,13 +17,13 @@ if [[ ! -f "$SCRIPT_DIR/frameload/cli.py" ]]; then
         if [[ -d "$APP_TARGET/.git" ]]; then
             git -C "$APP_TARGET" pull --ff-only 2>/dev/null || true
         else
-            git clone --depth 1 "https://forgejo.shieldserver.de/Crypto90/FrameLoad.git" "$APP_TARGET" 2>/dev/null || true
+            git clone --depth 1 "https://github.com/Crypto90/frameload.git" "$APP_TARGET" 2>/dev/null || true
         fi
     fi
 
     if [[ ! -f "$APP_TARGET/frameload/cli.py" ]]; then
-        say "Downloading standalone FrameLoad release archive from Forgejo..."
-        curl -fsSL "https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET"
+        say "Downloading standalone FrameLoad release archive from GitHub..."
+        curl -fsSL "https://github.com/Crypto90/frameload/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET"
     fi
 
     chmod +x "$APP_TARGET/install.sh" "$APP_TARGET/run.sh"

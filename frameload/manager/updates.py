@@ -1,5 +1,5 @@
 """Updates management system for FrameLoad.
-Provides 1-click self-updating for the FrameLoad application from Forgejo releases,
+Provides 1-click self-updating for the FrameLoad application from GitHub releases,
 and automated update checks for installed VR titles via the VRP mirror.
 """
 from __future__ import annotations
@@ -19,9 +19,9 @@ from ..catalog.vrp_mirror import VrpMirror
 from ..config import HOME
 from .installed import InstalledManager
 
-FORGEJO_API_BASE = "https://forgejo.shieldserver.de/api/v1"
+GITHUB_API_BASE = "https://api.github.com"
 REPO_OWNER = "Crypto90"
-REPO_NAME = "FrameLoad"
+REPO_NAME = "frameload"
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -42,7 +42,7 @@ def parse_version(v_str: str) -> tuple[int, ...]:
 class UpdateManager:
     @staticmethod
     def check_app_update() -> Dict[str, Any]:
-        """Checks Forgejo releases and git remote for FrameLoad application updates."""
+        """Checks GitHub releases and git remote for FrameLoad application updates."""
         current_version = __version__
         cur_tuple = parse_version(current_version)
 
@@ -55,10 +55,16 @@ class UpdateManager:
         download_url = ""
         commits_behind = 0
 
-        # 1. Query Forgejo Releases API
-        api_url = f"{FORGEJO_API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+        # 1. Query GitHub Releases API
+        api_url = f"{GITHUB_API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
         try:
-            req = urllib.request.Request(api_url, headers={"User-Agent": f"FrameLoad/{current_version}"})
+            req = urllib.request.Request(
+                api_url,
+                headers={
+                    "User-Agent": f"FrameLoad/{current_version}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+            )
             with urllib.request.urlopen(req, timeout=6) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -76,8 +82,11 @@ class UpdateManager:
                         if asset.get("name", "").endswith(".tar.gz"):
                             download_url = asset.get("browser_download_url", "")
                             break
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                print(f"[FrameLoad] Could not check GitHub releases: {e}")
         except Exception as e:
-            print(f"[FrameLoad] Could not check Forgejo releases: {e}")
+            pass
 
         # 2. If running from Git, check if remote main has newer commits
         if is_git:
@@ -214,7 +223,7 @@ class UpdateManager:
             status = UpdateManager.check_app_update()
             tarball_url = status.get("download_url")
             if not tarball_url:
-                tarball_url = f"https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz"
+                tarball_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz"
 
             try:
                 tmp_archive = os.path.join(ROOT_DIR, "frameload_update_temp.tar.gz")
