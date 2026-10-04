@@ -68,6 +68,7 @@ class DownloadTask:
     error_message: str = ""
     target_apk: str = ""
     extracted_path: str = ""
+    device_id: str = "internal"
 
     @property
     def speed_formatted(self) -> str:
@@ -88,6 +89,7 @@ class DownloadTask:
             "total_bytes": self.total_bytes,
             "downloaded_formatted": format_bytes(self.downloaded_bytes),
             "total_formatted": format_bytes(self.total_bytes),
+            "device_id": self.device_id,
             "speed_bps": self.speed_bps,
             "speed_formatted": self.speed_formatted,
             "eta_seconds": self.eta_seconds,

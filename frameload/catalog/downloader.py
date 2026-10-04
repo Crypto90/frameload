@@ -45,16 +45,21 @@ class Downloader:
             self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
             self._worker_thread.start()
 
-    def add_to_queue(self, game: CatalogGame) -> DownloadTask:
+    def add_to_queue(self, game: CatalogGame, device_id: Optional[str] = None) -> DownloadTask:
         with self._lock:
             if game.id in self.tasks and self.tasks[game.id].status in ("downloading", "queued"):
                 return self.tasks[game.id]
+
+            if not device_id:
+                cfg = Config.get()
+                device_id = cfg.get("storage", {}).get("default_device_id", "internal")
 
             task = DownloadTask(
                 id=game.id,
                 game=game,
                 status="queued",
-                total_bytes=game.size_bytes
+                total_bytes=game.size_bytes,
+                device_id=device_id or "internal"
             )
             self.tasks[game.id] = task
             self._queue.put(game.id)

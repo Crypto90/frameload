@@ -74,6 +74,9 @@ class StorageManager:
                 "path": HOME,
                 "is_default": True,
                 "is_external": False,
+                "is_sd_card": False,
+                "device_type": "internal",
+                "has_quest_anchor": os.path.isdir(ANCHOR_DIR),
                 "total_bytes": home_usage.total,
                 "free_bytes": home_usage.free,
                 "used_bytes": home_usage.used,
@@ -82,14 +85,39 @@ class StorageManager:
                 "used_formatted": format_size(home_usage.used),
                 "percent_used": round((home_usage.used / home_usage.total) * 100, 1) if home_usage.total else 0,
             })
-            seen_mounts.add(HOME)
+            seen_mounts.add(os.path.realpath(HOME))
         except OSError:
             pass
 
-        # 2. Search for MicroSD / external mounts
+        candidate_mounts: List[Dict[str, Any]] = []
+
+        # 2. Check /proc/mounts on Linux for mmcblk and sd devices
+        if os.path.isfile("/proc/mounts"):
+            try:
+                with open("/proc/mounts", "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 3:
+                            dev_node, mount_point, fs_type = parts[0], parts[1], parts[2]
+                            if fs_type in ("ext4", "btrfs", "vfat", "exfat", "f2fs", "ntfs", "fuseblk"):
+                                if (dev_node.startswith("/dev/mmcblk") or
+                                        dev_node.startswith("/dev/sd") or
+                                        "/run/media/" in mount_point or
+                                        "/media/" in mount_point):
+                                    candidate_mounts.append({
+                                        "path": mount_point,
+                                        "dev_node": dev_node,
+                                        "fs_type": fs_type,
+                                        "is_sd": "/dev/mmcblk" in dev_node or "mmc" in mount_point.lower() or "sd" in mount_point.lower()
+                                    })
+            except OSError:
+                pass
+
+        # 3. Standard search roots
         search_roots = [
             "/run/media/deck",
             f"/run/media/{os.getenv('USER', 'deck')}",
+            "/run/media",
             "/media",
             "/media/deck",
             "/mnt",
@@ -101,43 +129,105 @@ class StorageManager:
                 continue
             try:
                 for entry in os.scandir(root):
-                    if not entry.is_dir(follow_symlinks=False):
-                        continue
-                    p = entry.path
-                    if p in seen_mounts or p.startswith("/Volumes/Macintosh"):
-                        continue
-                    try:
-                        usage = shutil.disk_usage(p)
-                        # Filter out virtual filesystems with tiny storage (< 100MB)
-                        if usage.total < 100 * 1024 * 1024:
-                            continue
-
-                        name = entry.name
-                        label = f"MicroSD ({name})" if "sd" in name.lower() or "mmc" in name.lower() else f"External Drive ({name})"
-                        dev_id = f"ext_{entry.name.replace(' ', '_')}"
-
-                        devices.append({
-                            "id": dev_id,
-                            "name": label,
-                            "label": name,
-                            "path": p,
-                            "is_default": False,
-                            "is_external": True,
-                            "total_bytes": usage.total,
-                            "free_bytes": usage.free,
-                            "used_bytes": usage.used,
-                            "free_formatted": format_size(usage.free),
-                            "total_formatted": format_size(usage.total),
-                            "used_formatted": format_size(usage.used),
-                            "percent_used": round((usage.used / usage.total) * 100, 1) if usage.total else 0,
+                    if entry.is_dir(follow_symlinks=False):
+                        candidate_mounts.append({
+                            "path": entry.path,
+                            "dev_node": "",
+                            "fs_type": "",
+                            "is_sd": "sd" in entry.name.lower() or "mmc" in entry.name.lower()
                         })
-                        seen_mounts.add(p)
-                    except OSError:
-                        continue
+            except OSError:
+                continue
+
+        # 4. Custom paths from config
+        try:
+            from ..config import Config
+            cfg = Config.get()
+            for custom_path in cfg.get("storage", {}).get("custom_paths", []):
+                if os.path.isdir(custom_path):
+                    candidate_mounts.append({
+                        "path": custom_path,
+                        "dev_node": "",
+                        "fs_type": "",
+                        "is_sd": False
+                    })
+        except Exception:
+            pass
+
+        # Deduplicate candidate mounts
+        for c in candidate_mounts:
+            p = c["path"]
+            try:
+                rp = os.path.realpath(p)
+            except OSError:
+                rp = p
+            if rp in seen_mounts or p in seen_mounts or p.startswith("/Volumes/Macintosh"):
+                continue
+            try:
+                usage = shutil.disk_usage(p)
+                # Filter out virtual filesystems with tiny storage (< 100MB)
+                if usage.total < 100 * 1024 * 1024:
+                    continue
+
+                name = os.path.basename(p.rstrip("/"))
+                is_sd = c.get("is_sd", False) or "/run/media/" in p or "mmc" in name.lower() or "sd" in name.lower()
+                dev_type = "microsd" if is_sd else "usb"
+                label = f"MicroSD Card ({name})" if is_sd else f"External Drive ({name})"
+                dev_id = f"ext_{name.replace(' ', '_').replace('-', '_')}"
+
+                # Check if Steam library or quest-frame folder exists
+                has_steam_lib = any(os.path.isdir(os.path.join(p, d)) for d in ("steamapps", "SteamLibrary"))
+                has_quest = os.path.isdir(os.path.join(p, "quest-frame"))
+
+                devices.append({
+                    "id": dev_id,
+                    "name": label,
+                    "label": name,
+                    "path": p,
+                    "is_default": False,
+                    "is_external": True,
+                    "is_sd_card": is_sd,
+                    "device_type": dev_type,
+                    "filesystem": c.get("fs_type", "ext4"),
+                    "is_steam_library": has_steam_lib,
+                    "has_quest_anchor": has_quest,
+                    "total_bytes": usage.total,
+                    "free_bytes": usage.free,
+                    "used_bytes": usage.used,
+                    "free_formatted": format_size(usage.free),
+                    "total_formatted": format_size(usage.total),
+                    "used_formatted": format_size(usage.used),
+                    "percent_used": round((usage.used / usage.total) * 100, 1) if usage.total else 0,
+                })
+                seen_mounts.add(rp)
+                seen_mounts.add(p)
             except OSError:
                 continue
 
         return devices
+
+    @staticmethod
+    def resolve_anchor(device_id: Optional[str] = None) -> str:
+        """Resolves the quest-frame anchor directory for a target device ID."""
+        if not device_id or device_id == "internal":
+            os.makedirs(ANCHOR_DIR, exist_ok=True)
+            return ANCHOR_DIR
+
+        devices = StorageManager.get_devices()
+        dev = next((d for d in devices if d["id"] == device_id), None)
+        if dev and dev.get("is_external"):
+            anchor = os.path.join(dev["path"], "quest-frame")
+            os.makedirs(anchor, exist_ok=True)
+            return anchor
+
+        # Check if device_id is a direct directory path
+        if os.path.isdir(device_id):
+            anchor = os.path.join(device_id, "quest-frame") if not device_id.endswith("quest-frame") else device_id
+            os.makedirs(anchor, exist_ok=True)
+            return anchor
+
+        os.makedirs(ANCHOR_DIR, exist_ok=True)
+        return ANCHOR_DIR
 
     @staticmethod
     def get_storage_overview(device_id: Optional[str] = None) -> Dict[str, Any]:
@@ -374,4 +464,134 @@ class StorageManager:
             "reclaimed_bytes": reclaimed_bytes,
             "reclaimed_formatted": format_size(reclaimed_bytes),
             "cleaned_files": cleaned_files,
+        }
+
+    @staticmethod
+    def move_game(package_name: str, target_device_id: str) -> Dict[str, Any]:
+        """Moves an installed game between internal storage and MicroSD/external storage."""
+        from .installed import InstalledManager
+        from ..system.shortcuts import register_game_in_steam
+        from ..installer.lepton_quest import LAUNCH_SCRIPT_TEMPLATE
+        from ..system.steamos import lepton_status
+        import shlex
+        import subprocess
+
+        dep = InstalledManager.get_game(package_name)
+        if not dep:
+            raise FileNotFoundError(f"Game '{package_name}' is not installed.")
+
+        current_anchor = dep.get("anchor")
+        if not current_anchor or not os.path.isdir(current_anchor):
+            raise FileNotFoundError(f"Game directory not found at {current_anchor}")
+
+        current_device_id = dep.get("device_id", "internal")
+        if current_device_id == target_device_id:
+            return {"success": True, "message": "Game is already on target device", "moved": False}
+
+        target_base = StorageManager.resolve_anchor(target_device_id)
+        new_anchor = os.path.join(target_base, package_name)
+
+        if os.path.abspath(current_anchor) == os.path.abspath(new_anchor):
+            return {"success": True, "message": "Source and destination paths are identical", "moved": False}
+
+        # Check free disk space on target device
+        game_size = get_dir_size(current_anchor)
+        target_mount = target_base
+        for d in StorageManager.get_devices():
+            if d["id"] == target_device_id:
+                target_mount = d["path"]
+                break
+        try:
+            free_space = shutil.disk_usage(target_mount).free
+            if free_space < game_size + (100 * 1024 * 1024):
+                raise OSError(
+                    f"Insufficient disk space on destination. Free: {format_size(free_space)}, Required: {format_size(game_size)}"
+                )
+        except OSError as e:
+            if "Insufficient" in str(e):
+                raise
+
+        # 1. Kill running container if any
+        appid = dep.get("appid")
+        if appid:
+            try:
+                subprocess.run(["podman", "kill", f"lepton-steamlaunch-{appid}"], capture_output=True)
+            except OSError:
+                pass
+
+        # 2. Move files to new anchor
+        if os.path.exists(new_anchor):
+            shutil.rmtree(new_anchor, ignore_errors=True)
+        shutil.move(current_anchor, new_anchor)
+
+        # 3. Update deployment.json
+        dep_path = os.path.join(new_anchor, "deployment.json")
+        dep["anchor"] = new_anchor
+        dep["base"] = new_anchor
+        dep["device_id"] = target_device_id
+        with open(dep_path, "w", encoding="utf-8") as f:
+            json.dump(dep, f, indent=2)
+
+        # 4. Regenerate launch.sh with new paths
+        title = dep.get("title", package_name)
+        lep = lepton_status()
+        lepton_bin = lep["path"] or "/usr/bin/lepton"
+        launch_script = os.path.join(new_anchor, "launch.sh")
+        script_content = LAUNCH_SCRIPT_TEMPLATE.format(
+            title=title.replace("\n", " "),
+            pkg=package_name,
+            base_q=shlex.quote(new_anchor),
+            appid=appid,
+            lepton_q=shlex.quote(lepton_bin),
+            extra_env=""
+        )
+        with open(launch_script, "w", encoding="utf-8") as f:
+            f.write(script_content)
+        os.chmod(launch_script, 0o755)
+
+        # 5. Update Steam shortcut with new launch script path
+        art_dir = os.path.join(new_anchor, "artwork")
+        register_game_in_steam(
+            title=title,
+            launch_script_path=launch_script,
+            anchor_dir=new_anchor,
+            icon_path=os.path.join(art_dir, "icon.png"),
+            artwork_dir=art_dir,
+            is_vr=dep.get("is_vr", True)
+        )
+
+        return {
+            "success": True,
+            "package": package_name,
+            "title": title,
+            "from_device": current_device_id,
+            "to_device": target_device_id,
+            "new_anchor": new_anchor,
+            "bytes_moved": game_size,
+            "moved": True
+        }
+
+    @staticmethod
+    def batch_move(packages: List[str], target_device_id: str) -> Dict[str, Any]:
+        """Moves multiple games to target storage device sequentially."""
+        results = []
+        errors = []
+        total_moved = 0
+        for pkg in packages:
+            try:
+                res = StorageManager.move_game(pkg, target_device_id)
+                results.append(res)
+                if res.get("moved"):
+                    total_moved += res.get("bytes_moved", 0)
+            except Exception as e:
+                errors.append({"package": pkg, "error": str(e)})
+
+        return {
+            "success": len(errors) == 0,
+            "results": results,
+            "errors": errors,
+            "total_bytes_moved": total_moved,
+            "total_formatted": format_size(total_moved),
+            "moved_count": len([r for r in results if r.get("moved")]),
+            "requested_count": len(packages)
         }

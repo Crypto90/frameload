@@ -365,6 +365,7 @@ function renderInstalledGrid() {
           <img src="${game.thumbnail_url || '/static/assets/fallback_cover.svg'}" alt="${game.title}" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
           <div class="badge-overlay">
             <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
+            ${game.is_external ? '<span class="badge" style="background:#27ae60; color:#fff;" title="Installed on MicroSD Card">MicroSD</span>' : ''}
             ${game.is_running ? '<span class="badge installed" style="background:#00f2fe;">Running</span>' : ''}
             ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
           </div>
@@ -372,8 +373,8 @@ function renderInstalledGrid() {
         <div class="card-body">
           <div class="card-title">${game.title}</div>
           <div class="card-meta">
+            <span>${game.is_external ? '💾 MicroSD' : '💿 Internal'}</span>
             <span>Engine: ${game.engine}</span>
-            <span>AppID: ${game.appid}</span>
           </div>
           <div class="card-actions">
             ${updateInfo 
@@ -536,6 +537,20 @@ function openGameModal(id, mode = "catalog") {
   document.getElementById("modal-game-pkg").textContent = game.package_name || game.package;
   document.getElementById("modal-game-size").textContent = game.size_formatted || `${Math.round((game.apk_size || 0)/(1024*1024))} MB`;
 
+  const driveEl = document.getElementById("modal-game-drive");
+  const moveBtn = document.getElementById("modal-game-move-btn");
+  if (driveEl) {
+    driveEl.textContent = game.device_name || (game.is_external ? "MicroSD Card" : "Internal Storage");
+  }
+  if (moveBtn) {
+    const hasMultipleDrives = state.storage.data && state.storage.data.devices && state.storage.data.devices.length > 1;
+    if (mode === "installed" && hasMultipleDrives) {
+      moveBtn.style.display = "inline-flex";
+    } else {
+      moveBtn.style.display = "none";
+    }
+  }
+
   const actionContainer = document.getElementById("modal-actions");
   if (mode === "catalog") {
     actionContainer.innerHTML = `
@@ -551,6 +566,46 @@ function openGameModal(id, mode = "catalog") {
 
   modal.classList.add("open");
 }
+
+async function moveCurrentModalGame() {
+  if (!state.selectedGame) return;
+  const pkg = state.selectedGame.package || state.selectedGame.package_name;
+  const devices = (state.storage.data && state.storage.data.devices) || [];
+  const currentDev = state.selectedGame.device_id || "internal";
+  const otherDevices = devices.filter(d => d.id !== currentDev);
+
+  if (otherDevices.length === 0) {
+    showToast("No other storage drives available to move to.", "warning");
+    return;
+  }
+
+  const targetDev = otherDevices[0];
+  if (!confirm(`Move ${state.selectedGame.title || pkg} to ${targetDev.name}? Steam shortcut will be automatically updated.`)) {
+    return;
+  }
+
+  showToast(`Moving ${state.selectedGame.title || pkg} to ${targetDev.name}...`, "info");
+  closeModal();
+
+  try {
+    const res = await fetch("/api/storage/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package: pkg, target_device_id: targetDev.id })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Game successfully moved to ${targetDev.name}!`, "success");
+      loadInstalled();
+      loadStorageOverview();
+    } else {
+      showToast(data.error || "Failed to move game", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.moveCurrentModalGame = moveCurrentModalGame;
 
 async function backupSaves(pkg) {
   showToast(`Creating save archive for ${pkg}...`, "info");
@@ -572,33 +627,101 @@ async function backupSaves(pkg) {
 }
 
 // --- Sideload Form ---
+async function inspectSideloadPath() {
+  const input = document.getElementById("sideload-apk-path");
+  const preview = document.getElementById("sideload-inspect-preview");
+  const titleEl = document.getElementById("inspect-title");
+  const pkgEl = document.getElementById("inspect-pkg");
+  const metaEl = document.getElementById("inspect-meta");
+  const badgeEl = document.getElementById("inspect-badge");
+  const titleInput = document.getElementById("sideload-title");
+
+  const p = input ? input.value.trim() : "";
+  if (!p) {
+    showToast("Please enter a file or folder path first.", "warning");
+    return;
+  }
+
+  showToast("Inspecting package...", "info");
+  try {
+    const res = await fetch("/api/local/inspect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_path: p })
+    });
+    const data = await res.json();
+    if (data.success && data.inspection) {
+      const insp = data.inspection;
+      if (preview) preview.style.display = "block";
+      if (titleEl) titleEl.textContent = insp.title || insp.package_name;
+      if (pkgEl) pkgEl.textContent = `${insp.package_name} • Type: ${insp.source_type} ${insp.format ? '(' + insp.format + ')' : ''}`;
+      if (metaEl) metaEl.textContent = `Size: ${formatBytes(insp.size_bytes || 0)} • OBB: ${insp.has_obb ? 'Included' : 'None'}`;
+      if (badgeEl) {
+        badgeEl.textContent = insp.is_vr ? "Quest VR" : "2D Flat";
+        badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "var(--accent-amber)";
+        badgeEl.style.color = "#000";
+      }
+      if (titleInput && !titleInput.value) {
+        titleInput.value = insp.title || "";
+      }
+      showToast("Package inspected successfully!", "success");
+    } else {
+      showToast(data.error || "Could not inspect source path", "error");
+    }
+  } catch (err) {
+    showToast(`Inspection failed: ${err.message}`, "error");
+  }
+}
+window.inspectSideloadPath = inspectSideloadPath;
+
 function setupSideloadForm() {
   const form = document.getElementById("sideload-form");
   if (!form) return;
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const apkPath = document.getElementById("sideload-apk-path").value;
-    const title = document.getElementById("sideload-title").value;
+    const sourcePath = document.getElementById("sideload-apk-path").value.trim();
+    const title = document.getElementById("sideload-title").value.trim();
     const forceFlat = document.getElementById("sideload-flat").checked;
+    const targetDriveSelect = document.getElementById("sideload-target-drive");
+    const deviceId = targetDriveSelect ? targetDriveSelect.value : "internal";
 
-    showToast("Installing APK onto Steam Frame...", "info");
+    showToast("Installing package onto Steam Frame...", "info");
+    const submitBtn = document.getElementById("sideload-submit-btn");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Installing...";
+    }
+
     try {
       const res = await fetch("/api/local/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apk_path: apkPath, title: title, force_flat: forceFlat })
+        body: JSON.stringify({ 
+          source_path: sourcePath,
+          title: title,
+          force_flat: forceFlat,
+          device_id: deviceId
+        })
       });
       const data = await res.json();
       if (data.success) {
-        showToast("Installation complete! App added to Steam Library.", "success");
+        showToast("Installation complete! Added to Steam Library.", "success");
         form.reset();
+        const preview = document.getElementById("sideload-inspect-preview");
+        if (preview) preview.style.display = "none";
         loadInstalled();
+        loadStorageOverview();
       } else {
         showToast(data.error || "Installation failed", "error");
       }
     } catch (err) {
       showToast(`Error: ${err.message}`, "error");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Install and Add to Steam Library";
+      }
     }
   });
 }
@@ -751,21 +874,46 @@ function renderStorageDrives(devices, activeDev) {
   const container = document.getElementById("storage-drives-list");
   if (!container) return;
 
+  // Also populate the Sideload tab's target drive dropdown
+  const sideloadSelect = document.getElementById("sideload-target-drive");
+  if (sideloadSelect) {
+    const currentVal = sideloadSelect.value;
+    sideloadSelect.innerHTML = devices.map(dev => `
+      <option value="${dev.id}" ${dev.id === currentVal ? 'selected' : (dev.is_default ? 'selected' : '')}>
+        ${dev.is_sd_card ? '💾 [MicroSD] ' : '💿 [SSD] '} ${dev.name} (${dev.free_formatted} free)
+      </option>
+    `).join("");
+  }
+
   container.innerHTML = devices.map(dev => {
     const isActive = activeDev && activeDev.id === dev.id;
+    const isSd = dev.is_sd_card;
+    const badgeHtml = isSd 
+      ? `<span class="badge" style="background:#27ae60; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">MicroSD</span>`
+      : `<span class="badge" style="background:rgba(255,255,255,0.1); color:#ccc; font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">SSD</span>`;
     return `
       <div class="storage-drive-card ${isActive ? 'active' : ''}" onclick="selectStorageDrive('${dev.id}')">
         <div class="drive-icon-box">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-            <line x1="6" y1="6" x2="6.01" y2="6"></line>
-            <line x1="6" y1="18" x2="6.01" y2="18"></line>
-          </svg>
+          ${isSd ? `
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 2h9l5 5v15H6z"></path>
+              <path d="M10 2v4h4"></path>
+              <line x1="9" y1="10" x2="9" y2="12"></line>
+              <line x1="12" y1="10" x2="12" y2="12"></line>
+              <line x1="15" y1="10" x2="15" y2="12"></line>
+            </svg>
+          ` : `
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+          `}
         </div>
         <div class="drive-meta">
           <div class="drive-name">
-            ${dev.name} ${dev.is_default ? '<span class="drive-star" title="Default Install Drive">★</span>' : ''}
+            ${dev.name} ${badgeHtml} ${dev.is_default ? '<span class="drive-star" title="Default Install Drive">★</span>' : ''}
           </div>
           <div class="drive-caption">${dev.free_formatted} FREE OF ${dev.total_formatted}</div>
         </div>
@@ -951,7 +1099,57 @@ function updateStorageBatchBar() {
   if (uninstallBtn) {
     uninstallBtn.disabled = count === 0;
   }
+
+  // Multi-Drive Batch Move Group
+  const moveGroup = document.getElementById("batch-move-group");
+  const moveSelect = document.getElementById("batch-move-target");
+  if (moveGroup && moveSelect && state.storage.data && state.storage.data.devices) {
+    const devices = state.storage.data.devices;
+    const currentDevId = state.storage.activeDeviceId || "internal";
+    const otherDevices = devices.filter(d => d.id !== currentDevId);
+    if (otherDevices.length > 0 && count > 0) {
+      moveGroup.style.display = "inline-flex";
+      moveSelect.innerHTML = otherDevices.map(d => `
+        <option value="${d.id}">${d.is_sd_card ? '💾 ' : '💿 '} Move to ${d.name}</option>
+      `).join("");
+    } else {
+      moveGroup.style.display = "none";
+    }
+  }
 }
+
+async function executeBatchMove() {
+  const count = state.storage.selectedPackages.size;
+  if (count === 0) return;
+
+  const targetSelect = document.getElementById("batch-move-target");
+  const targetDeviceId = targetSelect ? targetSelect.value : "";
+  if (!targetDeviceId) return;
+
+  const packages = Array.from(state.storage.selectedPackages);
+  showToast(`Moving ${packages.length} game(s) to destination drive...`, "info");
+
+  try {
+    const res = await fetch("/api/storage/batch-move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packages: packages, target_device_id: targetDeviceId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Successfully moved ${data.moved_count} games (${data.total_formatted})!`, "success");
+      state.storage.selectedPackages.clear();
+      loadStorageOverview(targetDeviceId);
+      loadInstalled();
+    } else {
+      showToast(`Batch move completed with errors: ${data.errors ? data.errors.map(e => e.error).join(', ') : 'Unknown error'}`, "error");
+      loadStorageOverview();
+    }
+  } catch (err) {
+    showToast(`Error moving games: ${err.message}`, "error");
+  }
+}
+window.executeBatchMove = executeBatchMove;
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;

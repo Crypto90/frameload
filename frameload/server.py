@@ -11,8 +11,9 @@ from typing import Any, Dict, Optional
 
 from .catalog.downloader import Downloader
 from .catalog.vrp_mirror import VrpMirror
-from .config import Config, DATA_DIR
+from .config import ANCHOR_DIR, Config, DATA_DIR
 from .installer.lepton_quest import LeptonInstaller
+from .installer.package_loader import PackageLoader
 from .manager.backup import SaveBackupManager
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
@@ -68,8 +69,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json({"games": installed})
         elif path.startswith("/api/installed/artwork/"):
             pkg = path.replace("/api/installed/artwork/", "").strip()
-            from .config import ANCHOR_DIR
-            art_dir = os.path.join(ANCHOR_DIR, pkg, "artwork")
+            dep = InstalledManager.get_game(pkg)
+            anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, pkg)) if dep else os.path.join(ANCHOR_DIR, pkg)
+            art_dir = os.path.join(anchor, "artwork")
             for name in ("poster.png", "icon.png", "banner.png", "poster.svg"):
                 f = os.path.join(art_dir, name)
                 if os.path.isfile(f):
@@ -116,11 +118,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json({"success": success, "total_games": len(self.mirror.games)})
         elif path == "/api/downloads/queue":
             game_id = body.get("game_id", "")
+            device_id = body.get("device_id")
             game = self.mirror.get_game(game_id)
             if not game:
                 self.send_json({"error": "Game not found in catalog"}, status=HTTPStatus.NOT_FOUND)
                 return
-            task = self.downloader.add_to_queue(game)
+            task = self.downloader.add_to_queue(game, device_id=device_id)
             self.send_json({"success": True, "task": task.to_dict()})
         elif path == "/api/downloads/cancel":
             task_id = body.get("task_id", "")
@@ -200,26 +203,49 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/storage/move":
+            pkg = body.get("package", "")
+            target_device = body.get("target_device_id", "internal")
+            try:
+                res = StorageManager.move_game(pkg, target_device)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/storage/batch-move":
+            packages = body.get("packages", [])
+            target_device = body.get("target_device_id", "internal")
+            try:
+                res = StorageManager.batch_move(packages, target_device)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/local/inspect":
+            source_path = body.get("source_path") or body.get("apk_path", "")
+            try:
+                res = PackageLoader.inspect_source(source_path)
+                self.send_json({"success": True, "inspection": res})
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
         elif path == "/api/local/install":
-            apk_path = body.get("apk_path", "")
+            source_path = body.get("source_path") or body.get("apk_path", "")
             title = body.get("title", "")
             obb_path = body.get("obb_path")
             force_flat = body.get("force_flat", False)
-            if not os.path.isfile(apk_path):
-                self.send_json({"error": f"File not found: {apk_path}"}, status=HTTPStatus.BAD_REQUEST)
+            device_id = body.get("device_id")
+            if not os.path.exists(source_path):
+                self.send_json({"error": f"Path not found: {source_path}"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            if not title:
-                title = os.path.basename(apk_path).replace(".apk", "")
-            from .installer.apk_patcher import ApkPatcher
-            analysis = ApkPatcher.inspect(apk_path)
-            res = LeptonInstaller.install_quest_game(
-                package_name=analysis.package_name,
-                title=title,
-                apk_path=apk_path,
-                obb_path=obb_path,
-                force_flat=force_flat
-            )
-            self.send_json(res)
+            try:
+                res = PackageLoader.install_source(
+                    source_path=source_path,
+                    title=title,
+                    obb_path=obb_path,
+                    device_id=device_id,
+                    force_flat=force_flat
+                )
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/system/install_lepton":
             success = install_lepton_request()
             self.send_json({"success": success})
@@ -297,12 +323,14 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
             if not os.path.isdir(obb_dir):
                 obb_dir = None
 
+        target_device = getattr(task, "device_id", None) or config.get("storage", {}).get("default_device_id", "internal")
         LeptonInstaller.install_quest_game(
             package_name=task.game.package_name,
             title=task.game.name,
             apk_path=task.target_apk,
             obb_path=obb_dir,
-            force_flat=(task.game.kind == "flat")
+            force_flat=(task.game.kind == "flat"),
+            device_id=target_device
         )
         task.status = "completed"
 

@@ -68,10 +68,30 @@ class LeptonInstaller:
         obb_path: Optional[str] = None,
         custom_settings: Optional[Dict[str, Any]] = None,
         force_flat: Optional[bool] = None,
+        target_anchor: Optional[str] = None,
+        device_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Installs a Quest VR or 2D Android APK into Lepton on the Steam Frame."""
-        anchor = os.path.join(ANCHOR_DIR, package_name)
-        base = anchor  # Internal storage anchor
+        """Installs a Quest VR or 2D Android APK into Lepton on the Steam Frame internal SSD or MicroSD."""
+        if target_anchor:
+            anchor = os.path.join(target_anchor, package_name)
+        elif device_id and device_id != "internal":
+            from ..manager.storage import StorageManager
+            target_base = StorageManager.resolve_anchor(device_id)
+            anchor = os.path.join(target_base, package_name)
+        else:
+            from ..config import Config
+            cfg = Config.get()
+            default_dev = cfg.get("storage", {}).get("default_device_id", "internal")
+            if default_dev and default_dev != "internal":
+                from ..manager.storage import StorageManager
+                target_base = StorageManager.resolve_anchor(default_dev)
+                anchor = os.path.join(target_base, package_name)
+                device_id = default_dev
+            else:
+                anchor = os.path.join(ANCHOR_DIR, package_name)
+                device_id = "internal"
+
+        base = anchor  # Storage anchor for this device
         app_dir = os.path.join(base, "lepton-app")
         data_dir = os.path.join(base, "lepton-data")
         shaders_dir = os.path.join(base, "lepton-shaders")
@@ -164,6 +184,7 @@ class LeptonInstaller:
             "appid": appid,
             "base": base,
             "anchor": anchor,
+            "device_id": device_id or "internal",
             "kind": "quest" if is_vr else "flat",
             "is_vr": is_vr,
             "engine": analysis.engine,
@@ -192,5 +213,6 @@ class LeptonInstaller:
             "appid": appid,
             "is_vr": is_vr,
             "anchor": anchor,
+            "device_id": device_id or "internal",
             "steam": steam_res
         }

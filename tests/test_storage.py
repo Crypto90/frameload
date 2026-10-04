@@ -63,6 +63,68 @@ class TestStorageManager(unittest.TestCase):
                 self.assertEqual(res["reclaimed_bytes"], 4096)
                 self.assertEqual(res["cleaned_files"], 1)
 
+    def test_resolve_anchor(self):
+        # Default/internal
+        internal_anchor = StorageManager.resolve_anchor("internal")
+        self.assertTrue(os.path.isdir(internal_anchor))
+
+        # Direct directory path
+        with tempfile.TemporaryDirectory() as tmp_sd:
+            sd_anchor = StorageManager.resolve_anchor(tmp_sd)
+            self.assertTrue(os.path.isdir(sd_anchor))
+            self.assertTrue(sd_anchor.endswith("quest-frame"))
+
+    def test_move_game(self):
+        with tempfile.TemporaryDirectory() as tmp_home, tempfile.TemporaryDirectory() as tmp_sd:
+            int_anchor = os.path.join(tmp_home, "Applications/quest-frame")
+            os.makedirs(int_anchor, exist_ok=True)
+            pkg = "com.test.game"
+            game_dir = os.path.join(int_anchor, pkg)
+            os.makedirs(os.path.join(game_dir, "lepton-app"))
+            os.makedirs(os.path.join(game_dir, "artwork"))
+
+            # Create dummy deployment.json
+            dep = {
+                "package": pkg,
+                "title": "Test Game",
+                "appid": 999999,
+                "anchor": game_dir,
+                "base": game_dir,
+                "device_id": "internal",
+                "is_vr": True
+            }
+            import json
+            with open(os.path.join(game_dir, "deployment.json"), "w") as f:
+                json.dump(dep, f)
+
+            with open(os.path.join(game_dir, "launch.sh"), "w") as f:
+                f.write("#!/bin/bash\necho test\n")
+
+            mock_devices = [
+                {"id": "internal", "name": "Internal Storage", "path": tmp_home, "is_external": False, "total_bytes": 10**10, "free_bytes": 5*10**9, "used_bytes": 5*10**9},
+                {"id": "ext_microsd", "name": "MicroSD Card", "path": tmp_sd, "is_external": True, "is_sd_card": True, "total_bytes": 10**10, "free_bytes": 8*10**9, "used_bytes": 2*10**9}
+            ]
+
+            with patch("frameload.manager.installed.ANCHOR_DIR", int_anchor), \
+                 patch("frameload.manager.storage.StorageManager.get_devices", return_value=mock_devices), \
+                 patch("frameload.system.shortcuts.register_game_in_steam", return_value={"success": True}):
+                res = StorageManager.move_game(pkg, "ext_microsd")
+                self.assertTrue(res["success"])
+                self.assertTrue(res["moved"])
+                self.assertEqual(res["to_device"], "ext_microsd")
+
+                # Verify files were moved
+                new_anchor = os.path.join(tmp_sd, "quest-frame", pkg)
+                self.assertTrue(os.path.isdir(new_anchor))
+                self.assertFalse(os.path.exists(game_dir))
+
+                # Verify updated deployment.json
+                with open(os.path.join(new_anchor, "deployment.json"), "r") as f:
+                    new_dep = json.load(f)
+                self.assertEqual(new_dep["device_id"], "ext_microsd")
+                self.assertEqual(new_dep["anchor"], new_anchor)
+
 
 if __name__ == "__main__":
     unittest.main()
+

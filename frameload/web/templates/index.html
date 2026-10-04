@@ -185,26 +185,46 @@
       <div id="downloads-list" style="display:flex; flex-direction:column; gap:16px;"></div>
     </section>
 
-    <!-- 4. Sideload Local APK Tab -->
+    <!-- 4. Sideload Local APK or Bundle Tab -->
     <section id="tab-sideload" class="tab-panel">
       <div class="control-bar">
-        <h2 style="font-size:1.15rem; font-weight:700;">Sideload Local APK or Game Folder</h2>
+        <h2 style="font-size:1.15rem; font-weight:700;">Sideload APK, XAPK, APKS, ZIP, or Game Folder</h2>
       </div>
-      <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:28px; border-radius:var(--radius-lg); max-width:640px;">
+      <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:28px; border-radius:var(--radius-lg); max-width:680px;">
         <form id="sideload-form">
           <div style="margin-bottom:18px;">
-            <label style="display:block; margin-bottom:8px; font-weight:600;">Path to APK on Steam Frame:</label>
-            <input type="text" id="sideload-apk-path" class="search-input" placeholder="/home/deck/Downloads/game.apk" required style="border-radius:var(--radius-sm); padding-left:14px;">
+            <label style="display:block; margin-bottom:8px; font-weight:600;">Target Storage Drive:</label>
+            <select id="sideload-target-drive" class="select-styled" style="width:100%; border-radius:var(--radius-sm); padding:10px 14px; background:rgba(0,0,0,0.4); color:#fff; border:1px solid var(--border-subtle);">
+              <option value="internal">Internal Storage (Home)</option>
+            </select>
           </div>
           <div style="margin-bottom:18px;">
-            <label style="display:block; margin-bottom:8px; font-weight:600;">Game Title (Optional):</label>
+            <label style="display:block; margin-bottom:8px; font-weight:600;">Path on Steam Frame (File or Folder):</label>
+            <div style="display:flex; gap:10px;">
+              <input type="text" id="sideload-apk-path" class="search-input" placeholder="/run/media/deck/.../game.xapk or /home/deck/Downloads/BeatSaber" required style="flex:1; border-radius:var(--radius-sm); padding-left:14px;">
+              <button type="button" class="btn-secondary compact" onclick="inspectSideloadPath()" title="Inspect package metadata">Inspect</button>
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+              Supports <code>.apk</code>, <code>.xapk</code>, <code>.apks</code>, <code>.zip</code> bundles, and loose game folders from USB drives or MicroSD cards.
+            </p>
+          </div>
+          <div id="sideload-inspect-preview" style="display:none; margin-bottom:18px; padding:12px 16px; background:rgba(0,245,212,0.06); border:1px solid rgba(0,245,212,0.25); border-radius:var(--radius-sm);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong id="inspect-title" style="color:#fff;">--</strong>
+              <span id="inspect-badge" class="badge" style="background:var(--accent-cyan); color:#000; font-size:0.75rem; padding:2px 6px; border-radius:4px;">VR</span>
+            </div>
+            <p id="inspect-pkg" style="font-size:0.8rem; color:var(--text-muted); font-family:monospace; margin-top:4px;">--</p>
+            <p id="inspect-meta" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">--</p>
+          </div>
+          <div style="margin-bottom:18px;">
+            <label style="display:block; margin-bottom:8px; font-weight:600;">Custom Title (Optional):</label>
             <input type="text" id="sideload-title" class="search-input" placeholder="e.g. Gorilla Tag" style="border-radius:var(--radius-sm); padding-left:14px;">
           </div>
           <div style="margin-bottom:24px; display:flex; align-items:center; gap:12px;">
             <input type="checkbox" id="sideload-flat" style="width:18px; height:18px;">
             <label for="sideload-flat" style="font-size:0.9rem;">Launch as 2D Flat Android Window (for non-VR Android apps)</label>
           </div>
-          <button type="submit" class="btn-primary" style="width:100%; justify-content:center; padding:12px;">Install and Add to Steam Library</button>
+          <button type="submit" id="sideload-submit-btn" class="btn-primary" style="width:100%; justify-content:center; padding:12px;">Install and Add to Steam Library</button>
         </form>
       </div>
     </section>
@@ -367,6 +387,19 @@
         </div>
         <div class="batch-bar-right">
           <button class="btn-secondary" onclick="deselectAllStorageGames()">Deselect All</button>
+          <div id="batch-move-group" style="display:none; align-items:center; gap:8px;">
+            <select id="batch-move-target" class="select-styled compact">
+            </select>
+            <button id="batch-move-btn" class="btn-secondary compact" onclick="executeBatchMove()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="17 1 21 5 17 9"></polyline>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                <polyline points="7 23 3 19 7 15"></polyline>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+              </svg>
+              Move Selected
+            </button>
+          </div>
           <button id="batch-uninstall-btn" class="btn-danger" disabled onclick="openBatchUninstallModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -403,6 +436,10 @@
       
       <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; margin-bottom:20px;">
         <p style="margin-bottom:6px;"><strong>Size:</strong> <span id="modal-game-size">--</span></p>
+        <p style="margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
+          <span><strong>Storage Drive:</strong> <span id="modal-game-drive">Internal Storage</span></span>
+          <button id="modal-game-move-btn" class="btn-secondary compact" style="display:none;" onclick="moveCurrentModalGame()">Move Drive</button>
+        </p>
         <p style="margin-bottom:6px;"><strong>Target Platform:</strong> Steam Frame (Lepton Container)</p>
         <p><strong>OpenXR Translation:</strong> FrameBridge Adapter &amp; Controller Models</p>
       </div>

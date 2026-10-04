@@ -59,6 +59,15 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - 1-click game save export/import (`tar.gz`).
   - Per-game runtime settings editor (72Hz, 90Hz, 120Hz refresh rates, resolution scaling, MSAA, controller model rendering).
   - Clean uninstaller: Stops running containers, purges game data, and cleans Steam library shortcuts.
+- **💾 Full MicroSD Card & Multi-Drive Storage:**
+  - **Native MicroSD Detection:** Automatically discovers formatted MicroSD cards mounted by SteamOS (`/run/media/deck/*`, `mmcblk`), external USB drives, and custom storage paths.
+  - **Selectable Install Location:** Install catalog downloads or sideloaded apps directly to Internal SSD or MicroSD Card.
+  - **1-Click Game Migration:** Move installed games between Internal Storage and MicroSD Card seamlessly—automatically moves container directories, updates launch scripts, and refreshes Steam shortcuts.
+  - **Multi-Drive Library Scanning:** Browse all installed games across all connected drives with clear MicroSD badges.
+- **📦 Universal Package & Multi-Format Sideloading:**
+  - **Split APK & Bundle Support:** Directly install `.xapk`, `.apks`, and `.zip` archives containing base APK, split configuration APKs, and OBB data trees.
+  - **Loose Directory Sideloading:** Point to or drag an extracted game folder from a USB drive or MicroSD card; FrameLoad automatically pairs APKs with matching `com.pkg/` OBB folders.
+  - **Pre-Install Package Inspection:** Inspect package name, title, engine (Unity, Unreal, Godot), VR requirements, and OBB status before installing.
 - **📊 Steam-Style Storage Manager:**
   - Designed after Steam's storage settings with horizontal drive switcher cards (Internal SSD, MicroSD card).
   - Multi-colored segmented bar visualizer: Blue (Games), Teal (Saves & Data), Amber (Shaders & Cache), Purple (System), and Grey (Free Space).

@@ -46,6 +46,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "steam": {
         "auto_restart_steam": True,
         "add_grid_artwork": True,
+    },
+    "storage": {
+        "default_device_id": "internal",
+        "custom_paths": [],
     }
 }
 

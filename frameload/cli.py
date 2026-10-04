@@ -6,10 +6,10 @@ import json
 import sys
 
 from .catalog.vrp_mirror import VrpMirror
-from .installer.apk_patcher import ApkPatcher
-from .installer.lepton_quest import LeptonInstaller
+from .installer.package_loader import PackageLoader
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
+from .manager.storage import StorageManager
 from .manager.uninstaller import Uninstaller
 from .server import run_server
 from .system.steamos import get_system_summary
@@ -31,7 +31,15 @@ def main() -> None:
     subparsers.add_parser("info", help="Display Steam Frame system, Lepton, Proton, and battery status")
 
     # List installed
-    subparsers.add_parser("list", help="List all installed games on the Steam Frame")
+    subparsers.add_parser("list", help="List all installed games across internal SSD and MicroSD cards")
+
+    # Storage overview
+    subparsers.add_parser("storage", help="Display storage devices (SSD, MicroSD) and telemetry")
+
+    # Move game
+    move_parser = subparsers.add_parser("move", help="Move an installed game between internal SSD and MicroSD")
+    move_parser.add_argument("package", help="Package name of the game")
+    move_parser.add_argument("target_device", help="Target device ID (e.g. internal, ext_microsd) or mount path")
 
     # Sync
     subparsers.add_parser("sync", help="Synchronize the VR games catalog from mirror")
@@ -40,11 +48,12 @@ def main() -> None:
     search_parser = subparsers.add_parser("search", help="Search the game catalog")
     search_parser.add_argument("query", help="Search query (name or package)")
 
-    # Install local APK
-    install_parser = subparsers.add_parser("install", help="Install an APK directly onto the Steam Frame")
-    install_parser.add_argument("apk", help="Path to APK file")
+    # Install local package/folder
+    install_parser = subparsers.add_parser("install", help="Install an APK, XAPK, APKS, ZIP, or folder directly onto the Steam Frame")
+    install_parser.add_argument("source", help="Path to APK, .xapk bundle, or game directory")
     install_parser.add_argument("--title", default="", help="Custom game title")
     install_parser.add_argument("--obb", default=None, help="Path to OBB file or folder")
+    install_parser.add_argument("--device", default=None, help="Target storage device (e.g. internal or ext_microsd)")
     install_parser.add_argument("--flat", action="store_true", help="Force flat 2D window mode")
 
     # Launch
@@ -65,11 +74,19 @@ def main() -> None:
     elif args.command == "info":
         info = get_system_summary()
         print(json.dumps(info, indent=2))
+    elif args.command == "storage":
+        overview = StorageManager.get_storage_overview()
+        print(json.dumps(overview, indent=2))
+    elif args.command == "move":
+        print(f"Moving {args.package} to {args.target_device}...")
+        res = StorageManager.move_game(args.package, args.target_device)
+        print(json.dumps(res, indent=2))
     elif args.command == "list":
         games = InstalledManager.list_installed()
         print(f"Installed games ({len(games)}):")
         for g in games:
-            print(f" - {g['title']} [{g['package']}] (VR: {g['is_vr']}, AppID: {g['appid']})")
+            loc = g.get("device_name", "Internal Storage")
+            print(f" - {g['title']} [{g['package']}] (Location: {loc}, VR: {g['is_vr']}, AppID: {g['appid']})")
     elif args.command == "sync":
         mirror = VrpMirror()
         print("Synchronizing mirror catalog...")
@@ -83,16 +100,12 @@ def main() -> None:
         for item in items[:25]:
             print(f" - {item['name']} ({item['size_formatted']}) [{item['package_name']}]")
     elif args.command == "install":
-        title = args.title
-        analysis = ApkPatcher.inspect(args.apk)
-        if not title:
-            title = analysis.package_name
-        print(f"Installing {title} ({analysis.package_name})...")
-        res = LeptonInstaller.install_quest_game(
-            package_name=analysis.package_name,
-            title=title,
-            apk_path=args.apk,
+        print(f"Installing from source: {args.source}...")
+        res = PackageLoader.install_source(
+            source_path=args.source,
+            title=args.title,
             obb_path=args.obb,
+            device_id=args.device,
             force_flat=args.flat
         )
         print("Installation complete:", json.dumps(res, indent=2))
