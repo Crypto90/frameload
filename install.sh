@@ -28,6 +28,22 @@ else
     ok "Podman keyring configuration already optimal"
 fi
 
+# 2.5 Ensure standalone static 7-Zip binary exists
+if [[ ! -x "$FRAMELOAD_DIR/bin/7za" ]] && ! which 7za 7z >/dev/null 2>&1; then
+    say "Setting up standalone 7-Zip archive utility..."
+    ARCH="$(uname -m)"
+    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        curl -sL https://github.com/ip7z/7zip/releases/download/24.08/7z2408-linux-arm64.tar.xz | tar -xJf - -C "$FRAMELOAD_DIR/bin" 7zzs 2>/dev/null || true
+    else
+        curl -sL https://github.com/ip7z/7zip/releases/download/24.08/7z2408-linux-x64.tar.xz | tar -xJf - -C "$FRAMELOAD_DIR/bin" 7zzs 2>/dev/null || true
+    fi
+    if [[ -f "$FRAMELOAD_DIR/bin/7zzs" ]]; then
+        mv "$FRAMELOAD_DIR/bin/7zzs" "$FRAMELOAD_DIR/bin/7za"
+        chmod +x "$FRAMELOAD_DIR/bin/7za"
+        ok "Installed standalone 7za in $FRAMELOAD_DIR/bin/7za"
+    fi
+fi
+
 # 3. Create Desktop Entry for SteamOS Desktop Mode
 say "Creating Desktop launcher..."
 cat > "$APPLICATIONS_DIR/frameload.desktop" <<EOF

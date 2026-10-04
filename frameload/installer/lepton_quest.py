@@ -84,10 +84,13 @@ class LeptonInstaller:
         analysis = ApkPatcher.inspect(apk_path)
         is_vr = analysis.is_vr if force_flat is None else (not force_flat)
 
-        # Copy APK
+        # Copy & Patch APK for Steam Frame OpenXR runtime
         dest_apk = os.path.join(app_dir, "game.apk")
-        if os.path.abspath(apk_path) != os.path.abspath(dest_apk):
-            shutil.copy2(apk_path, dest_apk)
+        if is_vr:
+            ApkPatcher.inject_frame_shims(apk_path, dest_apk)
+        else:
+            if os.path.abspath(apk_path) != os.path.abspath(dest_apk):
+                shutil.copy2(apk_path, dest_apk)
 
         # Handle OBB files
         obb_target = os.path.join(app_dir, "obb")

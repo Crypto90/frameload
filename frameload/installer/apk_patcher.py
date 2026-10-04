@@ -124,3 +124,49 @@ class ApkPatcher:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
+
+    @staticmethod
+    def inject_frame_shims(src_apk: str, dest_apk: str) -> bool:
+        """Injects FrameBridge OpenXR translation shims into APK for Steam Frame compatibility."""
+        shim_dir = os.path.join(os.path.dirname(__file__), "shims/arm64-v8a")
+        if not os.path.isdir(shim_dir):
+            if os.path.abspath(src_apk) != os.path.abspath(dest_apk):
+                shutil.copy2(src_apk, dest_apk)
+            return False
+
+        tmp_dest = dest_apk + ".patching.tmp"
+        try:
+            with zipfile.ZipFile(src_apk, "r") as zin, zipfile.ZipFile(tmp_dest, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename == "lib/arm64-v8a/libopenxr_loader.so":
+                        zout.writestr("lib/arm64-v8a/libopenxr_loader_original.so", data)
+                    else:
+                        zout.writestr(item, data)
+
+                # Inject generic OpenXR loader as the primary loader
+                generic_so = os.path.join(shim_dir, "libopenxr_loader_generic.so")
+                if os.path.isfile(generic_so):
+                    with open(generic_so, "rb") as f:
+                        zout.writestr("lib/arm64-v8a/libopenxr_loader.so", f.read())
+
+                for name in ("libframe_xrshim.so", "libovrplatformcompat.so", "libfp_ovrp.so"):
+                    fpath = os.path.join(shim_dir, name)
+                    if os.path.isfile(fpath):
+                        with open(fpath, "rb") as f:
+                            zout.writestr(f"lib/arm64-v8a/{name}", f.read())
+
+            if os.path.exists(dest_apk):
+                os.remove(dest_apk)
+            os.replace(tmp_dest, dest_apk)
+            return True
+        except Exception as e:
+            print(f"[FrameLoad] Error injecting FrameBridge shims: {e}")
+            if os.path.exists(tmp_dest):
+                try:
+                    os.remove(tmp_dest)
+                except OSError:
+                    pass
+            if os.path.abspath(src_apk) != os.path.abspath(dest_apk):
+                shutil.copy2(src_apk, dest_apk)
+            return False
