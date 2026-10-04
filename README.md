@@ -59,6 +59,31 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - 1-click game save export/import (`tar.gz`).
   - Per-game runtime settings editor (72Hz, 90Hz, 120Hz refresh rates, resolution scaling, MSAA, controller model rendering).
   - Clean uninstaller: Stops running containers, purges game data, and cleans Steam library shortcuts.
+- **🎵 Mod & Custom Content Injector:**
+  - **Beat Saber Custom Songs:** Drop any custom song `.zip` directly from the Web UI or CLI; FrameLoad extracts it into `CustomSongs/`, repairs container permissions (`0777`), and makes it immediately available in game.
+  - **Mod Packs & Textures:** Inject mods directly into `lepton-data/external/Android/data/<package>/files/` with auto-repair permissions, inspection, and deletion.
+- **🖥️ 2D Flat Android Window Presets:**
+  - Run non-VR Android games and APKs in floating virtual cinema screens within SteamVR.
+  - Choose between tailored display presets:
+    - **Tablet Mode:** 1600x1000 (16:10 Landscape)
+    - **Mobile Phone:** 900x1600 (9:16 Portrait)
+    - **Desktop Cinema:** 1920x1080 (16:9 Widescreen)
+    - **Ultrawide Display:** 2560x1080 (21:9)
+  - Configures `lepton-window.json` and exports `LEPTON_WINDOW_WIDTH`, `LEPTON_WINDOW_HEIGHT`, and `LEPTON_ORIENTATION`.
+- **🪟 Windows PCVR & Flat EXEs via Proton:**
+  - Sideload standalone Windows games and PCVR titles (`.exe` or directories).
+  - Auto-detects OpenXR / OpenVR / SteamVR DLLs (`openvr_api.dll`, `openxr_loader.dll`, `vrclient.dll`).
+  - Auto-configures Proton ARM64 runtime (GE-Proton, Proton Experimental, Proton 9/8 via FEX-Emu), `WINEPREFIX`, and WineOpenXR routing (`XR_RUNTIME_JSON="/usr/share/openxr/1/openxr_steamvr.json"`).
+- **🐧 Linux Native ARM64 Binaries & AppImages:**
+  - Sideload Linux `.AppImage`, ELF native binaries, and `.sh` scripts.
+  - Auto-applies executable permissions (`chmod +x`), generates `launch.sh`, and integrates with Steam under the `"Linux Native"` tag.
+- **🔗 One-Click Deep Linking (`frameload://` Protocol):**
+  - Registered desktop URL protocol handler (`x-scheme-handler/frameload`).
+  - 1-click install links from web browsers or community sites:
+    - `frameload://install?url=<download_url>&pkg=<package>&title=<title>`
+    - `frameload://sideload?path=<file_path>&title=<title>`
+    - `frameload://launch?pkg=<package>`
+    - `frameload://sync`
 - **💾 Full MicroSD Card & Multi-Drive Storage:**
   - **Native MicroSD Detection:** Automatically discovers formatted MicroSD cards mounted by SteamOS (`/run/media/deck/*`, `mmcblk`), external USB drives, and custom storage paths.
   - **Selectable Install Location:** Install catalog downloads or sideloaded apps directly to Internal SSD or MicroSD Card.
@@ -213,8 +238,17 @@ frameload sync
 # Search catalog
 frameload search "Beat Saber"
 
-# Install a local APK directly
-frameload install /path/to/game.apk --title "My Game"
+# Install a local package (Quest APK, Windows Proton EXE, Linux AppImage)
+frameload install /path/to/game.xapk --title "My Game"
+
+# Install as 2D Flat Android window with customized preset
+frameload install /path/to/app.apk --flat --window-preset tablet
+
+# Inject Beat Saber custom song or mod package
+frameload inject-mod com.beatgames.beatsaber /path/to/song.zip --name "SongName"
+
+# Handle a frameload:// deep link URL directly
+frameload handle-url "frameload://launch?pkg=com.beatgames.beatsaber"
 
 # Launch an installed game
 frameload launch com.beatgames.beatsaber

@@ -9,13 +9,22 @@ from .catalog.vrp_mirror import VrpMirror
 from .installer.package_loader import PackageLoader
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
+from .manager.mods import ModManager
 from .manager.storage import StorageManager
 from .manager.uninstaller import Uninstaller
 from .server import run_server
+from .system.protocol import ProtocolHandler
 from .system.steamos import get_system_summary
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1].startswith("frameload://"):
+        url = sys.argv[1]
+        print(f"Handling deep link URL: {url}")
+        res = ProtocolHandler.handle_url(url)
+        print(json.dumps(res, indent=2))
+        return
+
     parser = argparse.ArgumentParser(
         prog="frameload",
         description="FrameLoad: On-device VR Sideloading, Game Management, and Installer for Steam Frame"
@@ -49,12 +58,24 @@ def main() -> None:
     search_parser.add_argument("query", help="Search query (name or package)")
 
     # Install local package/folder
-    install_parser = subparsers.add_parser("install", help="Install an APK, XAPK, APKS, ZIP, or folder directly onto the Steam Frame")
-    install_parser.add_argument("source", help="Path to APK, .xapk bundle, or game directory")
+    install_parser = subparsers.add_parser("install", help="Install an APK, XAPK, APKS, ZIP, Windows EXE, or Linux AppImage")
+    install_parser.add_argument("source", help="Path to APK, bundle, Windows EXE, AppImage, or game directory")
     install_parser.add_argument("--title", default="", help="Custom game title")
     install_parser.add_argument("--obb", default=None, help="Path to OBB file or folder")
     install_parser.add_argument("--device", default=None, help="Target storage device (e.g. internal or ext_microsd)")
     install_parser.add_argument("--flat", action="store_true", help="Force flat 2D window mode")
+    install_parser.add_argument("--window-preset", choices=["tablet", "phone", "desktop", "ultrawide"], default=None, help="Window preset for flat apps")
+
+    # Inject Mod
+    mod_parser = subparsers.add_parser("inject-mod", help="Inject custom songs, mods, or DLC packs into an installed game")
+    mod_parser.add_argument("package", help="Package name of the game (e.g. com.beatgames.beatsaber)")
+    mod_parser.add_argument("source", help="Path to mod zip file or folder")
+    mod_parser.add_argument("--name", default="", help="Custom mod/song title")
+    mod_parser.add_argument("--subpath", default="", help="Custom target subpath inside game files directory")
+
+    # Handle URL
+    url_parser = subparsers.add_parser("handle-url", help="Handle frameload:// deep link URL")
+    url_parser.add_argument("url", help="frameload:// URL string")
 
     # Launch
     launch_parser = subparsers.add_parser("launch", help="Launch an installed game")
@@ -112,9 +133,23 @@ def main() -> None:
             title=args.title,
             obb_path=args.obb,
             device_id=args.device,
-            force_flat=args.flat
+            force_flat=args.flat,
+            window_preset=args.window_preset
         )
         print("Installation complete:", json.dumps(res, indent=2))
+    elif args.command == "inject-mod":
+        print(f"Injecting mod/content into {args.package}...")
+        res = ModManager.inject_mod(
+            package_name=args.package,
+            source_path=args.source,
+            mod_name=args.name,
+            target_subpath=args.subpath
+        )
+        print("Mod injection complete:", json.dumps(res, indent=2))
+    elif args.command == "handle-url":
+        print(f"Processing deep link URL: {args.url}...")
+        res = ProtocolHandler.handle_url(args.url)
+        print("Result:", json.dumps(res, indent=2))
     elif args.command == "launch":
         print(f"Launching {args.package}...")
         res = GameLauncher.launch(args.package)

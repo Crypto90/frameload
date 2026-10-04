@@ -189,7 +189,7 @@
     <!-- 4. Sideload Local APK or Bundle Tab -->
     <section id="tab-sideload" class="tab-panel">
       <div class="control-bar">
-        <h2 style="font-size:1.15rem; font-weight:700;">Sideload APK, XAPK, APKS, ZIP, or Game Folder</h2>
+        <h2 style="font-size:1.15rem; font-weight:700;">Sideload VR Games, Android Bundles, Windows EXEs &amp; Linux Apps</h2>
       </div>
       <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:28px; border-radius:var(--radius-lg); max-width:680px;">
         <form id="sideload-form">
@@ -202,11 +202,11 @@
           <div style="margin-bottom:18px;">
             <label style="display:block; margin-bottom:8px; font-weight:600;">Path on Steam Frame (File or Folder):</label>
             <div style="display:flex; gap:10px;">
-              <input type="text" id="sideload-apk-path" class="search-input" placeholder="/run/media/deck/.../game.xapk or /home/deck/Downloads/BeatSaber" required style="flex:1; border-radius:var(--radius-sm); padding-left:14px;">
+              <input type="text" id="sideload-apk-path" class="search-input" placeholder="/run/media/deck/.../game.xapk, .exe, .AppImage, or folder" required style="flex:1; border-radius:var(--radius-sm); padding-left:14px;">
               <button type="button" class="btn-secondary compact" onclick="inspectSideloadPath()" title="Inspect package metadata">Inspect</button>
             </div>
             <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
-              Supports <code>.apk</code>, <code>.xapk</code>, <code>.apks</code>, <code>.zip</code> bundles, and loose game folders from USB drives or MicroSD cards.
+              Supports Quest <code>.apk</code> / <code>.xapk</code> / <code>.apks</code>, Windows PCVR / Flat <code>.exe</code> via Proton, and Linux <code>.AppImage</code> / ELF binaries.
             </p>
           </div>
           <div id="sideload-inspect-preview" style="display:none; margin-bottom:18px; padding:12px 16px; background:rgba(0,245,212,0.06); border:1px solid rgba(0,245,212,0.25); border-radius:var(--radius-sm);">
@@ -221,9 +221,18 @@
             <label style="display:block; margin-bottom:8px; font-weight:600;">Custom Title (Optional):</label>
             <input type="text" id="sideload-title" class="search-input" placeholder="e.g. Gorilla Tag" style="border-radius:var(--radius-sm); padding-left:14px;">
           </div>
-          <div style="margin-bottom:24px; display:flex; align-items:center; gap:12px;">
-            <input type="checkbox" id="sideload-flat" style="width:18px; height:18px;">
+          <div style="margin-bottom:18px; display:flex; align-items:center; gap:12px;">
+            <input type="checkbox" id="sideload-flat" style="width:18px; height:18px;" onchange="toggleFlatWindowPreset(this.checked)">
             <label for="sideload-flat" style="font-size:0.9rem;">Launch as 2D Flat Android Window (for non-VR Android apps)</label>
+          </div>
+          <div id="sideload-window-preset-group" style="display:none; margin-bottom:20px; background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:12px 16px; border-radius:var(--radius-sm);">
+            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:6px; color:var(--accent-cyan);">Flat App Window Preset:</label>
+            <select id="sideload-window-preset" class="select-styled" style="width:100%; border-radius:var(--radius-sm); padding:8px 12px; background:rgba(0,0,0,0.4); color:#fff; border:1px solid var(--border-subtle);">
+              <option value="tablet">Tablet Mode (1600x1000 — 16:10 Landscape)</option>
+              <option value="phone">Mobile Phone (900x1600 — 9:16 Portrait)</option>
+              <option value="desktop">Desktop Cinema (1920x1080 — 16:9 Widescreen)</option>
+              <option value="ultrawide">Ultrawide Display (2560x1080 — 21:9)</option>
+            </select>
           </div>
           <button type="submit" id="sideload-submit-btn" class="btn-primary" style="width:100%; justify-content:center; padding:12px;">Install and Add to Steam Library</button>
         </form>
@@ -457,8 +466,28 @@
           <span><strong>Storage Drive:</strong> <span id="modal-game-drive">Internal Storage</span></span>
           <button id="modal-game-move-btn" class="btn-secondary compact" style="display:none;" onclick="moveCurrentModalGame()">Move Drive</button>
         </p>
-        <p style="margin-bottom:6px;"><strong>Target Platform:</strong> Steam Frame (Lepton Container)</p>
-        <p><strong>OpenXR Translation:</strong> FrameBridge Adapter &amp; Controller Models</p>
+        <p style="margin-bottom:6px;"><strong>Target Platform:</strong> <span id="modal-game-platform">Steam Frame (Lepton Container)</span></p>
+        <p><strong>OpenXR Translation:</strong> <span id="modal-game-openxr">FrameBridge Adapter &amp; Controller Models</span></p>
+      </div>
+
+      <!-- Mods & Custom Content Section (Beat Saber Songs, Mod Packs) -->
+      <div id="modal-mods-section" style="margin-bottom:20px; background:rgba(255,255,255,0.02); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="font-size:0.95rem; font-weight:700; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+            <span>🎵</span> Mods &amp; Custom Songs
+          </h3>
+          <span id="modal-mods-count" class="badge" style="font-size:0.75rem; background:rgba(255,255,255,0.1); color:#fff; border-radius:10px; padding:2px 8px;">0 items</span>
+        </div>
+        <div id="modal-mods-list" style="max-height:160px; overflow-y:auto; margin-bottom:12px; font-size:0.85rem;">
+          <p style="color:var(--text-muted); font-style:italic;">No custom songs or mods installed.</p>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="modal-inject-path" class="search-input" placeholder="Path to song.zip or mod pack..." style="flex:1; font-size:0.82rem; padding:6px 10px;">
+          <button class="btn-secondary compact" onclick="injectModFromModal()">Inject</button>
+        </div>
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+          Beat Saber maps (<code>.zip</code>) are automatically placed into <code>CustomSongs/</code> with permissions fixed.
+        </p>
       </div>
 
       <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap;"></div>

@@ -75,15 +75,19 @@ cat > "$APPLICATIONS_DIR/frameload.desktop" <<EOF
 [Desktop Entry]
 Name=FrameLoad
 Comment=On-Device VR Sideloading, Catalog Downloader & Game Manager
-Exec=python3 $SCRIPT_DIR/frameload/cli.py serve
+Exec=python3 $SCRIPT_DIR/frameload/cli.py %u
 Icon=$SCRIPT_DIR/frameload/web/static/assets/icon.png
 Terminal=false
 Type=Application
 Categories=Game;VR;Utility;
 Keywords=SteamFrame;VR;Sideload;Lepton;
+MimeType=x-scheme-handler/frameload;
 EOF
 chmod +x "$APPLICATIONS_DIR/frameload.desktop"
-ok "Created $APPLICATIONS_DIR/frameload.desktop"
+if which xdg-mime >/dev/null 2>&1; then
+    xdg-mime default frameload.desktop x-scheme-handler/frameload 2>/dev/null || true
+fi
+ok "Created and registered $APPLICATIONS_DIR/frameload.desktop"
 
 # 4. Create systemd user service (for background operation)
 say "Setting up background systemd user service..."

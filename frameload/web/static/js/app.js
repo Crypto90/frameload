@@ -551,6 +551,41 @@ function openGameModal(id, mode = "catalog") {
     }
   }
 
+  // Runtime platform & OpenXR details
+  const platformEl = document.getElementById("modal-game-platform");
+  const openxrEl = document.getElementById("modal-game-openxr");
+  if (platformEl) {
+    if (game.install_type === "windows_proton") {
+      platformEl.textContent = "Steam Frame (Proton ARM64 via FEX-Emu)";
+    } else if (game.install_type === "linux_native") {
+      platformEl.textContent = "Steam Frame (Linux Native ARM64)";
+    } else if (game.force_flat) {
+      platformEl.textContent = `Steam Frame (Lepton 2D Window: ${game.window_preset || "tablet"})`;
+    } else {
+      platformEl.textContent = "Steam Frame (Lepton Container VR)";
+    }
+  }
+  if (openxrEl) {
+    if (game.install_type === "windows_proton") {
+      openxrEl.textContent = game.is_vr ? "WineOpenXR -> SteamVR" : "Disabled (Flat Desktop App)";
+    } else if (game.install_type === "linux_native") {
+      openxrEl.textContent = game.is_vr ? "Monado / SteamVR Native OpenXR" : "Disabled (Flat Native App)";
+    } else {
+      openxrEl.textContent = "FrameBridge Adapter & Controller Models";
+    }
+  }
+
+  // Mods & Custom Content section
+  const modsSection = document.getElementById("modal-mods-section");
+  if (modsSection) {
+    if (mode === "installed") {
+      modsSection.style.display = "block";
+      loadModalMods(game.package || game.package_name);
+    } else {
+      modsSection.style.display = "none";
+    }
+  }
+
   const actionContainer = document.getElementById("modal-actions");
   if (mode === "catalog") {
     actionContainer.innerHTML = `
@@ -657,8 +692,16 @@ async function inspectSideloadPath() {
       if (pkgEl) pkgEl.textContent = `${insp.package_name} • Type: ${insp.source_type} ${insp.format ? '(' + insp.format + ')' : ''}`;
       if (metaEl) metaEl.textContent = `Size: ${formatBytes(insp.size_bytes || 0)} • OBB: ${insp.has_obb ? 'Included' : 'None'}`;
       if (badgeEl) {
-        badgeEl.textContent = insp.is_vr ? "Quest VR" : "2D Flat";
-        badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "var(--accent-amber)";
+        if (insp.source_type === "windows_proton") {
+          badgeEl.textContent = insp.is_vr ? "Proton VR" : "Proton Windows";
+          badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "#a370f7";
+        } else if (insp.source_type === "linux_native") {
+          badgeEl.textContent = insp.is_vr ? "Linux VR" : "Linux Native";
+          badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "#2ec4b6";
+        } else {
+          badgeEl.textContent = insp.is_vr ? "Quest VR" : "2D Flat";
+          badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "var(--accent-amber)";
+        }
         badgeEl.style.color = "#000";
       }
       if (titleInput && !titleInput.value) {
@@ -674,6 +717,14 @@ async function inspectSideloadPath() {
 }
 window.inspectSideloadPath = inspectSideloadPath;
 
+function toggleFlatWindowPreset(isFlat) {
+  const group = document.getElementById("sideload-window-preset-group");
+  if (group) {
+    group.style.display = isFlat ? "block" : "none";
+  }
+}
+window.toggleFlatWindowPreset = toggleFlatWindowPreset;
+
 function setupSideloadForm() {
   const form = document.getElementById("sideload-form");
   if (!form) return;
@@ -683,6 +734,8 @@ function setupSideloadForm() {
     const sourcePath = document.getElementById("sideload-apk-path").value.trim();
     const title = document.getElementById("sideload-title").value.trim();
     const forceFlat = document.getElementById("sideload-flat").checked;
+    const windowPresetSelect = document.getElementById("sideload-window-preset");
+    const windowPreset = windowPresetSelect ? windowPresetSelect.value : "tablet";
     const targetDriveSelect = document.getElementById("sideload-target-drive");
     const deviceId = targetDriveSelect ? targetDriveSelect.value : "internal";
 
@@ -701,6 +754,7 @@ function setupSideloadForm() {
           source_path: sourcePath,
           title: title,
           force_flat: forceFlat,
+          window_preset: windowPreset,
           device_id: deviceId
         })
       });
@@ -710,6 +764,8 @@ function setupSideloadForm() {
         form.reset();
         const preview = document.getElementById("sideload-inspect-preview");
         if (preview) preview.style.display = "none";
+        const group = document.getElementById("sideload-window-preset-group");
+        if (group) group.style.display = "none";
         loadInstalled();
         loadStorageOverview();
       } else {
@@ -725,6 +781,93 @@ function setupSideloadForm() {
     }
   });
 }
+
+// --- Mods & Custom Content Management ---
+async function loadModalMods(pkg) {
+  const container = document.getElementById("modal-mods-list");
+  const countEl = document.getElementById("modal-mods-count");
+  if (!container) return;
+
+  container.innerHTML = `<p style="color:var(--text-muted); font-size:0.8rem;">Loading mods and custom songs...</p>`;
+
+  try {
+    const res = await fetch(`/api/installed/mods?pkg=${encodeURIComponent(pkg)}`);
+    const data = await res.json();
+    const mods = data.mods || [];
+    if (countEl) countEl.textContent = `${mods.length} item${mods.length === 1 ? '' : 's'}`;
+
+    if (mods.length === 0) {
+      container.innerHTML = `<p style="color:var(--text-muted); font-style:italic;">No custom songs or mods installed.</p>`;
+      return;
+    }
+
+    container.innerHTML = mods.map(m => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div>
+          <span style="font-weight:600; color:#fff;">${m.name}</span>
+          <span style="font-size:0.75rem; color:var(--text-muted); margin-left:6px;">(${m.type === 'custom_song' ? '🎵 Song' : '📦 Mod'} • ${m.size_formatted})</span>
+        </div>
+        <button class="btn-secondary compact" style="color:var(--accent-danger); font-size:0.75rem; padding:2px 8px;" onclick="deleteModalMod('${pkg}', '${m.id}')">Delete</button>
+      </div>
+    `).join("");
+  } catch (err) {
+    container.innerHTML = `<p style="color:var(--accent-danger); font-size:0.8rem;">Failed to load mods: ${err.message}</p>`;
+  }
+}
+window.loadModalMods = loadModalMods;
+
+async function injectModFromModal() {
+  if (!state.selectedGame) return;
+  const pkg = state.selectedGame.package || state.selectedGame.package_name;
+  const input = document.getElementById("modal-inject-path");
+  const p = input ? input.value.trim() : "";
+  if (!p) {
+    showToast("Please enter path to a mod .zip or folder", "warning");
+    return;
+  }
+
+  showToast(`Injecting custom content into ${state.selectedGame.title || pkg}...`, "info");
+  try {
+    const res = await fetch("/api/installed/mods/inject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package: pkg, source_path: p })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Injected ${data.files_injected} files successfully!`, "success");
+      if (input) input.value = "";
+      loadModalMods(pkg);
+    } else {
+      showToast(data.error || "Failed to inject mod", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.injectModFromModal = injectModFromModal;
+
+async function deleteModalMod(pkg, modId) {
+  if (!confirm(`Delete this custom content item?`)) return;
+  showToast("Removing mod...", "info");
+  try {
+    const res = await fetch("/api/installed/mods/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package: pkg, mod_id: modId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast("Mod removed successfully.", "success");
+      loadModalMods(pkg);
+    } else {
+      showToast(data.error || "Failed to delete mod", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.deleteModalMod = deleteModalMod;
 
 // --- Toast Notifications ---
 function showToast(message, type = "info") {

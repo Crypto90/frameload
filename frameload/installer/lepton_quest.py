@@ -68,6 +68,7 @@ class LeptonInstaller:
         obb_path: Optional[str] = None,
         custom_settings: Optional[Dict[str, Any]] = None,
         force_flat: Optional[bool] = None,
+        window_preset: Optional[str] = None,
         target_anchor: Optional[str] = None,
         device_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -137,10 +138,30 @@ class LeptonInstaller:
         os.makedirs(files_dir, exist_ok=True)
         os.makedirs(cache_dir, exist_ok=True)
 
-        # Flat-screen marker
+        # Flat-screen marker & window preset configuration
         marker = os.path.join(app_dir, "lepton-show-flatscreen")
+        extra_env = ""
         if not is_vr:
             open(marker, "a").close()
+            preset = (window_preset or "tablet").lower()
+            preset_dims = {
+                "tablet": (1600, 1000, "landscape"),
+                "phone": (900, 1600, "portrait"),
+                "desktop": (1920, 1080, "landscape"),
+                "ultrawide": (2560, 1080, "landscape"),
+            }
+            w, h, orient = preset_dims.get(preset, (1600, 1000, "landscape"))
+            win_meta = {
+                "preset": preset,
+                "width": w,
+                "height": h,
+                "orientation": orient
+            }
+            with open(os.path.join(app_dir, "lepton-window.json"), "w", encoding="utf-8") as wf:
+                json.dump(win_meta, wf, indent=2)
+            with open(os.path.join(anchor, "lepton-window.json"), "w", encoding="utf-8") as wf:
+                json.dump(win_meta, wf, indent=2)
+            extra_env = f"export LEPTON_WINDOW_WIDTH={w}\nexport LEPTON_WINDOW_HEIGHT={h}\nexport LEPTON_ORIENTATION={orient}\nexport LEPTON_FLATSCREEN=1"
         elif os.path.exists(marker):
             os.remove(marker)
 
@@ -170,7 +191,7 @@ class LeptonInstaller:
             base_q=shlex.quote(base),
             appid=appid,
             lepton_q=shlex.quote(lepton_bin),
-            extra_env=""
+            extra_env=extra_env
         )
 
         with open(launch_script, "w", encoding="utf-8") as f:
@@ -187,6 +208,7 @@ class LeptonInstaller:
             "device_id": device_id or "internal",
             "kind": "quest" if is_vr else "flat",
             "is_vr": is_vr,
+            "window_preset": (window_preset or "tablet") if not is_vr else None,
             "engine": analysis.engine,
             "apk_size": os.path.getsize(dest_apk),
             "settings": settings,
@@ -212,6 +234,7 @@ class LeptonInstaller:
             "title": title,
             "appid": appid,
             "is_vr": is_vr,
+            "window_preset": (window_preset or "tablet") if not is_vr else None,
             "anchor": anchor,
             "device_id": device_id or "internal",
             "steam": steam_res

@@ -17,10 +17,12 @@ from .installer.package_loader import PackageLoader
 from .manager.backup import SaveBackupManager
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
+from .manager.mods import ModManager
 from .manager.settings import SettingsManager
 from .manager.storage import StorageManager
 from .manager.uninstaller import Uninstaller
 from .manager.updates import UpdateManager
+from .system.protocol import ProtocolHandler
 from .system.steamos import (
     ensure_host_podman_fixes,
     get_system_summary,
@@ -82,6 +84,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/installed/backups":
             pkg = params.get("package", [""])[0]
             self.send_json({"backups": SaveBackupManager.list_backups(pkg)})
+        elif path == "/api/installed/mods":
+            pkg = params.get("package", [""])[0]
+            if not pkg:
+                self.send_json({"error": "Missing package parameter"}, status=HTTPStatus.BAD_REQUEST)
+            else:
+                self.send_json({"mods": ModManager.list_mods(pkg)})
         elif path == "/api/config":
             self.send_json(Config.get().raw)
         elif path == "/api/storage":
@@ -231,6 +239,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             title = body.get("title", "")
             obb_path = body.get("obb_path")
             force_flat = body.get("force_flat", False)
+            window_preset = body.get("window_preset")
             device_id = body.get("device_id")
             if not os.path.exists(source_path):
                 self.send_json({"error": f"Path not found: {source_path}"}, status=HTTPStatus.BAD_REQUEST)
@@ -241,11 +250,40 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     title=title,
                     obb_path=obb_path,
                     device_id=device_id,
-                    force_flat=force_flat
+                    force_flat=force_flat,
+                    window_preset=window_preset
                 )
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/installed/mods/inject":
+            pkg = body.get("package", "")
+            source_path = body.get("source_path", "")
+            mod_name = body.get("mod_name", "")
+            target_subpath = body.get("target_subpath", "")
+            if not pkg or not source_path:
+                self.send_json({"error": "Missing package or source_path"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                res = ModManager.inject_mod(pkg, source_path, mod_name=mod_name, target_subpath=target_subpath)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/installed/mods/delete":
+            pkg = body.get("package", "")
+            mod_id = body.get("mod_id", "")
+            if not pkg or not mod_id:
+                self.send_json({"error": "Missing package or mod_id"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                ok = ModManager.delete_mod(pkg, mod_id)
+                self.send_json({"success": ok})
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/system/protocol":
+            url = body.get("url", "")
+            res = ProtocolHandler.handle_url(url)
+            self.send_json(res)
         elif path == "/api/system/install_lepton":
             success = install_lepton_request()
             self.send_json({"success": success})

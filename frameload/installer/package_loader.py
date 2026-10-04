@@ -12,12 +12,14 @@ from typing import Any, Dict, List, Optional
 from ..config import CACHE_DIR
 from .apk_patcher import ApkPatcher
 from .lepton_quest import LeptonInstaller
+from .linux_native import LinuxNativeInstaller
+from .windows_proton import WindowsProtonInstaller
 
 
 class PackageLoader:
     @staticmethod
     def inspect_source(source_path: str) -> Dict[str, Any]:
-        """Inspects any input source: single APK, XAPK bundle, APKS bundle, ZIP archive, or loose folder."""
+        """Inspects any input source: Android APK/XAPK/APKS, Windows EXE/Directory, Linux AppImage/ELF, or ZIP."""
         if not os.path.exists(source_path):
             raise FileNotFoundError(f"Source not found: {source_path}")
 
@@ -29,15 +31,29 @@ class PackageLoader:
             return PackageLoader._inspect_archive(source_path, ext)
         elif ext == ".apk":
             return PackageLoader._inspect_single_apk(source_path)
+        elif ext == ".exe":
+            return WindowsProtonInstaller.inspect_windows_source(source_path)
+        elif ext in (".appimage", ".sh"):
+            return LinuxNativeInstaller.inspect_linux_source(source_path)
         else:
-            raise ValueError(f"Unsupported file format: {ext} (supported: .apk, .xapk, .apks, .zip, or folder)")
+            # Check for ELF binary
+            try:
+                with open(source_path, "rb") as f:
+                    magic = f.read(4)
+                    if magic == b"\x7fELF":
+                        return LinuxNativeInstaller.inspect_linux_source(source_path)
+            except OSError:
+                pass
+            raise ValueError(f"Unsupported file format: {ext} (supported: .apk, .xapk, .apks, .zip, .exe, .AppImage, .sh, or folder)")
 
     @staticmethod
     def _inspect_directory(dir_path: str) -> Dict[str, Any]:
-        """Scans a loose directory (e.g. from USB drive or MicroSD card)."""
+        """Scans a loose directory (e.g. from USB drive or MicroSD card) for Android, Windows, or Linux apps."""
         apks = []
         obbs = []
         obb_dirs = []
+        exes = []
+        linux_bins = []
 
         for root, dirs, files in os.walk(dir_path):
             for f in files:
@@ -47,12 +63,20 @@ class PackageLoader:
                     apks.append(full)
                 elif lower.endswith(".obb"):
                     obbs.append(full)
+                elif lower.endswith(".exe"):
+                    exes.append(full)
+                elif lower.endswith(".appimage") or (os.access(full, os.X_OK) and "." not in f):
+                    linux_bins.append(full)
             for d in dirs:
                 if d.startswith("com.") and ("." in d):
                     obb_dirs.append(os.path.join(root, d))
 
         if not apks:
-            raise FileNotFoundError(f"No .apk files found inside directory {dir_path}")
+            if exes:
+                return WindowsProtonInstaller.inspect_windows_source(dir_path)
+            elif linux_bins:
+                return LinuxNativeInstaller.inspect_linux_source(dir_path)
+            raise FileNotFoundError(f"No installable APK, EXE, or Linux executables found inside directory {dir_path}")
 
         # Find primary APK: preference for base.apk or largest apk
         primary_apk = None
@@ -133,7 +157,35 @@ class PackageLoader:
             obb_entries = [n for n in namelist if n.lower().endswith(".obb")]
 
             if not apk_entries:
-                raise ValueError(f"Archive {archive_path} contains no .apk files")
+                exe_entries = [n for n in namelist if n.lower().endswith(".exe")]
+                linux_entries = [n for n in namelist if n.lower().endswith(".appimage")]
+                if exe_entries:
+                    bname = os.path.basename(archive_path).replace(ext, "").replace("_", " ")
+                    clean_id = re.sub(r"[^a-zA-Z0-9_]", "", bname.lower().replace(" ", "_"))
+                    return {
+                        "source_type": "archive_windows",
+                        "path": archive_path,
+                        "package_name": f"win.{clean_id}",
+                        "title": bname,
+                        "is_vr": any("openxr" in n.lower() or "openvr" in n.lower() for n in namelist),
+                        "runtime": "proton",
+                        "primary_exe": exe_entries[0],
+                        "size_bytes": os.path.getsize(archive_path)
+                    }
+                elif linux_entries:
+                    bname = os.path.basename(archive_path).replace(ext, "").replace("_", " ")
+                    clean_id = re.sub(r"[^a-zA-Z0-9_]", "", bname.lower().replace(" ", "_"))
+                    return {
+                        "source_type": "archive_linux",
+                        "path": archive_path,
+                        "package_name": f"linux.{clean_id}",
+                        "title": bname,
+                        "is_vr": any("openxr" in n.lower() for n in namelist),
+                        "runtime": "linux_native",
+                        "primary_bin": linux_entries[0],
+                        "size_bytes": os.path.getsize(archive_path)
+                    }
+                raise ValueError(f"Archive {archive_path} contains no installable .apk, .exe, or Linux executables")
 
             # Determine primary apk entry inside archive
             primary_entry = None
@@ -219,15 +271,73 @@ class PackageLoader:
         obb_path: Optional[str] = None,
         device_id: Optional[str] = None,
         force_flat: Optional[bool] = None,
+        window_preset: Optional[str] = None,
         custom_settings: Optional[Dict[str, Any]] = None,
         target_anchor: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Installs any supported source (APK, XAPK, APKS, ZIP, or Directory) to Internal SSD or MicroSD."""
+        """Installs any supported source (APK, XAPK, APKS, ZIP, Windows EXE, or Linux AppImage) to SSD or MicroSD."""
         source_info = PackageLoader.inspect_source(source_path)
         pkg = source_info["package_name"]
         final_title = title or source_info.get("title", pkg)
+        runtime = source_info.get("runtime", "lepton")
 
-        # 1. Handle loose Directory
+        # 1. Route Windows applications & PCVR to Proton runner
+        if runtime == "proton" or source_info.get("source_type") in ("windows_exe", "windows_dir"):
+            return WindowsProtonInstaller.install_windows_app(
+                source_path=source_path,
+                title=final_title,
+                force_vr=not force_flat if force_flat is not None else None,
+                device_id=device_id,
+                target_anchor=target_anchor,
+            )
+
+        # 2. Route Native Linux applications & AppImages
+        if runtime == "linux_native" or source_info.get("source_type") in ("linux_appimage", "linux_elf", "linux_script"):
+            return LinuxNativeInstaller.install_linux_app(
+                source_path=source_path,
+                title=final_title,
+                force_vr=not force_flat if force_flat is not None else None,
+                device_id=device_id,
+                target_anchor=target_anchor,
+            )
+
+        # 3. Route Windows ZIP Archives
+        if source_info.get("source_type") == "archive_windows":
+            staging_dir = tempfile.mkdtemp(prefix="frameload_win_", dir=CACHE_DIR if os.path.isdir(CACHE_DIR) else None)
+            try:
+                with zipfile.ZipFile(source_path, "r") as zf:
+                    zf.extractall(staging_dir)
+                res = WindowsProtonInstaller.install_windows_app(
+                    source_path=staging_dir,
+                    title=final_title,
+                    force_vr=not force_flat if force_flat is not None else None,
+                    device_id=device_id,
+                    target_anchor=target_anchor,
+                )
+                res["extracted_from"] = source_path
+                return res
+            finally:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+
+        # 4. Route Linux ZIP Archives
+        if source_info.get("source_type") == "archive_linux":
+            staging_dir = tempfile.mkdtemp(prefix="frameload_lin_", dir=CACHE_DIR if os.path.isdir(CACHE_DIR) else None)
+            try:
+                with zipfile.ZipFile(source_path, "r") as zf:
+                    zf.extractall(staging_dir)
+                res = LinuxNativeInstaller.install_linux_app(
+                    source_path=staging_dir,
+                    title=final_title,
+                    force_vr=not force_flat if force_flat is not None else None,
+                    device_id=device_id,
+                    target_anchor=target_anchor,
+                )
+                res["extracted_from"] = source_path
+                return res
+            finally:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+
+        # 5. Handle loose Android Directory
         if source_info["source_type"] == "directory":
             primary_apk = source_info["primary_apk"]
             chosen_obb = obb_path or source_info.get("matched_obb")
@@ -238,11 +348,12 @@ class PackageLoader:
                 obb_path=chosen_obb,
                 custom_settings=custom_settings,
                 force_flat=force_flat,
+                window_preset=window_preset,
                 device_id=device_id,
                 target_anchor=target_anchor,
             )
 
-        # 2. Handle Archive (.xapk, .apks, .zip)
+        # 6. Handle Android Archive (.xapk, .apks, .zip)
         elif source_info["source_type"] == "archive":
             staging_dir = tempfile.mkdtemp(prefix="frameload_pkg_", dir=CACHE_DIR if os.path.isdir(CACHE_DIR) else None)
             try:
@@ -262,16 +373,16 @@ class PackageLoader:
                     obb_path=chosen_obb,
                     custom_settings=custom_settings,
                     force_flat=force_flat,
+                    window_preset=window_preset,
                     device_id=device_id,
                     target_anchor=target_anchor,
                 )
                 res["extracted_from"] = source_path
                 return res
             finally:
-                # Clean up temporary staging files
                 shutil.rmtree(staging_dir, ignore_errors=True)
 
-        # 3. Handle single APK
+        # 7. Handle single Android APK
         else:
             primary_apk = source_info["primary_apk"]
             chosen_obb = obb_path or source_info.get("matched_obb")
@@ -282,6 +393,7 @@ class PackageLoader:
                 obb_path=chosen_obb,
                 custom_settings=custom_settings,
                 force_flat=force_flat,
+                window_preset=window_preset,
                 device_id=device_id,
                 target_anchor=target_anchor,
             )
