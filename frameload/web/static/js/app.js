@@ -81,9 +81,20 @@ function setupTabs() {
     if (tabEl) tabEl.click();
     if (hash === "modal") {
       setTimeout(() => {
-        const first = state.installed[0] || state.catalog.items[0];
-        if (first) openGameModal(first.package || first.id, state.installed.length ? "installed" : "catalog");
-      }, 400);
+        const bs = (state.installed && state.installed.find(g => g.package === "com.beatgames.beatsaber")) || (state.installed && state.installed[0]) || (state.catalog && state.catalog.items[0]);
+        if (bs) openGameModal(bs.package || bs.id, state.installed && state.installed.length ? "installed" : "catalog");
+      }, 500);
+    }
+    if (hash === "sideload") {
+      setTimeout(() => {
+        const flatCheck = document.getElementById("sideload-flat");
+        if (flatCheck) {
+          flatCheck.checked = true;
+          toggleFlatWindowPreset(true);
+        }
+        const pathInput = document.getElementById("sideload-apk-path");
+        if (pathInput) pathInput.value = "/run/media/deck/SD_CARD/GorillaTag_v1.2.xapk";
+      }, 200);
     }
   }
 }

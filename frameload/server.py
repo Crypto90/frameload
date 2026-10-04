@@ -82,10 +82,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     return
             self.send_error(HTTPStatus.NOT_FOUND)
         elif path == "/api/installed/backups":
-            pkg = params.get("package", [""])[0]
+            pkg = params.get("package", params.get("pkg", [""]))[0]
             self.send_json({"backups": SaveBackupManager.list_backups(pkg)})
         elif path == "/api/installed/mods":
-            pkg = params.get("package", [""])[0]
+            pkg = params.get("package", params.get("pkg", [""]))[0]
             if not pkg:
                 self.send_json({"error": "Missing package parameter"}, status=HTTPStatus.BAD_REQUEST)
             else:

@@ -112,13 +112,18 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 
 | 🌐 Browse Mirror Catalog | 🎮 Installed Library |
 |:---:|:---:|
-| ![Browse Catalog](docs/images/screenshot_catalog.png) | ![Installed Library](docs/images/screenshot_library.png) |
-| *Browse, filter, and queue VR titles with one click* | *Manage installed games, launch in VR, and configure settings* |
+| [![Browse Catalog](docs/images/screenshot_catalog.png)](docs/images/screenshot_catalog.png) | [![Installed Library](docs/images/screenshot_library.png)](docs/images/screenshot_library.png) |
+| *Browse, search, and queue VR titles with live Ko-fi chip, battery, storage & Lepton telemetry* | *Manage installed games, launch in VR, and configure FrameBridge per-title settings* |
 
-| 🛠️ System & VR Diagnostics | ⚙️ Game Details & Sideloading |
+| 📊 Steam-Style Storage Manager | 📥 Sideload & 2D Window Presets |
 |:---:|:---:|
-| ![System & Diagnostics](docs/images/screenshot_system.png) | ![Game Details Modal](docs/images/screenshot_modal.png) |
-| *Live telemetry: Lepton status, Proton ARM64, and storage* | *Quick install modal and per-game FrameBridge tweaks* |
+| [![Steam Storage Manager](docs/images/screenshot_storage.png)](docs/images/screenshot_storage.png) | [![Sideloading Hub](docs/images/screenshot_sideload.png)](docs/images/screenshot_sideload.png) |
+| *Segmented storage visualizer, multi-drive mover (Internal SSD & MicroSD), and cache cleanup* | *Sideload Quest APKs, Windows Proton EXEs, Linux apps, and toggle flat theater presets* |
+
+| 🛠️ System & Diagnostics with Ko-fi | 🎵 Game Details & Custom Songs / Mods |
+|:---:|:---:|
+| [![System & Diagnostics](docs/images/screenshot_system.png)](docs/images/screenshot_system.png) | [![Game Details & Mods](docs/images/screenshot_modal.png)](docs/images/screenshot_modal.png) |
+| *Live telemetry (Lepton VR, FEX-Emu Proton ARM64), OTA updates, and Support on Ko-fi card* | *Per-game settings, drive migration, and Beat Saber custom songs & mod injector* |
 
 ---
 
