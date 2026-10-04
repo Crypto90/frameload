@@ -10,6 +10,7 @@ setup(
     include_package_data=True,
     package_data={
         "frameload": [
+            "installer/shims/arm64-v8a/*",
             "web/templates/*",
             "web/static/css/*",
             "web/static/js/*",

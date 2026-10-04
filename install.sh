@@ -5,7 +5,32 @@ set -euo pipefail
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()  { printf '\033[1;32m ✔  %s\033[0m\n' "$*"; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "$PWD")"
+
+# 0. Self-bootstrapping: If run via curl pipe or outside repo, download FrameLoad first
+if [[ ! -f "$SCRIPT_DIR/frameload/cli.py" ]]; then
+    APP_TARGET="${FRAMELOAD_INSTALL_DIR:-$HOME/Applications/FrameLoad}"
+    say "Bootstrapping FrameLoad into $APP_TARGET..."
+    mkdir -p "$APP_TARGET"
+
+    if which git >/dev/null 2>&1; then
+        if [[ -d "$APP_TARGET/.git" ]]; then
+            git -C "$APP_TARGET" pull --ff-only 2>/dev/null || true
+        else
+            git clone --depth 1 "https://forgejo.shieldserver.de/Crypto90/FrameLoad.git" "$APP_TARGET" 2>/dev/null || true
+        fi
+    fi
+
+    if [[ ! -f "$APP_TARGET/frameload/cli.py" ]]; then
+        say "Downloading standalone FrameLoad release archive from Forgejo..."
+        curl -fsSL "https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET"
+    fi
+
+    chmod +x "$APP_TARGET/install.sh" "$APP_TARGET/run.sh"
+    cd "$APP_TARGET"
+    exec bash "$APP_TARGET/install.sh" "$@"
+fi
+
 FRAMELOAD_DIR="$HOME/.local/share/frameload"
 APPLICATIONS_DIR="$HOME/.local/share/applications"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"

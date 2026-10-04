@@ -5,6 +5,8 @@
 **All-in-One On-Device VR Sideloading, Catalog Downloader & Library Manager for the Steam Frame**
 
 [![Steam Frame](https://img.shields.io/badge/Steam%20Frame-Supported-1b2838?logo=steam&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad)
+[![Releases](https://img.shields.io/badge/Release-v1.0.0-00f2fe?logo=forgejo&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases)
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-Docker%20Runner-22c55e?logo=docker&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad/actions)
 [![Platform](https://img.shields.io/badge/Platform-SteamOS%20%7C%20Linux%20ARM64-blue)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](#)
 
@@ -83,9 +85,31 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 
 ## 🚀 Quick Start (On Your Steam Frame)
 
-### 1-Click Install
+### ⚡ 1-Click Install (Single Command)
 
 Open **Konsole** in SteamOS Desktop Mode (or connect via SSH) and run:
+
+```bash
+curl -fsSL https://forgejo.shieldserver.de/Crypto90/FrameLoad/raw/branch/main/install.sh | bash
+```
+
+> [!TIP]
+> Click the **Copy** button on the top right of the code block above to copy the command directly to your clipboard!
+
+---
+
+### 📦 Alternative: Self-Extracting Offline Installer
+
+If you prefer downloading a single pre-built installer package without needing `git`:
+
+```bash
+curl -fsSLO https://forgejo.shieldserver.de/Crypto90/FrameLoad/releases/download/v1.0.0/frameload-installer.sh
+bash frameload-installer.sh
+```
+
+---
+
+### 🔧 Alternative: Manual Git Clone
 
 ```bash
 cd ~/
@@ -94,21 +118,26 @@ cd FrameLoad
 ./install.sh
 ```
 
-The installer will:
-1. Configure `~/.config/containers/containers.conf` to prevent podman keyring exhaustion.
-2. Create the desktop launcher `~/.local/share/applications/frameload.desktop`.
-3. Enable the user background service `frameload.service` on port `5050`.
-4. Add `FrameLoad` to your Steam library as a Non-Steam Game shortcut with artwork.
+---
 
-### Launching FrameLoad
+### What the Installer Does Automatically:
+1. Configures `~/.config/containers/containers.conf` to stop rootless podman leaking kernel keyrings (`keyring = false`).
+2. Installs standalone static 7-Zip (`7za`) archive extraction tools.
+3. Creates the desktop launcher `~/.local/share/applications/frameload.desktop`.
+4. Enables the background user service `frameload.service` on port `5050`.
+5. Adds **FrameLoad** directly to your SteamVR & Steam library as a Non-Steam Game shortcut with complete vertical poster grid artwork.
 
-- **From SteamVR / Gaming Mode:** Select **FrameLoad** directly in your Steam Library.
-- **From Desktop Mode:** Open the Application Menu → **Game** → **FrameLoad**.
+---
+
+### 🎮 Launching FrameLoad
+
+- **In VR / Gaming Mode:** Open your Steam Library and select **FrameLoad**.
+- **In Desktop Mode:** Open Application Launcher → **Games** → **FrameLoad**.
 - **From Any Web Browser:** Navigate to:
   ```
   http://localhost:5050
   ```
-  or from another device on the same Wi-Fi:
+  or from your phone / tablet / PC on the same Wi-Fi:
   ```
   http://<steam-frame-ip>:5050
   ```
