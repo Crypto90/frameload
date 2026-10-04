@@ -76,7 +76,7 @@ cat > "$APPLICATIONS_DIR/frameload.desktop" <<EOF
 Name=FrameLoad
 Comment=On-Device VR Sideloading, Catalog Downloader & Game Manager
 Exec=python3 $SCRIPT_DIR/frameload/cli.py serve
-Icon=$SCRIPT_DIR/frameload/web/static/assets/fallback_cover.svg
+Icon=$SCRIPT_DIR/frameload/web/static/assets/icon.png
 Terminal=false
 Type=Application
 Categories=Game;VR;Utility;
@@ -109,8 +109,8 @@ systemctl --user daemon-reload || true
 systemctl --user enable --now frameload.service || true
 ok "FrameLoad service enabled on port 5050"
 
-# 5. Add FrameLoad to Steam as a Non-Steam Game shortcut
-say "Adding FrameLoad shortcut to Steam library..."
+# 5. Add FrameLoad to Steam as a Non-Steam Game shortcut with full Steam Grid artwork
+say "Adding FrameLoad shortcut to Steam library with full Grid artwork..."
 python3 -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR')
@@ -121,7 +121,8 @@ res = register_game_in_steam(
     title='FrameLoad',
     launch_script_path='$SCRIPT_DIR/run.sh',
     anchor_dir='$SCRIPT_DIR',
-    icon_path='$SCRIPT_DIR/frameload/web/static/assets/fallback_cover.svg',
+    icon_path='$SCRIPT_DIR/frameload/web/static/assets/icon.png',
+    artwork_dir='$SCRIPT_DIR/frameload/web/static/assets',
     is_vr=False,
     launch_options=''
 )
