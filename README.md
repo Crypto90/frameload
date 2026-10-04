@@ -182,9 +182,13 @@ curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/install.sh 
 If you prefer downloading a single pre-built installer package without needing `git`:
 
 ```bash
-curl -fsSLO https://github.com/Crypto90/frameload/releases/download/v1.0.0/frameload-installer.sh
+# Grep latest release tag and download the standalone installer:
+TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.0.1}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
+
+*(Or via GitHub's direct latest redirect: `curl -fsSLO https://github.com/Crypto90/frameload/releases/latest/download/frameload-installer.sh`)*
 
 ---
 

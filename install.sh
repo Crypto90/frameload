@@ -22,8 +22,15 @@ if [[ ! -f "$SCRIPT_DIR/frameload/cli.py" ]]; then
     fi
 
     if [[ ! -f "$APP_TARGET/frameload/cli.py" ]]; then
-        say "Downloading standalone FrameLoad release archive from GitHub..."
-        curl -fsSL "https://github.com/Crypto90/frameload/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET"
+        say "Fetching latest FrameLoad release archive from GitHub..."
+        LATEST_TAG=$(curl -sSL https://api.github.com/repos/Crypto90/frameload/releases/latest 2>/dev/null | grep '"tag_name":' | head -n1 | cut -d'"' -f4 || echo "")
+        if [[ -z "$LATEST_TAG" ]]; then
+            LATEST_TAG=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Crypto90/frameload/releases/latest 2>/dev/null | awk -F'/' '{print $NF}')
+        fi
+        [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v1.0.1"
+        say "Downloading release $LATEST_TAG..."
+        curl -fsSL "https://github.com/Crypto90/frameload/releases/download/${LATEST_TAG}/frameload-${LATEST_TAG}-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET" || \
+        curl -fsSL "https://github.com/Crypto90/frameload/archive/refs/heads/main.tar.gz" | tar -xzf - --strip-components=1 -C "$APP_TARGET"
     fi
 
     chmod +x "$APP_TARGET/install.sh" "$APP_TARGET/run.sh"
