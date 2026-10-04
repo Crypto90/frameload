@@ -126,9 +126,19 @@ body {
   font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: 0.5px;
-  background: linear-gradient(90deg, #ffffff, #00f2fe);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  display: inline-flex;
+  align-items: center;
+}
+
+.brand-title .title-frame {
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+
+.brand-title .title-load {
+  color: var(--accent-cyan);
+  text-shadow: 0 0 16px rgba(0, 242, 254, 0.7);
+  margin-left: 1px;
 }
 
 .brand-badge {
