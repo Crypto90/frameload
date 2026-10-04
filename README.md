@@ -121,6 +121,39 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 
 ---
 
+## 🎨 Steam Grid Artwork & Visual Assets
+
+FrameLoad includes high-resolution, pixel-perfect artwork tailored for **SteamOS Gaming Mode**, **SteamVR**, and the **Steam Library** in all official Steam formats:
+
+### 🎮 Steam Grid Formats & Posters
+
+| 📱 Steam Frame Device Poster (`600x900`) | 🌌 Portal Edition Poster (`600x900`) | 🏷️ Steam Grid Banner (`920x430`) |
+|:---:|:---:|:---:|
+| ![Device Poster](docs/images/steam/capsule_device.png) | ![Portal Poster](docs/images/steam/poster.png) | ![Steam Banner](docs/images/steam/banner.png) |
+| *Steam Frame Headset Capsule* | *Vibrant SteamVR Portal Edition* | *Steam Library Grid Banner (460x215)* |
+
+| 🥽 Steam Frame Headset Icon (`512x512`) | ⚡ FrameLoad Hologram Icon (`512x512`) | 🏷️ Transparent Title Logo |
+|:---:|:---:|:---:|
+| ![Headset Icon](docs/images/steam/icon_device.png) | ![Hologram Icon](docs/images/steam/icon.png) | ![Title Logo](docs/images/steam/logo.png) |
+| *Headset Device App Icon* | *Cyan VR Vortex Glyph* | *Transparent Overlay Logo* |
+
+### 🖼️ Steam Hero Backgrounds (`1920x620`)
+
+**Steam Frame Hardware Edition Hero:**
+![Steam Frame Device Hero](docs/images/steam/hero_device.png)
+
+**SteamVR Cosmic Portal Edition Hero:**
+![Portal Edition Hero](docs/images/steam/hero.png)
+
+### 🌟 Concept Banner Artworks
+
+| 🌊 Stream Edition | 🛠️ Hardware Edition | 🚪 Gateway Edition |
+|:---:|:---:|:---:|
+| ![Stream Edition](docs/images/banner_option1_stream.jpg) | ![Hardware Edition](docs/images/banner_option2_hardware.jpg) | ![Gateway Edition](docs/images/banner_option3_gateway.jpg) |
+| *Data Stream & Wireless Sideloading* | *Industrial Steam Frame Device* | *Dimensional VR Portal Gateway* |
+
+---
+
 ## 🚀 Quick Start (On Your Steam Frame)
 
 ### ⚡ 1-Click Install (Single Command)
