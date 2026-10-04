@@ -64,7 +64,7 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
           else
-            TAG="v1.0.0"
+            TAG=$(python3 -c "import frameload; print('v' + frameload.__version__)")
           fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 

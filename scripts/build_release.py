@@ -11,8 +11,9 @@ import shutil
 import sys
 import tarfile
 
-VERSION = "1.0.0"
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
+from frameload import __version__ as VERSION
 DIST_DIR = os.path.join(ROOT_DIR, "dist")
 
 
@@ -128,8 +129,43 @@ def generate_checksums(files: list[str]) -> str:
     return checksums_path
 
 
+def create_release_notes() -> str:
+    """Generates RELEASE_NOTES.md describing release contents and features."""
+    notes_path = os.path.join(DIST_DIR, "RELEASE_NOTES.md")
+    content = f"""# 🚀 FrameLoad v{VERSION}
+
+An all-in-one, on-device VR sideloading engine, mirror catalog browser, and game manager engineered specifically for the **Valve Steam Frame (Galileo / Roy)** running SteamOS and the Lepton Android runtime container.
+
+## ⚡ 1-Click On-Device Installation
+
+Open Konsole on your Steam Frame in Desktop Mode and run:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/install.sh | bash
+```
+
+## ✨ Highlights & Features in v{VERSION}
+- **📊 Steam-Style Storage Manager:** Multi-drive overview (Internal NVMe SSD & MicroSD Card) with multi-colored segmented storage visualizer and 1-click drive migrator.
+- **📥 Universal Sideloading Hub & 2D Window Presets:** Sideload Quest APKs/XAPKs, Windows PCVR & Flat EXEs (via Proton ARM64 / FEX-Emu), and Linux native ARM64 apps with theater window presets (Tablet, Ultrawide, IMAX).
+- **🎵 Beat Saber Mods & Custom Songs:** Full custom content management with auto-folder creation, permission unlocking, song listing, and 1-click mod injector.
+- **🔄 On-Device Self-Updating Daemon:** In-headset update alerts with top header chip, prominent banner, and 1-click zero-downtime service reload.
+- **🎨 Complete Steam Grid Visual Assets:** High-resolution vertical posters (600x900), banners (920x430), heroes (1920x620), and 512x512 icons for SteamOS and SteamVR.
+- **☕ Ko-fi Integration:** Direct developer support links in header and diagnostics.
+- **🧹 Full Clean Uninstaller:** Complete trace removal option in Settings & Diagnostics.
+
+## 📦 Distribution Packages
+- **`frameload-v{VERSION}-standalone.tar.gz`**: Standalone distribution archive including all web UI assets and dependencies.
+- **`frameload-installer.sh`**: Self-extracting on-device installer script.
+- **`SHA256SUMS`**: Cryptographic integrity checksums.
+"""
+    with open(notes_path, "w", encoding="utf-8") as f:
+        f.write(content.strip() + "\n")
+    print(f"📝 Created {notes_path}")
+    return notes_path
+
+
 def main() -> None:
     os.makedirs(DIST_DIR, exist_ok=True)
+    create_release_notes()
     tarball = create_standalone_tarball()
     installer = create_self_extracting_installer(tarball)
     files = [tarball, installer]
