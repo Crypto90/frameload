@@ -60,10 +60,16 @@ def main() -> None:
     launch_parser = subparsers.add_parser("launch", help="Launch an installed game")
     launch_parser.add_argument("package", help="Package name of the game")
 
-    # Uninstall
+    # Uninstall game
     uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a game and remove Steam shortcut")
     uninstall_parser.add_argument("package", help="Package name of the game")
     uninstall_parser.add_argument("--keep-saves", action="store_true", help="Keep save files in backup")
+
+    # Uninstall App
+    uninst_app_parser = subparsers.add_parser("uninstall-app", help="Completely uninstall FrameLoad and remove all traces from system")
+    uninst_app_parser.add_argument("--purge-games", action="store_true", help="Also delete all sideloaded VR games in ~/Applications/quest-frame")
+    uninst_app_parser.add_argument("--keep-backups", action="store_true", help="Preserve game save backups in ~/.local/share/frameload/backups")
+    uninst_app_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     args = parser.parse_args()
 
@@ -117,6 +123,16 @@ def main() -> None:
         print(f"Uninstalling {args.package}...")
         res = Uninstaller.uninstall(args.package, keep_saves=args.keep_saves)
         print(json.dumps(res, indent=2))
+    elif args.command == "uninstall-app":
+        if not args.yes:
+            confirm = input("⚠️  Are you sure you want to completely uninstall FrameLoad and remove all traces? [y/N]: ").strip().lower()
+            if confirm not in ("y", "yes"):
+                print("Aborted.")
+                sys.exit(0)
+        print("Completely removing FrameLoad and system integrations...")
+        res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
+        print("Uninstallation summary:", json.dumps(res, indent=2))
+        print("✔ FrameLoad successfully removed from the system.")
 
 
 if __name__ == "__main__":

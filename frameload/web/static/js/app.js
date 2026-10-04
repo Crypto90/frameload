@@ -1506,3 +1506,87 @@ async function updateAllGames() {
   }
 }
 window.updateAllGames = updateAllGames;
+
+// --- Clean Uninstallation of FrameLoad App ---
+function openUninstallAppModal() {
+  const modal = document.getElementById("uninstall-app-modal");
+  if (!modal) return;
+  const input = document.getElementById("uninst-confirm-input");
+  const btn = document.getElementById("uninst-submit-btn");
+  if (input) {
+    input.value = "";
+    input.oninput = () => {
+      if (btn) btn.disabled = (input.value.trim().toUpperCase() !== "UNINSTALL");
+    };
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Confirm & Completely Remove";
+  }
+  modal.classList.add("open");
+}
+window.openUninstallAppModal = openUninstallAppModal;
+
+function closeUninstallAppModal() {
+  const modal = document.getElementById("uninstall-app-modal");
+  if (modal) modal.classList.remove("open");
+}
+window.closeUninstallAppModal = closeUninstallAppModal;
+
+async function executeUninstallApp() {
+  const purgeGames = document.getElementById("uninst-purge-games")?.checked || false;
+  const keepBackups = document.getElementById("uninst-keep-backups")?.checked || false;
+  const btn = document.getElementById("uninst-submit-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Uninstalling & Cleaning...";
+  }
+
+  try {
+    const res = await fetch("/api/system/uninstall-app", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        confirm: "UNINSTALL",
+        purge_games: purgeGames,
+        keep_backups: keepBackups
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.body.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#040915; color:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
+          <div style="font-size:3.5rem; margin-bottom:16px;">✨</div>
+          <h1 style="color:#00f5d4; font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
+          <p style="color:#94a3b8; max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
+            All system integrations have been removed from your Steam Frame: background systemd service stopped, desktop launcher deleted, Steam shortcuts &amp; grid artwork removed, and caches cleared.
+          </p>
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:16px 24px; color:#cbd5e1; font-size:0.9rem; margin-bottom:20px;">
+            ${keepBackups ? "💾 Save game backups preserved in <code>~/.local/share/frameload/backups</code>" : "🗑️ All data and caches have been purged."}
+          </div>
+          <p style="color:#64748b; font-size:0.85rem;">You may now safely close this browser window.</p>
+        </div>
+      `;
+    } else {
+      showToast(data.error || "Uninstall failed", "error");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Confirm & Completely Remove";
+      }
+    }
+  } catch (err) {
+    // Daemon exited normally as part of uninstallation
+    document.body.innerHTML = `
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#040915; color:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
+        <div style="font-size:3.5rem; margin-bottom:16px;">✨</div>
+        <h1 style="color:#00f5d4; font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
+        <p style="color:#94a3b8; max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
+          The background daemon has shut down and all system integrations have been cleanly removed from your Steam Frame.
+        </p>
+        <p style="color:#64748b; font-size:0.85rem;">You may now safely close this browser tab.</p>
+      </div>
+    `;
+  }
+}
+window.executeUninstallApp = executeUninstallApp;
+

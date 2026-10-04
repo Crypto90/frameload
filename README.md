@@ -157,6 +157,42 @@ cd FrameLoad
 
 ---
 
+## 🗑️ Clean Uninstallation
+
+If you ever wish to completely remove FrameLoad and all its traces from your device:
+
+### ⚡ 1-Click Clean Uninstall (Single Command)
+
+```bash
+curl -fsSL https://forgejo.shieldserver.de/Crypto90/FrameLoad/raw/branch/main/uninstall.sh | bash
+```
+
+Or from your terminal if already installed:
+
+```bash
+bash ~/Applications/FrameLoad/uninstall.sh
+```
+
+### Options & Flags:
+
+| Option | Description |
+| :--- | :--- |
+| **`./uninstall.sh`** | Interactive mode (asks whether to keep games and save backups). |
+| **`-y` / `--yes`** | Skips prompts; cleanly removes daemon, desktop launcher, Steam shortcuts, and caches while preserving installed games and saves. |
+| **`--purge-games`** | Also deletes all sideloaded VR games in `~/Applications/quest-frame/` and on MicroSD cards. |
+| **`--purge-all`** | Total clean wipe: removes app, caches, games, saves, and backups. |
+| **`--keep-backups`** | Preserves game save backups in `~/.local/share/frameload/backups/` *(default: yes)*. |
+
+### What the Uninstaller Cleans Up Automatically:
+1. Stops and deletes the background systemd service (`frameload.service`).
+2. Removes the Desktop launcher (`~/.local/share/applications/frameload.desktop`).
+3. Removes FrameLoad and all 5 Grid artwork files from Steam (`shortcuts.vdf` and `userdata/*/config/grid/`).
+4. Kills any lingering Lepton container shims.
+5. Deletes caches, metadata, and temporary files (`~/.local/share/frameload/`).
+6. Optionally deletes installed VR games and preserves or removes save game backups according to your choice.
+
+---
+
 ## 🛠️ Command-Line Interface (CLI)
 
 FrameLoad also includes a powerful CLI:
@@ -185,6 +221,9 @@ frameload launch com.beatgames.beatsaber
 
 # Cleanly uninstall a game and remove its Steam shortcut
 frameload uninstall com.beatgames.beatsaber --keep-saves
+
+# Completely uninstall FrameLoad itself and remove all system traces
+frameload uninstall-app --keep-backups
 ```
 
 ---

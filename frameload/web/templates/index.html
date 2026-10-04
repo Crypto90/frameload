@@ -264,6 +264,22 @@
             <button id="btn-system-update" class="btn-primary compact" style="display:none;" onclick="triggerAppUpdate()">⚡ 1-Click Update</button>
           </div>
         </div>
+        <div style="background:var(--bg-card); border:1px solid rgba(239, 71, 111, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-danger);">Clean Uninstallation</h3>
+            <span class="badge" style="background:rgba(239, 71, 111, 0.15); color:var(--accent-danger);">Danger Zone</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">
+            Completely remove FrameLoad from your Steam Frame: stops the daemon, deletes desktop &amp; Steam shortcuts, clears grid artwork, and cleans up caches.
+          </p>
+          <button class="btn-danger compact" onclick="openUninstallAppModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Uninstall FrameLoad...
+          </button>
+        </div>
       </div>
     </section>
 
@@ -525,6 +541,40 @@
         <button class="btn-secondary" onclick="closeUpdateModal()">Later</button>
         <button id="modal-update-confirm-btn" class="btn-primary" onclick="triggerAppUpdate()">
           ⚡ Update &amp; Restart Service (1-Click)
+        </button>
+      </div>
+    </div>
+  <!-- Complete App Uninstall Confirmation Modal -->
+  <div id="uninstall-app-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:520px;">
+      <button class="modal-close" onclick="closeUninstallAppModal()">&times;</button>
+      <h2 style="font-size:1.35rem; font-weight:800; color:#fff; margin-bottom:8px; display:flex; align-items:center; gap:10px;">
+        <span style="color:var(--accent-danger);">⚠️</span> Completely Uninstall FrameLoad?
+      </h2>
+      <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">
+        This will stop the background daemon and remove all FrameLoad files, Steam shortcuts, grid artwork, and caches from your Steam Frame.
+      </p>
+
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:14px; margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.88rem; color:#fff; margin-bottom:10px;">
+          <input type="checkbox" id="uninst-purge-games" style="width:16px; height:16px; accent-color:var(--accent-danger);">
+          Also delete all sideloaded VR games in <code>~/Applications/quest-frame</code>
+        </label>
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.88rem; color:#fff;">
+          <input type="checkbox" id="uninst-keep-backups" checked style="width:16px; height:16px; accent-color:var(--accent-cyan);">
+          Preserve game save backups in <code>~/.local/share/frameload/backups</code>
+        </label>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:6px;">Type <strong style="color:var(--accent-danger);">UNINSTALL</strong> below to confirm:</label>
+        <input type="text" id="uninst-confirm-input" class="search-input" placeholder="Type UNINSTALL" style="width:100%; border:1px solid rgba(239, 71, 111, 0.4); border-radius:var(--radius-md); padding:8px 12px; background:rgba(0,0,0,0.4); color:#fff;">
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px;">
+        <button class="btn-secondary" onclick="closeUninstallAppModal()">Cancel</button>
+        <button id="uninst-submit-btn" class="btn-danger" disabled onclick="executeUninstallApp()">
+          Confirm &amp; Completely Remove
         </button>
       </div>
     </div>

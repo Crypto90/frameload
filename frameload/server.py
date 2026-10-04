@@ -252,6 +252,26 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/system/fix_keyring":
             fixes = ensure_host_podman_fixes()
             self.send_json({"success": True, "fixes": fixes})
+        elif path == "/api/system/uninstall-app":
+            confirm = body.get("confirm", "")
+            if confirm != "UNINSTALL":
+                self.send_json({"error": "Confirmation required. Send confirm='UNINSTALL'."}, status=HTTPStatus.BAD_REQUEST)
+                return
+            purge_games = bool(body.get("purge_games", False))
+            keep_backups = bool(body.get("keep_backups", False))
+
+            import threading
+            def _deferred_uninstall():
+                import time
+                time.sleep(1.0)
+                Uninstaller.uninstall_frameload_app(purge_games=purge_games, keep_backups=keep_backups)
+                os._exit(0)
+
+            threading.Thread(target=_deferred_uninstall, daemon=True).start()
+            self.send_json({
+                "success": True,
+                "message": "FrameLoad uninstallation initiated. The daemon is shutting down and all traces are being removed."
+            })
         elif path == "/api/config":
             cfg = Config.get()
             for k, v in body.items():
