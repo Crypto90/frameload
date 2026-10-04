@@ -207,7 +207,8 @@ class UpdateManager:
                     timeout=30
                 )
                 if res.returncode != 0:
-                    # Retry with rebase or reset if local modifications exist
+                    # Stash uncommitted changes if any and retry
+                    subprocess.run(["git", "stash"], cwd=ROOT_DIR, capture_output=True, timeout=10)
                     res = subprocess.run(
                         ["git", "pull", "origin", "main"],
                         cwd=ROOT_DIR,
@@ -221,38 +222,59 @@ class UpdateManager:
         else:
             # 2. Standalone update via release tarball
             status = UpdateManager.check_app_update()
+            tag = status.get("latest_tag", "v1.0.0")
             tarball_url = status.get("download_url")
             if not tarball_url:
-                tarball_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/v1.0.0/frameload-v1.0.0-standalone.tar.gz"
+                tarball_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{tag}/frameload-{tag}-standalone.tar.gz"
 
             try:
                 tmp_archive = os.path.join(ROOT_DIR, "frameload_update_temp.tar.gz")
-                req = urllib.request.Request(tarball_url, headers={"User-Agent": "FrameLoad-Updater/1.0"})
-                with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_archive, "wb") as f:
-                    shutil.copyfileobj(resp, f)
+                req = urllib.request.Request(tarball_url, headers={"User-Agent": f"FrameLoad-Updater/{__version__}"})
+                try:
+                    with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_archive, "wb") as f:
+                        shutil.copyfileobj(resp, f)
+                except urllib.error.HTTPError as he:
+                    if he.code == 404:
+                        # Fallback to direct github archive tarball
+                        fallback_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/archive/refs/tags/{tag}.tar.gz"
+                        req2 = urllib.request.Request(fallback_url, headers={"User-Agent": f"FrameLoad-Updater/{__version__}"})
+                        with urllib.request.urlopen(req2, timeout=60) as resp2, open(tmp_archive, "wb") as f2:
+                            shutil.copyfileobj(resp2, f2)
+                    else:
+                        raise
 
                 with tarfile.open(tmp_archive, "r:gz") as tar:
-                    tar.extractall(ROOT_DIR)
+                    members = tar.getmembers()
+                    first_parts = [m.name.split("/")[0] for m in members if "/" in m.name]
+                    common_root = first_parts[0] if (first_parts and all(p == first_parts[0] for p in first_parts)) else None
+                    if common_root and not any(m.name == "install.sh" for m in members):
+                        for m in members:
+                            if m.name.startswith(common_root + "/"):
+                                m.name = m.name[len(common_root) + 1:]
+                                if m.name:
+                                    tar.extract(m, ROOT_DIR)
+                    else:
+                        tar.extractall(ROOT_DIR)
 
                 if os.path.isfile(tmp_archive):
                     os.remove(tmp_archive)
-                update_log = "Successfully extracted latest standalone release bundle."
+                update_log = f"Successfully extracted {tag} release bundle."
             except Exception as e:
                 return {"success": False, "error": f"Tarball update failed: {e}"}
 
-        # 3. Execute install.sh to refresh shortcuts, systemd services, and container settings
+        # 3. Execute install.sh with --no-restart to refresh shortcuts, systemd services, and container settings
         install_script = os.path.join(ROOT_DIR, "install.sh")
         if os.path.isfile(install_script):
             try:
                 os.chmod(install_script, 0o755)
-                subprocess.run(["bash", install_script], cwd=ROOT_DIR, capture_output=True, timeout=30)
+                subprocess.run(["bash", install_script, "--no-restart"], cwd=ROOT_DIR, capture_output=True, timeout=30)
             except Exception as e:
                 print(f"[FrameLoad Updater] Warning running install.sh: {e}")
 
-        # 4. Trigger systemd service restart in background if active
+        # 4. Trigger systemd service restart in background after response is sent (2s delay)
         try:
             subprocess.Popen(
-                ["bash", "-c", "sleep 1 && systemctl --user restart frameload.service"],
+                ["bash", "-c", "sleep 2 && systemctl --user restart frameload.service"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )

@@ -101,8 +101,10 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - Multi-selection checkboxes with floating batch action bar and space reclaimed calculation.
   - Safe batch uninstallation with automatic save game archiving.
   - 1-click download cache cleanup and Lepton shader cache reset.
-- **⚡ 1-Click Updates Management (OTA & Games):**
-  - **FrameLoad App Self-Updater:** Automatically checks GitHub releases for new versions, with a 1-click update button that pulls updates, refreshes container configurations, and reloads the service.
+- **⚡ 1-Click In-Headset Self-Updater & OTA Management:**
+  - **FrameLoad Self-Updating Daemon:** Automatically checks GitHub releases and remote git heads in the background without requiring a PC, terminal, or keyboard.
+  - **In-Headset Update Alerts:** Displays a pulsating animated badge in the top header and a prominent dismissable banner showing the new version and changelog.
+  - **1-Click Update & Seamless Service Reload:** 1-click button pulls the update (via git or GitHub standalone tarball bundle), refreshes container configurations, desktop shortcuts, and automatically restarts the background `systemd` daemon with zero user intervention.
   - **Installed VR Game Updates:** Compares installed titles against the VRP catalog mirror, highlighting games with newer releases.
   - **1-Click Game Upgrades:** Upgrade individual games or batch update all titles with one click while safely preserving all save data (`lepton-data/`).
 

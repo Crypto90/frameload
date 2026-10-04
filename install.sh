@@ -110,8 +110,13 @@ EOF
 
 # Reload and enable service
 systemctl --user daemon-reload || true
-systemctl --user enable --now frameload.service || true
-ok "FrameLoad service enabled on port 5050"
+if [[ "${1:-}" != "--no-restart" && "${1:-}" != "--update" ]]; then
+    systemctl --user enable --now frameload.service || true
+    ok "FrameLoad service enabled on port 5050"
+else
+    systemctl --user enable frameload.service || true
+    ok "FrameLoad service updated (restart deferred)"
+fi
 
 # 5. Add FrameLoad to Steam as a Non-Steam Game shortcut with full Steam Grid artwork
 say "Adding FrameLoad shortcut to Steam library with full Grid artwork..."

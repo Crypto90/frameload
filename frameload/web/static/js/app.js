@@ -1487,10 +1487,20 @@ async function checkForUpdates(userTriggered = false) {
       sysVersion.textContent = `v${appUpdate.current_version}`;
     }
 
+    const topBanner = document.getElementById("app-update-top-banner");
+    const topBannerVer = document.getElementById("top-banner-version");
+
     if (appUpdate.has_update) {
       if (alertChip) {
         alertChip.style.display = "inline-flex";
         if (alertTag) alertTag.textContent = `v${appUpdate.latest_version}`;
+      }
+      if (topBanner && topBannerVer) {
+        topBannerVer.textContent = `v${appUpdate.latest_version}`;
+        const isDismissed = sessionStorage.getItem(`dismissed_update_${appUpdate.latest_version}`);
+        if (!isDismissed) {
+          topBanner.style.display = "flex";
+        }
       }
       if (sysBadge) {
         sysBadge.style.background = "rgba(255, 183, 3, 0.15)";
@@ -1500,6 +1510,7 @@ async function checkForUpdates(userTriggered = false) {
       if (sysUpdateBtn) sysUpdateBtn.style.display = "inline-flex";
     } else {
       if (alertChip) alertChip.style.display = "none";
+      if (topBanner) topBanner.style.display = "none";
       if (sysBadge) {
         sysBadge.style.background = "rgba(0, 245, 212, 0.15)";
         sysBadge.style.color = "var(--accent-emerald)";
@@ -1576,6 +1587,15 @@ function closeUpdateModal() {
   if (modal) modal.classList.remove("open");
 }
 window.closeUpdateModal = closeUpdateModal;
+
+function dismissUpdateBanner() {
+  const topBanner = document.getElementById("app-update-top-banner");
+  if (topBanner) topBanner.style.display = "none";
+  if (state.updates && state.updates.app && state.updates.app.latest_version) {
+    sessionStorage.setItem(`dismissed_update_${state.updates.app.latest_version}`, "true");
+  }
+}
+window.dismissUpdateBanner = dismissUpdateBanner;
 
 async function triggerAppUpdate() {
   const btn = document.getElementById("modal-update-confirm-btn");

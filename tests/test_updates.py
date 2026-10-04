@@ -52,6 +52,25 @@ class TestUpdateManager(unittest.TestCase):
         self.assertEqual(res["games"][0]["package"], "com.test.game")
         self.assertEqual(res["games"][0]["new_version_code"], "2")
 
+    @patch("subprocess.Popen")
+    @patch("subprocess.run")
+    @patch("os.path.isdir")
+    def test_perform_app_update_git(self, mock_isdir, mock_run, mock_popen):
+        mock_isdir.return_value = True  # is_git
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "Already up to date."
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+
+        res = UpdateManager.perform_app_update()
+        self.assertTrue(res["success"])
+        self.assertIn("FrameLoad updated successfully", res["message"])
+        # Verify install.sh was called with --no-restart
+        install_calls = [c for c in mock_run.call_args_list if any("--no-restart" in str(arg) for arg in c[0])]
+        self.assertTrue(len(install_calls) >= 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+
