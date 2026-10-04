@@ -1,8 +1,10 @@
 # FrameLoad 🚀
 
+![FrameLoad Banner](docs/images/banner.jpg)
+
 **All-in-One On-Device VR Sideloading, Catalog Downloader & Library Manager for the Steam Frame**
 
-[![Steam Frame](https://img.shields.io/badge/Steam%20Frame-Supported-1b2838?logo=steam&logoColor=white)](https://github.com)
+[![Steam Frame](https://img.shields.io/badge/Steam%20Frame-Supported-1b2838?logo=steam&logoColor=white)](https://forgejo.shieldserver.de/Crypto90/FrameLoad)
 [![Platform](https://img.shields.io/badge/Platform-SteamOS%20%7C%20Linux%20ARM64-blue)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](#)
 
