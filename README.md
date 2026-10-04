@@ -57,6 +57,13 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - 1-click game save export/import (`tar.gz`).
   - Per-game runtime settings editor (72Hz, 90Hz, 120Hz refresh rates, resolution scaling, MSAA, controller model rendering).
   - Clean uninstaller: Stops running containers, purges game data, and cleans Steam library shortcuts.
+- **📊 Steam-Style Storage Manager:**
+  - Designed after Steam's storage settings with horizontal drive switcher cards (Internal SSD, MicroSD card).
+  - Multi-colored segmented bar visualizer: Blue (Games), Teal (Saves & Data), Amber (Shaders & Cache), Purple (System), and Grey (Free Space).
+  - Instant disk space breakdown per game (App APKs, saves, shader caches, artwork).
+  - Multi-selection checkboxes with floating batch action bar and space reclaimed calculation.
+  - Safe batch uninstallation with automatic save game archiving.
+  - 1-click download cache cleanup and Lepton shader cache reset.
 
 ---
 

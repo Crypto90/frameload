@@ -16,6 +16,13 @@ const state = {
   installed: [],
   downloads: [],
   system: null,
+  storage: {
+    data: null,
+    activeDeviceId: "internal",
+    selectedPackages: new Set(),
+    searchQuery: "",
+    sortBy: "size_desc"
+  },
   activeTab: "catalog",
   selectedGame: null
 };
@@ -26,10 +33,12 @@ document.addEventListener("DOMContentLoaded", () => {
   setupSearch();
   setupModals();
   setupSideloadForm();
+  setupStorage();
 
   // Initial loads
   loadCatalog();
   loadInstalled();
+  loadStorageOverview();
   loadSystemTelemetry();
   startPollingDownloads();
   setInterval(loadSystemTelemetry, 8000);
@@ -52,6 +61,7 @@ function setupTabs() {
 
       if (targetId === "catalog") loadCatalog();
       else if (targetId === "library") loadInstalled();
+      else if (targetId === "storage") loadStorageOverview();
       else if (targetId === "system") loadSystemTelemetry();
 
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
@@ -594,3 +604,490 @@ function showToast(message, type = "info") {
   }, 4000);
 }
 window.showToast = showToast;
+
+// ==========================================================================
+// Steam Storage Manager Implementation
+// ==========================================================================
+
+function openStorageTab() {
+  const tab = document.querySelector('.tab-btn[data-tab="storage"]');
+  if (tab) tab.click();
+}
+window.openStorageTab = openStorageTab;
+
+function setupStorage() {
+  const searchInput = document.getElementById("storage-search-input");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      state.storage.searchQuery = e.target.value.toLowerCase().trim();
+      renderStorageGames();
+    });
+  }
+
+  const sortSelect = document.getElementById("storage-sort-select");
+  if (sortSelect) {
+    sortSelect.addEventListener("change", (e) => {
+      state.storage.sortBy = e.target.value;
+      renderStorageGames();
+    });
+  }
+
+  // Close dropdown on outside click
+  document.addEventListener("click", (e) => {
+    const menu = document.getElementById("storage-dropdown-menu");
+    const btn = document.getElementById("storage-menu-btn");
+    if (menu && menu.classList.contains("open")) {
+      if (!menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.classList.remove("open");
+      }
+    }
+  });
+}
+
+function toggleStorageMenu() {
+  const menu = document.getElementById("storage-dropdown-menu");
+  if (menu) menu.classList.toggle("open");
+}
+window.toggleStorageMenu = toggleStorageMenu;
+
+async function loadStorageOverview(deviceId = state.storage.activeDeviceId) {
+  try {
+    const res = await fetch(`/api/storage?device=${encodeURIComponent(deviceId || 'internal')}`);
+    const data = await res.json();
+    state.storage.data = data;
+    if (data.active_device) {
+      state.storage.activeDeviceId = data.active_device.id;
+    }
+
+    // Current Anchor Path Display
+    const currentPath = document.getElementById("storage-current-path");
+    if (currentPath) {
+      currentPath.textContent = data.anchor_dir || (data.active_device ? data.active_device.path : "Internal Storage");
+    }
+
+    // Cache Size in Options Menu
+    const menuCache = document.getElementById("menu-cache-size");
+    if (menuCache && data.cache) {
+      menuCache.textContent = data.cache.formatted;
+    }
+
+    // Visualizer Multi-Color Segmented Progress Bar
+    const bd = data.breakdown || {};
+    const barGames = document.getElementById("seg-bar-games");
+    const barSaves = document.getElementById("seg-bar-saves");
+    const barShaders = document.getElementById("seg-bar-shaders");
+    const barOther = document.getElementById("seg-bar-other");
+    const barFree = document.getElementById("seg-bar-free");
+
+    if (barGames) {
+      barGames.style.width = `${bd.games_percent || 0}%`;
+      barGames.title = `Games: ${bd.games_formatted} (${bd.games_percent}%)`;
+    }
+    if (barSaves) {
+      barSaves.style.width = `${bd.saves_percent || 0}%`;
+      barSaves.title = `Saves & Data: ${bd.saves_formatted} (${bd.saves_percent}%)`;
+    }
+    if (barShaders) {
+      const shadersCombinedPct = (bd.shaders_percent || 0) + (bd.cache_percent || 0);
+      barShaders.style.width = `${shadersCombinedPct}%`;
+      barShaders.title = `Shaders & Cache: ${bd.shaders_formatted} (${bd.shaders_percent}%)`;
+    }
+    if (barOther) {
+      barOther.style.width = `${bd.other_percent || 0}%`;
+      barOther.title = `Other / System: ${bd.other_formatted} (${bd.other_percent}%)`;
+    }
+    if (barFree) {
+      barFree.style.width = `${bd.free_percent || 0}%`;
+      barFree.title = `Free Space: ${bd.free_formatted} (${bd.free_percent}%)`;
+    }
+
+    // Legend
+    const legGames = document.getElementById("leg-games-val");
+    if (legGames) legGames.textContent = bd.games_formatted || "0 B";
+    const legSaves = document.getElementById("leg-saves-val");
+    if (legSaves) legSaves.textContent = bd.saves_formatted || "0 B";
+    const legShaders = document.getElementById("leg-shaders-val");
+    if (legShaders) legShaders.textContent = bd.shaders_formatted || "0 B";
+    const legOther = document.getElementById("leg-other-val");
+    if (legOther) legOther.textContent = bd.other_formatted || "0 B";
+    const legFree = document.getElementById("leg-free-val");
+    if (legFree) legFree.textContent = bd.free_formatted || "0 B";
+
+    // Header Count Badge
+    const countBadge = document.getElementById("storage-games-count");
+    if (countBadge) countBadge.textContent = data.games_count || 0;
+
+    // Render Drive Switcher Cards
+    renderStorageDrives(data.devices || [], data.active_device);
+
+    // Render Games List
+    renderStorageGames();
+
+    // Update Bottom Batch Action Bar
+    updateStorageBatchBar();
+
+  } catch (err) {
+    console.error("Error loading storage overview:", err);
+  }
+}
+window.loadStorageOverview = loadStorageOverview;
+
+function renderStorageDrives(devices, activeDev) {
+  const container = document.getElementById("storage-drives-list");
+  if (!container) return;
+
+  container.innerHTML = devices.map(dev => {
+    const isActive = activeDev && activeDev.id === dev.id;
+    return `
+      <div class="storage-drive-card ${isActive ? 'active' : ''}" onclick="selectStorageDrive('${dev.id}')">
+        <div class="drive-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+        </div>
+        <div class="drive-meta">
+          <div class="drive-name">
+            ${dev.name} ${dev.is_default ? '<span class="drive-star" title="Default Install Drive">★</span>' : ''}
+          </div>
+          <div class="drive-caption">${dev.free_formatted} FREE OF ${dev.total_formatted}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function selectStorageDrive(devId) {
+  state.storage.activeDeviceId = devId;
+  state.storage.selectedPackages.clear();
+  loadStorageOverview(devId);
+}
+window.selectStorageDrive = selectStorageDrive;
+
+function renderStorageGames() {
+  const container = document.getElementById("storage-games-list");
+  if (!container) return;
+
+  if (!state.storage.data || !state.storage.data.games) {
+    container.innerHTML = `<div class="loading-state">Scanning storage telemetry...</div>`;
+    return;
+  }
+
+  let games = [...state.storage.data.games];
+
+  // Search filter
+  const q = state.storage.searchQuery;
+  if (q) {
+    games = games.filter(g => 
+      (g.title && g.title.toLowerCase().includes(q)) ||
+      (g.package && g.package.toLowerCase().includes(q))
+    );
+  }
+
+  // Sorting
+  const sortBy = state.storage.sortBy;
+  if (sortBy === "size_desc") {
+    games.sort((a, b) => (b.total_bytes || 0) - (a.total_bytes || 0));
+  } else if (sortBy === "size_asc") {
+    games.sort((a, b) => (a.total_bytes || 0) - (b.total_bytes || 0));
+  } else if (sortBy === "name_asc") {
+    games.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  } else if (sortBy === "saves_desc") {
+    games.sort((a, b) => (b.saves_bytes || 0) - (a.saves_bytes || 0));
+  } else if (sortBy === "date_desc") {
+    games.sort((a, b) => (b.installed_time || 0) - (a.installed_time || 0));
+  }
+
+  if (games.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:48px 20px; color:var(--text-muted); background:var(--bg-card); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
+        <p style="font-size:1.05rem; font-weight:600; color:#fff; margin-bottom:6px;">No installed games match your search</p>
+        <p style="font-size:0.85rem;">Clear search filter or install games from the Catalog tab.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = games.map(game => {
+    const isSelected = state.storage.selectedPackages.has(game.package);
+    const thumbUrl = game.thumbnail_url || "";
+    const thumbHtml = thumbUrl
+      ? `<img src="${thumbUrl}" class="storage-game-thumb" alt="${game.title}" onerror="this.src='/static/icons/default-game.svg'">`
+      : `<div class="storage-game-thumb" style="display:flex; align-items:center; justify-content:center; color:var(--accent-cyan);">
+           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+             <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+             <polyline points="2 17 12 22 22 17"></polyline>
+             <polyline points="2 12 12 17 22 12"></polyline>
+           </svg>
+         </div>`;
+
+    return `
+      <div class="storage-game-row ${isSelected ? 'selected' : ''}" 
+           data-package="${game.package}"
+           tabindex="0"
+           role="checkbox"
+           aria-checked="${isSelected}"
+           onclick="toggleStorageGameSelection('${game.package}')">
+        <div class="storage-game-left">
+          ${thumbHtml}
+          <div class="storage-game-info">
+            <div class="storage-game-title">${game.title}</div>
+            <div class="storage-game-meta">
+              <span class="storage-game-badge ${game.is_vr ? 'vr' : ''}">${game.is_vr ? 'Quest VR' : 'Flat'}</span>
+              <span>•</span>
+              <span class="storage-game-breakdown">
+                App: ${game.app_formatted} • Saves: ${game.saves_formatted} • Shaders: ${game.shaders_formatted}
+              </span>
+              <span>•</span>
+              <span>${game.installed_formatted}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="storage-game-right">
+          <div class="storage-game-size">${game.total_formatted}</div>
+          <div class="steam-checkbox-box" title="Select for uninstall">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function toggleStorageGameSelection(pkg) {
+  if (state.storage.selectedPackages.has(pkg)) {
+    state.storage.selectedPackages.delete(pkg);
+  } else {
+    state.storage.selectedPackages.add(pkg);
+  }
+
+  // Update DOM row
+  const row = document.querySelector(`.storage-game-row[data-package="${pkg}"]`);
+  if (row) {
+    const isSelected = state.storage.selectedPackages.has(pkg);
+    row.classList.toggle("selected", isSelected);
+    row.setAttribute("aria-checked", isSelected ? "true" : "false");
+  }
+
+  updateStorageBatchBar();
+}
+window.toggleStorageGameSelection = toggleStorageGameSelection;
+
+function toggleSelectAllStorageGames() {
+  if (!state.storage.data || !state.storage.data.games) return;
+  const games = state.storage.data.games;
+
+  if (state.storage.selectedPackages.size === games.length) {
+    state.storage.selectedPackages.clear();
+  } else {
+    games.forEach(g => state.storage.selectedPackages.add(g.package));
+  }
+
+  renderStorageGames();
+  updateStorageBatchBar();
+}
+window.toggleSelectAllStorageGames = toggleSelectAllStorageGames;
+
+function deselectAllStorageGames() {
+  state.storage.selectedPackages.clear();
+  document.querySelectorAll(".storage-game-row").forEach(r => {
+    r.classList.remove("selected");
+    r.setAttribute("aria-checked", "false");
+  });
+  updateStorageBatchBar();
+}
+window.deselectAllStorageGames = deselectAllStorageGames;
+
+function updateStorageBatchBar() {
+  const bar = document.getElementById("storage-batch-bar");
+  const countEl = document.getElementById("batch-selected-count");
+  const sizeEl = document.getElementById("batch-selected-size");
+  const btnCount = document.getElementById("batch-uninstall-btn-count");
+  const uninstallBtn = document.getElementById("batch-uninstall-btn");
+
+  const count = state.storage.selectedPackages.size;
+  let totalBytes = 0;
+
+  if (state.storage.data && state.storage.data.games) {
+    for (const g of state.storage.data.games) {
+      if (state.storage.selectedPackages.has(g.package)) {
+        totalBytes += (g.total_bytes || 0);
+      }
+    }
+  }
+
+  const formattedSize = formatBytes(totalBytes);
+
+  if (countEl) countEl.textContent = count;
+  if (sizeEl) sizeEl.textContent = formattedSize;
+  if (btnCount) btnCount.textContent = count;
+
+  if (bar) {
+    bar.classList.toggle("visible", count > 0);
+  }
+
+  if (uninstallBtn) {
+    uninstallBtn.disabled = count === 0;
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function openBatchUninstallModal() {
+  const count = state.storage.selectedPackages.size;
+  if (count === 0) return;
+
+  const modal = document.getElementById("batch-uninstall-modal");
+  const preview = document.getElementById("modal-batch-games-preview");
+  const countEl = document.getElementById("modal-batch-count");
+  const reclaimEl = document.getElementById("modal-batch-reclaim");
+
+  if (!modal || !state.storage.data) return;
+
+  const selectedGames = state.storage.data.games.filter(g => state.storage.selectedPackages.has(g.package));
+  const totalBytes = selectedGames.reduce((acc, g) => acc + (g.total_bytes || 0), 0);
+
+  if (countEl) countEl.textContent = count;
+  if (reclaimEl) reclaimEl.textContent = formatBytes(totalBytes);
+
+  if (preview) {
+    preview.innerHTML = selectedGames.map(g => `
+      <div class="batch-preview-row">
+        <span class="batch-preview-row-title">${g.title}</span>
+        <span class="batch-preview-row-size">${g.total_formatted}</span>
+      </div>
+    `).join("");
+  }
+
+  modal.classList.add("open");
+}
+window.openBatchUninstallModal = openBatchUninstallModal;
+
+function closeBatchModal() {
+  const modal = document.getElementById("batch-uninstall-modal");
+  if (modal) modal.classList.remove("open");
+}
+window.closeBatchModal = closeBatchModal;
+
+async function executeBatchUninstall() {
+  const packages = Array.from(state.storage.selectedPackages);
+  if (packages.length === 0) return;
+
+  const keepSaves = document.getElementById("modal-confirm-keep-saves").checked;
+  const btn = document.getElementById("modal-batch-confirm-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Uninstalling...";
+  }
+
+  showToast(`Uninstalling ${packages.length} games...`, "info");
+
+  try {
+    const res = await fetch("/api/storage/batch-uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packages: packages, keep_saves: keepSaves })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`Successfully uninstalled ${data.uninstalled_count} games! Reclaimed ${data.reclaimed_formatted}.`, "success");
+      closeBatchModal();
+      deselectAllStorageGames();
+      loadStorageOverview();
+      loadInstalled();
+      loadSystemTelemetry();
+    } else {
+      showToast(data.error || "Batch uninstall encountered issues", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Uninstall & Free Space";
+    }
+  }
+}
+window.executeBatchUninstall = executeBatchUninstall;
+
+// Cache Cleaning Modals & Actions
+function openCleanCacheModal() {
+  const modal = document.getElementById("clean-cache-modal");
+  const menu = document.getElementById("storage-dropdown-menu");
+  if (menu) menu.classList.remove("open");
+
+  if (!modal) return;
+  const cacheData = state.storage.data ? state.storage.data.cache : null;
+  const sizeEl = document.getElementById("clean-cache-size");
+  if (sizeEl && cacheData) {
+    sizeEl.textContent = `${cacheData.formatted} (${cacheData.file_count} files)`;
+  }
+  modal.classList.add("open");
+}
+window.openCleanCacheModal = openCleanCacheModal;
+
+function closeCleanCacheModal() {
+  const modal = document.getElementById("clean-cache-modal");
+  if (modal) modal.classList.remove("open");
+}
+window.closeCleanCacheModal = closeCleanCacheModal;
+
+async function executeCleanCache() {
+  closeCleanCacheModal();
+  showToast("Cleaning download cache...", "info");
+  try {
+    const res = await fetch("/api/storage/clean-cache", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clear_downloads: true, clear_shaders: false })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Cache cleaned! Reclaimed ${data.reclaimed_formatted}.`, "success");
+      loadStorageOverview();
+      loadSystemTelemetry();
+    } else {
+      showToast(data.error || "Failed to clean cache", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.executeCleanCache = executeCleanCache;
+
+async function cleanShaderCaches() {
+  const menu = document.getElementById("storage-dropdown-menu");
+  if (menu) menu.classList.remove("open");
+
+  if (!confirm("Reset shader caches across all installed games? Shader files will be safely regenerated on next launch.")) return;
+
+  showToast("Resetting Lepton shader caches...", "info");
+  try {
+    const res = await fetch("/api/storage/clean-cache", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clear_downloads: false, clear_shaders: true })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Shader caches cleared! Reclaimed ${data.reclaimed_formatted}.`, "success");
+      loadStorageOverview();
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+window.cleanShaderCaches = cleanShaderCaches;

@@ -38,7 +38,7 @@
       <div id="header-battery" class="telemetry-chip battery">
         <span class="pulse-dot"></span> --%
       </div>
-      <div id="header-storage" class="telemetry-chip">
+      <div id="header-storage" class="telemetry-chip clickable" onclick="openStorageTab()" title="Open Steam Storage Manager">
         💾 -- GB Free
       </div>
       <div id="header-lepton" class="telemetry-chip lepton missing">
@@ -66,6 +66,15 @@
         <circle cx="17" cy="13" r="1"></circle>
       </svg>
       Installed Library
+    </button>
+    <button class="tab-btn" data-tab="storage" role="tab">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+        <line x1="6" y1="6" x2="6.01" y2="6"></line>
+        <line x1="6" y1="18" x2="6.01" y2="18"></line>
+      </svg>
+      Storage
     </button>
     <button class="tab-btn" data-tab="downloads" role="tab">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -201,6 +210,138 @@
       </div>
     </section>
 
+    <!-- 6. Storage Manager Tab (Steam-Style) -->
+    <section id="tab-storage" class="tab-panel">
+      <!-- Storage Header -->
+      <div class="storage-header-row">
+        <div>
+          <div class="storage-header-badge">SteamOS Storage</div>
+          <h2 class="storage-title">Storage</h2>
+          <div id="storage-active-path" class="storage-path-display">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span id="storage-current-path">/home/deck/Applications/quest-frame</span>
+          </div>
+        </div>
+        <div class="storage-header-actions">
+          <button id="storage-refresh-btn" class="btn-secondary" onclick="loadStorageOverview()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            Refresh
+          </button>
+          <div class="dropdown-wrapper">
+            <button id="storage-menu-btn" class="btn-secondary icon-only" title="Storage Actions" onclick="toggleStorageMenu()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="2"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+                <circle cx="19" cy="12" r="2"></circle>
+              </svg>
+            </button>
+            <div id="storage-dropdown-menu" class="dropdown-menu">
+              <div class="dropdown-item" onclick="openCleanCacheModal()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                Clean Download Cache (<span id="menu-cache-size">0 B</span>)
+              </div>
+              <div class="dropdown-item" onclick="cleanShaderCaches()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                Reset Lepton Shader Caches
+              </div>
+              <div class="dropdown-item" onclick="fixKeyring()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                Repair Container Keyring &amp; Perms
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drives Selector Bar (Matching Steam's horizontal drive pills) -->
+      <div id="storage-drives-list" class="storage-drives-list">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Segmented Visualizer Card -->
+      <div class="storage-visualizer-card">
+        <div class="segmented-progress-container">
+          <div class="segmented-progress-bar" id="storage-progress-bar">
+            <div class="seg-games" id="seg-bar-games" style="width: 0%" title="Games"></div>
+            <div class="seg-saves" id="seg-bar-saves" style="width: 0%" title="Saves & Data"></div>
+            <div class="seg-shaders" id="seg-bar-shaders" style="width: 0%" title="Shaders & Cache"></div>
+            <div class="seg-other" id="seg-bar-other" style="width: 0%" title="Other / System"></div>
+            <div class="seg-free" id="seg-bar-free" style="width: 100%" title="Free Space"></div>
+          </div>
+        </div>
+
+        <!-- Legend (Steam-style color pills) -->
+        <div class="storage-legend">
+          <div class="legend-item"><span class="legend-bullet bullet-games"></span> GAMES <strong id="leg-games-val">0 B</strong></div>
+          <div class="legend-item"><span class="legend-bullet bullet-saves"></span> SAVES &amp; DATA <strong id="leg-saves-val">0 B</strong></div>
+          <div class="legend-item"><span class="legend-bullet bullet-shaders"></span> SHADERS &amp; CACHE <strong id="leg-shaders-val">0 B</strong></div>
+          <div class="legend-item"><span class="legend-bullet bullet-other"></span> OTHER <strong id="leg-other-val">0 B</strong></div>
+          <div class="legend-item"><span class="legend-bullet bullet-free"></span> FREE <strong id="leg-free-val">0 B</strong></div>
+        </div>
+      </div>
+
+      <!-- Installed Games Section -->
+      <div class="storage-games-header">
+        <div class="storage-games-title-group">
+          <h3 class="storage-section-title">Games</h3>
+          <span id="storage-games-count" class="storage-count-pill">0</span>
+        </div>
+        <div class="storage-games-controls">
+          <div class="storage-filter-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="storage-search-input" placeholder="Filter games...">
+          </div>
+          <div class="storage-sort-group">
+            <span class="storage-sort-label">Size on Disk</span>
+            <select id="storage-sort-select" class="select-styled compact">
+              <option value="size_desc">Size on Disk ▾ (Largest)</option>
+              <option value="size_asc">Size on Disk ▴ (Smallest)</option>
+              <option value="name_asc">Title (A-Z)</option>
+              <option value="saves_desc">Saves Size (Largest)</option>
+              <option value="date_desc">Last Installed</option>
+            </select>
+          </div>
+          <button id="storage-select-all-btn" class="btn-secondary compact" onclick="toggleSelectAllStorageGames()">Select All</button>
+        </div>
+      </div>
+
+      <!-- Games Storage Table / List -->
+      <div id="storage-games-list" class="storage-games-list">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Steam-Style Floating Batch Action Bar -->
+      <div id="storage-batch-bar" class="storage-batch-bar">
+        <div class="batch-bar-left">
+          <span class="batch-selected-indicator">
+            Selected: <strong id="batch-selected-count">0</strong> games (<strong id="batch-selected-size">0 B</strong>)
+          </span>
+          <label class="batch-backup-toggle">
+            <input type="checkbox" id="batch-keep-saves" checked>
+            <span>Auto-backup saves archive before uninstalling</span>
+          </label>
+        </div>
+        <div class="batch-bar-right">
+          <button class="btn-secondary" onclick="deselectAllStorageGames()">Deselect All</button>
+          <button id="batch-uninstall-btn" class="btn-danger" disabled onclick="openBatchUninstallModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Uninstall Selected (<span id="batch-uninstall-btn-count">0</span>)
+          </button>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Sticky Bottom Active Downloads Drawer -->
@@ -231,6 +372,57 @@
       </div>
 
       <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+    </div>
+  </div>
+
+  <!-- Batch Uninstall Confirmation Modal (Steam-Style) -->
+  <div id="batch-uninstall-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:540px;">
+      <button class="modal-close" onclick="closeBatchModal()">&times;</button>
+      <h2 style="font-size:1.35rem; font-weight:800; color:#fff; margin-bottom:8px; display:flex; align-items:center; gap:10px;">
+        <span style="color:var(--accent-danger);">⚠️</span> Confirm Uninstall
+      </h2>
+      <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+        The following <strong id="modal-batch-count" style="color:#fff;">0</strong> games will be uninstalled from your Steam Frame and removed from your Steam library, freeing up <strong id="modal-batch-reclaim" style="color:var(--accent-cyan); font-weight:800;">0 B</strong> of storage space:
+      </p>
+
+      <!-- Scrollable list of games to be uninstalled -->
+      <div id="modal-batch-games-preview" class="batch-games-preview"></div>
+
+      <div style="background:rgba(255, 183, 3, 0.08); border:1px solid rgba(255, 183, 3, 0.25); border-radius:var(--radius-md); padding:12px 16px; margin:16px 0;">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.85rem; color:#fff;">
+          <input type="checkbox" id="modal-confirm-keep-saves" checked style="width:16px; height:16px; accent-color:var(--accent-cyan);">
+          Create safe backup archive in <code>~/.local/share/frameload/backups</code>
+        </label>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:20px;">
+        <button class="btn-secondary" onclick="closeBatchModal()">Cancel</button>
+        <button id="modal-batch-confirm-btn" class="btn-danger" onclick="executeBatchUninstall()">
+          Uninstall &amp; Free Space
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cache Clean Modal -->
+  <div id="clean-cache-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:480px;">
+      <button class="modal-close" onclick="closeCleanCacheModal()">&times;</button>
+      <h2 style="font-size:1.35rem; font-weight:800; color:#fff; margin-bottom:8px;">
+        🧹 Clean Download Cache
+      </h2>
+      <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:16px;">
+        Clear cached installer archives (<code>.7z</code>, <code>.zip</code>, and extracted temporary packages) from internal storage.
+      </p>
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; margin-bottom:20px;">
+        <p style="margin-bottom:6px;"><strong>Location:</strong> <code style="font-size:0.8rem;" id="clean-cache-path">~/.local/share/frameload/cache</code></p>
+        <p><strong>Space to Reclaim:</strong> <span id="clean-cache-size" style="color:var(--accent-cyan); font-weight:700;">0 B</span></p>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px;">
+        <button class="btn-secondary" onclick="closeCleanCacheModal()">Cancel</button>
+        <button class="btn-primary" onclick="executeCleanCache()">Clean Now</button>
+      </div>
     </div>
   </div>
 

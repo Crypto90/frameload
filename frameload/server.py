@@ -17,6 +17,7 @@ from .manager.backup import SaveBackupManager
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
 from .manager.settings import SettingsManager
+from .manager.storage import StorageManager
 from .manager.uninstaller import Uninstaller
 from .system.steamos import (
     ensure_host_podman_fixes,
@@ -80,6 +81,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json({"backups": SaveBackupManager.list_backups(pkg)})
         elif path == "/api/config":
             self.send_json(Config.get().raw)
+        elif path == "/api/storage":
+            device_id = params.get("device", [None])[0]
+            self.send_json(StorageManager.get_storage_overview(device_id))
         elif path == "/" or path == "/index.html":
             index_file = os.path.join(WEB_DIR, "templates", "index.html")
             self.serve_file(index_file, "text/html; charset=utf-8")
@@ -153,6 +157,22 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             keep_saves = body.get("keep_saves", False)
             try:
                 res = Uninstaller.uninstall(pkg, keep_saves=keep_saves)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/storage/batch-uninstall":
+            packages = body.get("packages", [])
+            keep_saves = body.get("keep_saves", False)
+            try:
+                res = StorageManager.batch_uninstall(packages, keep_saves=keep_saves)
+                self.send_json(res)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/storage/clean-cache":
+            clear_downloads = body.get("clear_downloads", True)
+            clear_shaders = body.get("clear_shaders", False)
+            try:
+                res = StorageManager.clean_cache(clear_downloads, clear_shaders)
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
