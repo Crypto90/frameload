@@ -187,6 +187,46 @@ body {
   border-color: rgba(255, 183, 3, 0.3);
 }
 
+.telemetry-chip.kofi-chip {
+  background: rgba(255, 94, 91, 0.12);
+  border-color: rgba(255, 94, 91, 0.4);
+  color: #ff5e5b;
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.telemetry-chip.kofi-chip:hover {
+  background: #ff5e5b;
+  border-color: #ff5e5b;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 94, 91, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-kofi {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ff5e5b;
+  border: 1px solid #ff5e5b;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-kofi:hover {
+  background: #ff4743;
+  box-shadow: 0 0 16px rgba(255, 94, 91, 0.5);
+  transform: translateY(-1px);
+}
+
 .pulse-dot {
   width: 8px;
   height: 8px;

@@ -9,6 +9,7 @@
 [![CI/CD](https://img.shields.io/github/actions/workflow/status/Crypto90/frameload/release.yml?logo=githubactions&logoColor=white)](https://github.com/Crypto90/frameload/actions)
 [![Platform](https://img.shields.io/badge/Platform-SteamOS%20%7C%20Linux%20ARM64-blue)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](#)
+[![ko-fi](https://img.shields.io/badge/Support-Ko--Fi-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/K3K314GUP?ref=frameload_readme)
 
 ---
 
@@ -319,6 +320,20 @@ frameload uninstall-app --keep-backups
 | **X / Square** | Quick Download / Launch Game |
 | **Y / Triangle** | Jump to Search Bar |
 | **LB / RB (L1 / R1)** | Previous / Next Tab |
+
+---
+
+## ☕ Support the Project
+
+If you love using **FrameLoad** on your Steam Frame and want to support ongoing development, new features, and maintenance, you can support me on Ko-fi:
+
+<p align="left">
+  <a href="https://ko-fi.com/K3K314GUP?ref=frameload_readme" target="_blank" rel="noopener noreferrer">
+    <img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" alt="Buy Me a Coffee at ko-fi.com" height="42">
+  </a>
+</p>
+
+[![Support on Ko-fi](https://img.shields.io/badge/Support-Ko--Fi-ff5e5b?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/K3K314GUP?ref=frameload_readme)
 
 ---
 
