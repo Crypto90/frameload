@@ -1,3 +1,3 @@
 """FrameLoad: On-Device VR Sideloading, Catalog Browser, and Installer for Steam Frame."""
 
-__version__ = "1.0.5"
+__version__ = "1.0.8"
