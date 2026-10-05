@@ -22,7 +22,7 @@ class VrpMirror:
     def __init__(self) -> None:
         self.config = Config.get()
         self.base_url: str = "https://go.srcdl1.xyz"
-        self.password: str = ""
+        self.password: str = "gL59VfgPxoHR"
         self.games: List[CatalogGame] = []
         self.games_by_id: Dict[str, CatalogGame] = {}
         self.games_by_pkg: Dict[str, CatalogGame] = {}
