@@ -118,6 +118,9 @@ class Downloader:
         if not mirror.base_url:
             mirror.update_mirror_config()
 
+        if not mirror.base_url or "vrpirates.wiki" in mirror.base_url:
+            raise RuntimeError("No active download mirror configured. Please configure your mirror URL in Settings or sideload the APK directly in the Sideload tab.")
+
         game_dir = os.path.join(CACHE_DIR, task.id)
         os.makedirs(game_dir, exist_ok=True)
 

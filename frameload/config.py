@@ -40,9 +40,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "auto_open_browser": False,
     },
     "mirrors": {
+        "catalog_url": "https://raw.githubusercontent.com/Crypto90/frameload/main/frameload/catalog/bundled_catalog.json",
         "vrp_config_urls": [
-            "https://vrpirates.wiki/downloads/vrp-public.json",
-            "https://raw.githubusercontent.com/nerdunit/androidsideloader/main/res/vrp-public.json"
+            "https://raw.githubusercontent.com/Crypto90/frameload/main/frameload/catalog/vrp-public.json"
         ],
         "custom_mirrors": [],
         "last_updated": 0,

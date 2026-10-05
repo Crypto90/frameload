@@ -1,9 +1,10 @@
-"""VRP public mirror and catalog manager for FrameLoad."""
+"""VRP mirror, local caching, and catalog manager for FrameLoad."""
 from __future__ import annotations
 
 import base64
 import json
 import os
+import shutil
 import time
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional
@@ -14,6 +15,7 @@ from .models import CatalogGame
 
 CATALOG_CACHE_FILE = os.path.join(DATA_DIR, "catalog_cache.json")
 GAMELIST_FILE = os.path.join(DATA_DIR, "VRP-GameList.txt")
+BUNDLED_CATALOG_FILE = os.path.join(os.path.dirname(__file__), "bundled_catalog.json")
 
 
 class VrpMirror:
@@ -27,90 +29,225 @@ class VrpMirror:
         self.load_cache()
 
     def update_mirror_config(self) -> bool:
-        """Fetches vrp-public.json to get active baseUri and password."""
-        urls = self.config["mirrors"].get("vrp_config_urls", [
-            "https://vrpirates.wiki/downloads/vrp-public.json"
-        ])
+        """Fetches vrp-public.json or custom mirror config to get active baseUri and password."""
+        urls = self.config["mirrors"].get("vrp_config_urls", [])
 
+        # Check local vrp-public.json in DATA_DIR or FRAMELOAD_DIR first
+        local_candidates = [
+            os.path.join(DATA_DIR, "vrp-public.json"),
+            os.path.join(os.path.dirname(DATA_DIR), "vrp-public.json"),
+            os.path.join(os.path.dirname(__file__), "vrp-public.json"),
+        ]
+        for lpath in local_candidates:
+            if os.path.isfile(lpath):
+                try:
+                    with open(lpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    base_uri = data.get("baseUri", "").rstrip("/")
+                    b64_pw = data.get("password", "")
+                    if base_uri:
+                        self.base_url = base_uri
+                        self.password = base64.b64decode(b64_pw).decode("utf-8", errors="replace") if b64_pw else ""
+                        return True
+                except Exception as e:
+                    print(f"[FrameLoad] Error loading local mirror config from {lpath}: {e}")
+
+        # Try remote config URLs
         for url in urls:
+            if not url or not url.startswith("http"):
+                continue
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "FrameLoad/1.0"})
-                with urllib.request.urlopen(req, timeout=12) as resp:
+                with urllib.request.urlopen(req, timeout=8) as resp:
                     if resp.status == 200:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        base_uri = data.get("baseUri", "").rstrip("/")
-                        b64_pw = data.get("password", "")
-                        if base_uri and b64_pw:
-                            self.base_url = base_uri
-                            self.password = base64.b64decode(b64_pw).decode("utf-8", errors="replace")
-                            return True
+                        content = resp.read().decode("utf-8").strip()
+                        if content:
+                            data = json.loads(content)
+                            base_uri = data.get("baseUri", "").rstrip("/")
+                            b64_pw = data.get("password", "")
+                            if base_uri:
+                                self.base_url = base_uri
+                                self.password = base64.b64decode(b64_pw).decode("utf-8", errors="replace") if b64_pw else ""
+                                return True
             except Exception as e:
-                print(f"[FrameLoad] Failed to fetch mirror config from {url}: {e}")
+                print(f"[FrameLoad] Mirror config check notice for {url}: {e}")
 
-        # Fallback to defaults if mirror unreachable
-        if not self.base_url:
-            self.base_url = "https://public.vrpirates.wiki"
         return False
 
-    def sync_catalog(self, status_callback: Optional[Callable[[str], None]] = None) -> bool:
-        """Downloads meta.7z, extracts VRP-GameList.txt, and updates local catalog."""
-        if status_callback:
-            status_callback("Connecting to mirror...")
+    def load_bundled_catalog(self, merge: bool = False) -> bool:
+        """Loads the pre-packaged offline catalog into memory and updates local cache."""
+        if os.path.isfile(BUNDLED_CATALOG_FILE):
+            try:
+                with open(BUNDLED_CATALOG_FILE, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                new_games = list(self.games) if merge else []
+                existing_pkgs = set(self.games_by_pkg.keys()) if merge else set()
+                for item in raw:
+                    pkg = item["package_name"]
+                    if merge and pkg in existing_pkgs:
+                        continue
+                    g = CatalogGame(
+                        name=item["name"],
+                        release_name=item["release_name"],
+                        package_name=pkg,
+                        version_code=str(item.get("version_code", "1")),
+                        last_updated=item.get("last_updated", ""),
+                        size_bytes=int(item.get("size_bytes", 0)),
+                        id=item.get("id", ""),
+                        thumbnail_url=item.get("thumbnail_url", ""),
+                        kind=item.get("kind", "quest")
+                    )
+                    new_games.append(g)
+                if new_games:
+                    self.games = new_games
+                    self.games_by_id = {g.id: g for g in new_games}
+                    self.games_by_pkg = {g.package_name: g for g in new_games}
+                    self.save_cache()
+                    return True
+            except Exception as e:
+                print(f"[FrameLoad] Error loading bundled catalog: {e}")
+        return False
 
+    def load_cache(self) -> None:
+        """Loads catalog cache from disk, local VRP-GameList.txt, or bundled catalog."""
+        # 1. Try saved catalog cache
+        if os.path.isfile(CATALOG_CACHE_FILE):
+            try:
+                with open(CATALOG_CACHE_FILE, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if raw and isinstance(raw, list) and len(raw) > 0:
+                    self.games = []
+                    for item in raw:
+                        g = CatalogGame(
+                            name=item["name"],
+                            release_name=item["release_name"],
+                            package_name=item["package_name"],
+                            version_code=str(item.get("version_code", "")),
+                            last_updated=item.get("last_updated", ""),
+                            size_bytes=int(item.get("size_bytes", 0)),
+                            id=item.get("id", ""),
+                            thumbnail_url=item.get("thumbnail_url", ""),
+                            kind=item.get("kind", "quest")
+                        )
+                        self.games.append(g)
+                    self.games_by_id = {g.id: g for g in self.games}
+                    self.games_by_pkg = {g.package_name: g for g in self.games}
+                    if len(self.games) >= 50:
+                        return
+            except Exception as e:
+                print(f"[FrameLoad] Error loading catalog cache: {e}")
+
+        # 2. Try VRP-GameList.txt if present
+        if os.path.isfile(GAMELIST_FILE) and self.parse_gamelist_file(GAMELIST_FILE):
+            if len(self.games) >= 50:
+                return
+        alt_gamelist = os.path.join(os.path.dirname(DATA_DIR), "VRP-GameList.txt")
+        if os.path.isfile(alt_gamelist) and self.parse_gamelist_file(alt_gamelist):
+            if len(self.games) >= 50:
+                return
+
+        # 3. Ensure bundled catalog is merged in so user always has full catalog
+        self.load_bundled_catalog(merge=True)
+
+    def sync_catalog(self, status_callback: Optional[Callable[[str], None]] = None) -> bool:
+        """Synchronizes catalog from online endpoints or GitHub raw updates with graceful fallback."""
+        if status_callback:
+            status_callback("Connecting to catalog service...")
+
+        # 1. Check online raw JSON catalog endpoints (GitHub updates or custom catalog URL)
+        remote_json_urls: List[str] = []
+        custom_catalog = self.config["mirrors"].get("catalog_url")
+        if custom_catalog:
+            remote_json_urls.append(custom_catalog)
+        remote_json_urls.append("https://raw.githubusercontent.com/Crypto90/frameload/main/frameload/catalog/bundled_catalog.json")
+
+        for json_url in remote_json_urls:
+            try:
+                if status_callback:
+                    status_callback(f"Checking updates from {json_url}...")
+                req = urllib.request.Request(json_url, headers={"User-Agent": "FrameLoad/1.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status == 200:
+                        raw = json.loads(resp.read().decode("utf-8"))
+                        if isinstance(raw, list) and len(raw) > 0:
+                            new_games = []
+                            for item in raw:
+                                g = CatalogGame(
+                                    name=item["name"],
+                                    release_name=item["release_name"],
+                                    package_name=item["package_name"],
+                                    version_code=str(item.get("version_code", "1")),
+                                    last_updated=item.get("last_updated", ""),
+                                    size_bytes=int(item.get("size_bytes", 0)),
+                                    id=item.get("id", ""),
+                                    thumbnail_url=item.get("thumbnail_url", ""),
+                                    kind=item.get("kind", "quest")
+                                )
+                                new_games.append(g)
+                            if new_games:
+                                self.games = new_games
+                                self.games_by_id = {g.id: g for g in new_games}
+                                self.games_by_pkg = {g.package_name: g for g in new_games}
+                                self.save_cache()
+                                if status_callback:
+                                    status_callback(f"Catalog updated from remote! {len(self.games)} titles available.")
+                                return True
+            except Exception as e:
+                print(f"[FrameLoad] Catalog remote JSON fetch notice for {json_url}: {e}")
+
+        # 2. Check VRP meta.7z mirror if configured
         if not self.base_url or not self.password:
             self.update_mirror_config()
 
-        if not self.base_url:
+        if self.base_url and "vrpirates.wiki" not in self.base_url:
+            meta_url = f"{self.base_url}/meta.7z"
+            meta_archive = os.path.join(DATA_DIR, "meta.7z")
+            try:
+                if status_callback:
+                    status_callback(f"Downloading catalog archive from {meta_url}...")
+                req = urllib.request.Request(meta_url, headers={"User-Agent": "FrameLoad/1.0"})
+                with urllib.request.urlopen(req, timeout=30) as resp, open(meta_archive, "wb") as out_f:
+                    shutil.copyfileobj(resp, out_f)
+                extract_archive(meta_archive, DATA_DIR, password=self.password)
+                try:
+                    os.remove(meta_archive)
+                except OSError:
+                    pass
+                if self.parse_gamelist_file(GAMELIST_FILE):
+                    if status_callback:
+                        status_callback(f"Catalog updated from mirror! {len(self.games)} titles available.")
+                    return True
+            except Exception as e:
+                print(f"[FrameLoad] Mirror meta.7z download notice: {e}")
+
+        # 3. Check local VRP-GameList.txt
+        if os.path.isfile(GAMELIST_FILE) and self.parse_gamelist_file(GAMELIST_FILE):
+            self.load_bundled_catalog(merge=True)
             if status_callback:
-                status_callback("Could not resolve mirror URL.")
-            return False
+                status_callback(f"Catalog refreshed from local GameList ({len(self.games)} titles).")
+            return True
 
-        meta_url = f"{self.base_url}/meta.7z"
-        meta_archive = os.path.join(DATA_DIR, "meta.7z")
-
-        if status_callback:
-            status_callback(f"Downloading catalog metadata from {meta_url}...")
-
-        try:
-            req = urllib.request.Request(meta_url, headers={"User-Agent": "FrameLoad/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp, open(meta_archive, "wb") as out_f:
-                shutil_copy(resp, out_f)
-        except Exception as e:
+        # 4. Graceful fallback: refresh from bundled offline catalog
+        if self.load_bundled_catalog(merge=True):
             if status_callback:
-                status_callback(f"Download meta.7z failed: {e}. Checking local cache...")
-            if os.path.isfile(GAMELIST_FILE):
-                return self.parse_gamelist_file()
-            return False
+                status_callback(f"Catalog loaded from built-in database ({len(self.games)} titles available).")
+            return True
 
-        if status_callback:
-            status_callback("Decompressing catalog metadata...")
-
-        success = extract_archive(meta_archive, DATA_DIR, password=self.password)
-        try:
-            os.remove(meta_archive)
-        except OSError:
-            pass
-
-        if not success:
+        if len(self.games) > 0:
             if status_callback:
-                status_callback("Failed to extract meta.7z.")
-            return False
+                status_callback(f"Active catalog refreshed ({len(self.games)} titles available).")
+            return True
 
-        if status_callback:
-            status_callback("Parsing game catalog...")
+        return False
 
-        parsed = self.parse_gamelist_file()
-        if parsed and status_callback:
-            status_callback(f"Catalog updated successfully! {len(self.games)} titles available.")
-        return parsed
-
-    def parse_gamelist_file(self) -> bool:
-        if not os.path.isfile(GAMELIST_FILE):
+    def parse_gamelist_file(self, filepath: Optional[str] = None) -> bool:
+        target_path = filepath or GAMELIST_FILE
+        if not os.path.isfile(target_path):
             return False
 
         new_games = []
         try:
-            with open(GAMELIST_FILE, "r", encoding="utf-8", errors="replace") as f:
+            with open(target_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
             # Skip header if present
@@ -149,46 +286,22 @@ class VrpMirror:
                 self.games = new_games
                 self.games_by_id = {g.id: g for g in new_games}
                 self.games_by_pkg = {g.package_name: g for g in new_games}
+                self.load_bundled_catalog(merge=True)
                 self.save_cache()
                 return True
         except Exception as e:
-            print(f"[FrameLoad] Error parsing {GAMELIST_FILE}: {e}")
+            print(f"[FrameLoad] Error parsing {target_path}: {e}")
 
         return False
 
     def save_cache(self) -> None:
         try:
+            os.makedirs(DATA_DIR, exist_ok=True)
             data = [g.to_dict() for g in self.games]
             with open(CATALOG_CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f)
         except OSError as e:
             print(f"[FrameLoad] Error saving catalog cache: {e}")
-
-    def load_cache(self) -> None:
-        if os.path.isfile(CATALOG_CACHE_FILE):
-            try:
-                with open(CATALOG_CACHE_FILE, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                self.games = []
-                for item in raw:
-                    g = CatalogGame(
-                        name=item["name"],
-                        release_name=item["release_name"],
-                        package_name=item["package_name"],
-                        version_code=item.get("version_code", ""),
-                        last_updated=item.get("last_updated", ""),
-                        size_bytes=item.get("size_bytes", 0),
-                        id=item.get("id", ""),
-                        thumbnail_url=item.get("thumbnail_url", ""),
-                        kind=item.get("kind", "quest")
-                    )
-                    self.games.append(g)
-                self.games_by_id = {g.id: g for g in self.games}
-                self.games_by_pkg = {g.package_name: g for g in self.games}
-            except Exception as e:
-                print(f"[FrameLoad] Error loading catalog cache: {e}")
-        elif os.path.isfile(GAMELIST_FILE):
-            self.parse_gamelist_file()
 
     def search(
         self,
@@ -196,10 +309,10 @@ class VrpMirror:
         sort_by: str = "date",
         sort_order: str = "desc",
         page: int = 1,
-        per_page: int = 50
+        per_page: int = 36
     ) -> Dict[str, Any]:
         """Search, filter, and paginate the game catalog."""
-        results = self.games
+        results = list(self.games)
 
         if query:
             q = query.lower().strip()
@@ -233,11 +346,3 @@ class VrpMirror:
 
     def get_game(self, game_id: str) -> Optional[CatalogGame]:
         return self.games_by_id.get(game_id)
-
-
-def shutil_copy(src, dst, chunk_size=1024 * 64):
-    while True:
-        chunk = src.read(chunk_size)
-        if not chunk:
-            break
-        dst.write(chunk)

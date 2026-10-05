@@ -1,6 +1,7 @@
 """High-performance multi-threaded HTTP server and REST API for FrameLoad."""
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
 import os
@@ -148,6 +149,64 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         if path == "/api/catalog/sync":
             success = self.mirror.sync_catalog()
             self.send_json({"success": success, "total_games": len(self.mirror.games)})
+        elif path == "/api/config/mirror":
+            base_url = body.get("base_url", "").strip()
+            password = body.get("password", "").strip()
+            catalog_url = body.get("catalog_url", "").strip()
+            config = Config.get()
+            if base_url:
+                config["mirrors"]["custom_mirrors"] = [{"base_uri": base_url, "password": password}]
+                self.mirror.base_url = base_url
+                self.mirror.password = password
+            if catalog_url:
+                config["mirrors"]["catalog_url"] = catalog_url
+            config.save()
+            self.send_json({"success": True, "base_url": self.mirror.base_url})
+        elif path == "/api/catalog/import":
+            content = body.get("content", "")
+            format_type = body.get("format", "gamelist")
+            if format_type == "json":
+                try:
+                    data = json.loads(content)
+                    if isinstance(data, list):
+                        new_games = []
+                        for item in data:
+                            if isinstance(item, dict):
+                                g = CatalogGame(
+                                    name=item["name"],
+                                    release_name=item["release_name"],
+                                    package_name=item["package_name"],
+                                    version_code=str(item.get("version_code", "1")),
+                                    last_updated=item.get("last_updated", ""),
+                                    size_bytes=int(item.get("size_bytes", 0)),
+                                    id=item.get("id", ""),
+                                    thumbnail_url=item.get("thumbnail_url", ""),
+                                    kind=item.get("kind", "quest")
+                                )
+                                new_games.append(g)
+                        if new_games:
+                            self.mirror.games = new_games
+                            self.mirror.games_by_id = {g.id: g for g in new_games}
+                            self.mirror.games_by_pkg = {g.package_name: g for g in new_games}
+                            self.mirror.save_cache()
+                            self.send_json({"success": True, "total_games": len(self.mirror.games)})
+                            return
+                    elif isinstance(data, dict) and "baseUri" in data:
+                        self.mirror.base_url = data["baseUri"].rstrip("/")
+                        if "password" in data:
+                            b64 = data["password"]
+                            self.mirror.password = base64.b64decode(b64).decode("utf-8", errors="replace") if b64 else ""
+                        self.send_json({"success": True, "base_url": self.mirror.base_url})
+                        return
+                    self.send_json({"error": "Unsupported JSON format"}, status=HTTPStatus.BAD_REQUEST)
+                except Exception as e:
+                    self.send_json({"error": f"Invalid JSON: {e}"}, status=HTTPStatus.BAD_REQUEST)
+            else:
+                gamelist_path = os.path.join(DATA_DIR, "VRP-GameList.txt")
+                with open(gamelist_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                success = self.mirror.parse_gamelist_file(gamelist_path)
+                self.send_json({"success": success, "total_games": len(self.mirror.games)})
         elif path == "/api/downloads/queue":
             game_id = body.get("game_id", "")
             device_id = body.get("device_id")
