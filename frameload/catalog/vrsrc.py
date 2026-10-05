@@ -226,12 +226,13 @@ def fetch_meta_archive(
     if status_cb:
         status_cb(f"Fetching game catalog from {base_url}...")
 
-    remote_path = f"{VRSRC_REMOTE_NAME}:/meta.7z" if not password else f"{VRSRC_REMOTE_NAME}:/{VRSRC_GAME_PATH}/meta.7z"
     cmd = [
-        rclone, "copy",
-        remote_path,
-        dest_dir,
-        "--config", config_path,
+        rclone, "copyto",
+        ":http:/meta.7z",
+        dest_path,
+        "--http-url", base_url.rstrip("/"),
+        "--config", os.devnull,
+        "--header", f"X-API-Key: {VRSRC_API_KEY}",
         "--tpslimit", "1.0",
         "--tpslimit-burst", "3",
         "--no-check-certificate",
@@ -288,13 +289,12 @@ def test_connection(base_url: str, password: str) -> dict:
     if not rclone:
         return {"success": False, "error": "rclone not installed. Use 'Install rclone' in Mirror Manager."}
 
-    config_path = write_rclone_config(base_url, password)
-
-    remote_path = f"{VRSRC_REMOTE_NAME}:/meta.7z" if not password else f"{VRSRC_REMOTE_NAME}:/{VRSRC_GAME_PATH}/meta.7z"
     cmd = [
         rclone, "size",
-        remote_path,
-        "--config", config_path,
+        ":http:/meta.7z",
+        "--http-url", base_url.rstrip("/"),
+        "--config", os.devnull,
+        "--header", f"X-API-Key: {VRSRC_API_KEY}",
         "--no-check-certificate",
         "--contimeout", "10s",
         "--timeout", "15s",
