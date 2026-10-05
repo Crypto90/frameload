@@ -186,7 +186,7 @@ class VrpMirror:
             status_callback("Connecting to catalog service...")
 
         # 0. Try vrSrc mirror via rclone if configured (meta.7z with game list)
-        if self.base_url and self.password:
+        if self.base_url:
             if not _vrsrc.rclone_available():
                 if status_callback:
                     status_callback("Installing rclone for mirror access...")
@@ -313,8 +313,7 @@ class VrpMirror:
                     except ValueError:
                         size_bytes = 0
 
-                    thumb_path = os.path.join(DATA_DIR, ".meta/thumbnails", f"{pkg_name}.jpg")
-                    thumb_url = f"/api/thumbnail/{pkg_name}" if os.path.isfile(thumb_path) else ""
+                    thumb_url = f"/api/thumbnail/{pkg_name}"
 
                     game = CatalogGame(
                         name=name,

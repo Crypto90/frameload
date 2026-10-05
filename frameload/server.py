@@ -88,7 +88,38 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             if os.path.isfile(thumb_path):
                 self.serve_file(thumb_path, "image/jpeg")
             else:
-                self.send_error(HTTPStatus.NOT_FOUND)
+                game = self.mirror.games_by_pkg.get(pkg)
+                title = game.name if game else pkg
+                safe_title = (title[:24] + "...") if len(title) > 24 else title
+                svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1424" />
+      <stop offset="50%" stop-color="#171e38" />
+      <stop offset="100%" stop-color="#0b0f1a" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="100%" stop-color="#4facfe" />
+    </linearGradient>
+  </defs>
+  <rect width="600" height="900" fill="url(#bg)" rx="16"/>
+  <rect x="20" y="20" width="560" height="860" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="2" rx="12"/>
+  <circle cx="300" cy="380" r="80" fill="rgba(0, 242, 254, 0.08)" stroke="url(#accent)" stroke-width="4"/>
+  <path d="M260,380 L340,380 M300,340 L300,420" stroke="url(#accent)" stroke-width="6" stroke-linecap="round"/>
+  <text x="300" y="540" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="34" font-weight="bold" fill="#ffffff" text-anchor="middle">{safe_title}</text>
+  <text x="300" y="585" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" fill="#00f2fe" text-anchor="middle" letter-spacing="3">STEAM FRAME VR</text>
+  <rect x="220" y="820" width="160" height="32" rx="16" fill="rgba(255,255,255,0.05)"/>
+  <text x="300" y="842" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)" text-anchor="middle">FrameLoad</text>
+</svg>"""
+                try:
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "image/svg+xml")
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(svg_content.encode("utf-8"))
+                except BrokenPipeError:
+                    pass
         elif path == "/api/downloads":
             self.send_json({"tasks": self.downloader.get_all_tasks()})
         elif path == "/api/installed":

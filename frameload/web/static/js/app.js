@@ -1777,7 +1777,7 @@ async function loadMirrorStatus() {
     const count = document.getElementById("mirror-modal-count");
     const clearBtn = document.getElementById("btn-clear-mirror");
 
-    if (data.has_custom_mirror && data.active_base_url) {
+    if (data.active_base_url) {
       if (badge) {
         badge.textContent = "vrSrc Mirror";
         badge.style.background = "rgba(0,242,254,0.12)";
