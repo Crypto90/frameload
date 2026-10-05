@@ -221,6 +221,31 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 "app": app_status,
                 "games": game_status
             })
+        elif path == "/api/diagnostics/mirror":
+            import subprocess, os
+            base_url = "https://go.srcdl1.xyz"
+            api_key = "a329d018062813601d60cc6936a4f75ffde4a1ef38349a9973eb9720f9e8a457"
+            rclone = os.path.expanduser("~/.local/share/frameload/bin/rclone")
+            logs = []
+            
+            # Test rclone
+            cmd = [rclone, "size", ":http:/meta.7z", "--http-url", base_url, "--config", os.devnull, "--header", f"X-API-Key: {api_key}", "-vv"]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            logs.append("--- rclone size ---")
+            logs.append("Exit Code: " + str(res.returncode))
+            for line in res.stderr.splitlines():
+                if "ERROR" in line or "NOTICE" in line or "403" in line or "success" in line.lower():
+                    logs.append(line)
+            
+            # Test curl
+            logs.append("\\n--- curl test ---")
+            curl_cmd = ["curl", "-I", f"{base_url}/meta.7z", "-H", f"X-API-Key: {api_key}", "-A", "rclone/v1.72.1", "-s", "-m", "10"]
+            c_res = subprocess.run(curl_cmd, capture_output=True, text=True)
+            logs.append("Exit Code: " + str(c_res.returncode))
+            logs.append(c_res.stdout)
+            logs.append(c_res.stderr)
+            
+            self.send_json({"success": True, "logs": "\\n".join(logs)})
         elif path == "/" or path == "/index.html":
             index_file = os.path.join(WEB_DIR, "templates", "index.html")
             self.serve_file(index_file, "text/html; charset=utf-8")
