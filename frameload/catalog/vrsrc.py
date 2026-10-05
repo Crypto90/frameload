@@ -182,6 +182,7 @@ def _make_env() -> dict:
     """Build clean environment for rclone with the vrSrc API key."""
     env = os.environ.copy()
     env["RCLONE_HEADER"] = f"X-API-Key: {VRSRC_API_KEY}"
+    env["RCLONE_USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     # Remove proxy vars that could alter TLS fingerprint routing
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
         env.pop(var, None)
