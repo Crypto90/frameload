@@ -13,7 +13,7 @@ from ..config import CACHE_DIR, Config, DATA_DIR
 from .extractor import extract_archive
 from .models import CatalogGame, DownloadTask
 
-USER_AGENT = "FrameLoad/1.0 (Steam Frame; Linux arm64)"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 
 class Downloader:

@@ -170,9 +170,14 @@ def _rclone_obscure(password: str) -> str:
 def write_rclone_config(base_url: str, password: str) -> str:
     """Write rclone WebDAV config file and return its path."""
     config_path = os.path.join(_get_config_dir(), "vrsrc.conf")
-    obscured = _rclone_obscure(password)
-    pass_line = f"pass = {obscured}" if obscured else ""
-    config_content = f"[{VRSRC_REMOTE_NAME}]\ntype = webdav\nurl = {base_url}\nvendor = other\nuser =\n{pass_line}\n"
+    
+    if not password:
+        config_content = f"[{VRSRC_REMOTE_NAME}]\ntype = http\nurl = {base_url}\n"
+    else:
+        obscured = _rclone_obscure(password)
+        pass_line = f"pass = {obscured}" if obscured else ""
+        config_content = f"[{VRSRC_REMOTE_NAME}]\ntype = webdav\nurl = {base_url}\nvendor = other\nuser =\n{pass_line}\n"
+        
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(config_content)
     return config_path
@@ -221,9 +226,10 @@ def fetch_meta_archive(
     if status_cb:
         status_cb(f"Fetching game catalog from {base_url}...")
 
+    remote_path = f"{VRSRC_REMOTE_NAME}:/meta.7z" if not password else f"{VRSRC_REMOTE_NAME}:/{VRSRC_GAME_PATH}/meta.7z"
     cmd = [
         rclone, "copy",
-        f"{VRSRC_REMOTE_NAME}:/{VRSRC_GAME_PATH}/meta.7z",
+        remote_path,
         dest_dir,
         "--config", config_path,
         "--tpslimit", "1.0",
@@ -284,9 +290,10 @@ def test_connection(base_url: str, password: str) -> dict:
 
     config_path = write_rclone_config(base_url, password)
 
+    remote_path = f"{VRSRC_REMOTE_NAME}:/meta.7z" if not password else f"{VRSRC_REMOTE_NAME}:/{VRSRC_GAME_PATH}/meta.7z"
     cmd = [
-        rclone, "lsd",
-        f"{VRSRC_REMOTE_NAME}:/",
+        rclone, "size",
+        remote_path,
         "--config", config_path,
         "--no-check-certificate",
         "--contimeout", "10s",
