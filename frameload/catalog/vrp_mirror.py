@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 from ..config import Config, DATA_DIR
 from .extractor import extract_archive
 from .models import CatalogGame
+from . import vrsrc as _vrsrc
 
 CATALOG_CACHE_FILE = os.path.join(DATA_DIR, "catalog_cache.json")
 GAMELIST_FILE = os.path.join(DATA_DIR, "VRP-GameList.txt")
@@ -73,6 +74,68 @@ class VrpMirror:
                 print(f"[FrameLoad] Mirror config check notice for {url}: {e}")
 
         return False
+
+    def apply_mirror_config(self, config_data: dict) -> dict:
+        """Apply a vrp-public.json config dict (baseUri + password).
+        Accepts base64-encoded passwords (VRP/vrSrc format) or plain text."""
+        base_uri = config_data.get("baseUri", "").strip().rstrip("/")
+        raw_pw = config_data.get("password", "").strip()
+
+        if not base_uri:
+            return {"success": False, "error": "Missing baseUri in config"}
+
+        # Detect if password is base64-encoded (vrSrc format)
+        decoded_pw = raw_pw
+        if raw_pw:
+            try:
+                candidate = base64.b64decode(raw_pw + "==").decode("utf-8")
+                if candidate.isprintable() and 4 <= len(candidate) <= len(raw_pw):
+                    decoded_pw = candidate
+            except Exception:
+                pass
+
+        self.base_url = base_uri
+        self.password = decoded_pw
+        self.save_mirror_config(base_uri, raw_pw)
+
+        self.config["mirrors"]["custom_mirrors"] = [{"base_uri": base_uri, "password": raw_pw}]
+        self.config.save()
+
+        return {"success": True, "base_url": self.base_url,
+                "message": f"Mirror configured: {self.base_url}"}
+
+    def save_mirror_config(self, base_uri: str, password_b64: str) -> None:
+        """Persist vrp-public.json to DATA_DIR for future sessions."""
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            config_path = os.path.join(DATA_DIR, "vrp-public.json")
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump({"baseUri": base_uri, "password": password_b64}, f, indent=2)
+        except OSError as e:
+            print(f"[FrameLoad] Could not save mirror config: {e}")
+
+    def clear_mirror_config(self) -> None:
+        """Remove saved mirror config and reset to built-in catalog."""
+        self.base_url = ""
+        self.password = ""
+        self.config["mirrors"]["custom_mirrors"] = []
+        self.config.save()
+        config_path = os.path.join(DATA_DIR, "vrp-public.json")
+        if os.path.isfile(config_path):
+            try:
+                os.remove(config_path)
+            except OSError:
+                pass
+
+    def test_mirror_connection(self) -> dict:
+        """Test connectivity to the configured mirror using rclone."""
+        if not self.base_url:
+            return {"success": False, "error": "No mirror configured"}
+        return _vrsrc.test_connection(self.base_url, self.password)
+
+    def install_rclone(self, status_cb: Optional[Callable[[str], None]] = None) -> bool:
+        """Install rclone to the FrameLoad bin directory."""
+        return _vrsrc.install_rclone(status_cb)
 
     def load_bundled_catalog(self, merge: bool = False) -> bool:
         """Loads the pre-packaged offline catalog into memory and updates local cache."""
@@ -153,6 +216,26 @@ class VrpMirror:
         """Synchronizes catalog from online endpoints or GitHub raw updates with graceful fallback."""
         if status_callback:
             status_callback("Connecting to catalog service...")
+
+        # 0. Try vrSrc mirror via rclone if configured (meta.7z with game list)
+        if self.base_url and self.password:
+            if not _vrsrc.rclone_available():
+                if status_callback:
+                    status_callback("Installing rclone for mirror access...")
+                _vrsrc.install_rclone(status_callback)
+
+            if _vrsrc.rclone_available():
+                meta_archive = os.path.join(DATA_DIR, "meta.7z")
+                if _vrsrc.fetch_meta_archive(self.base_url, self.password, meta_archive, status_callback):
+                    try:
+                        extract_archive(meta_archive, DATA_DIR, password=self.password)
+                        os.remove(meta_archive)
+                    except Exception as e:
+                        print(f"[FrameLoad] meta.7z extract notice: {e}")
+                    if self.parse_gamelist_file(GAMELIST_FILE):
+                        if status_callback:
+                            status_callback(f"Catalog synced from vrSrc mirror! {len(self.games)} titles.")
+                        return True
 
         # 1. Check online raw JSON catalog endpoints (GitHub updates or custom catalog URL)
         remote_json_urls: List[str] = []

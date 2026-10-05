@@ -115,6 +115,50 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "Missing package parameter"}, status=HTTPStatus.BAD_REQUEST)
             else:
                 self.send_json({"mods": ModManager.list_mods(pkg)})
+        elif path == "/api/mirrors":
+            config = Config.get()
+            custom_mirrors = config["mirrors"].get("custom_mirrors", [])
+            active_mirror = custom_mirrors[0] if custom_mirrors else {}
+            self.send_json({
+                "active_base_url": self.mirror.base_url,
+                "active_catalog_url": config["mirrors"].get("catalog_url", ""),
+                "catalog_game_count": len(self.mirror.games),
+                "has_custom_mirror": bool(custom_mirrors),
+                "custom_mirror": active_mirror,
+                "vrp_config_urls": config["mirrors"].get("vrp_config_urls", []),
+                "known_sources": [
+                    {
+                        "id": "vrsrc",
+                        "name": "vrSrc (Community Mirror)",
+                        "description": "Active community VR game mirror. Get your public config JSON from t.me/the_vrSrc",
+                        "config_source": "https://t.me/the_vrSrc",
+                        "website": "https://vrsrc.fyi/",
+                        "type": "vrp_compatible",
+                        "status": "active",
+                        "note": "Paste your vrp-public.json from the Telegram channel. The config contains baseUri and password (base64)."
+                    },
+                    {
+                        "id": "frameload_builtin",
+                        "name": "FrameLoad Built-in Catalog",
+                        "description": "Curated offline catalog bundled with FrameLoad, updated with each release.",
+                        "config_source": "https://github.com/Crypto90/frameload",
+                        "website": "https://github.com/Crypto90/frameload",
+                        "type": "json_catalog",
+                        "status": "active",
+                        "note": "Always available offline. Sync pulls latest from GitHub."
+                    },
+                    {
+                        "id": "custom",
+                        "name": "Custom Self-Hosted Mirror",
+                        "description": "Configure your own VRP-compatible mirror with a custom baseUri and password.",
+                        "config_source": None,
+                        "website": None,
+                        "type": "custom",
+                        "status": "manual",
+                        "note": "Advanced: host your own rclone/WebDAV VRP-compatible game archive."
+                    }
+                ]
+            })
         elif path == "/api/config":
             self.send_json(Config.get().raw)
         elif path == "/api/storage":
@@ -149,19 +193,31 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         if path == "/api/catalog/sync":
             success = self.mirror.sync_catalog()
             self.send_json({"success": success, "total_games": len(self.mirror.games)})
-        elif path == "/api/config/mirror":
+        elif path == "/api/mirrors/apply":
+            # Accept a vrp-public.json dict with baseUri + password
+            config_json = body.get("config", body)  # supports {config:{...}} or direct
+            if isinstance(config_json, str):
+                try:
+                    config_json = json.loads(config_json)
+                except Exception:
+                    config_json = {}
+            result = self.mirror.apply_mirror_config(config_json)
+            self.send_json(result)
+        elif path == "/api/mirrors/test":
+            result = self.mirror.test_mirror_connection()
+            self.send_json(result)
+        elif path == "/api/mirrors/clear":
+            self.mirror.clear_mirror_config()
+            self.send_json({"success": True, "message": "Mirror config cleared. Using built-in catalog."})
+        elif path == "/api/mirrors/install-rclone":
+            messages = []
+            ok = self.mirror.install_rclone(lambda m: messages.append(m))
+            self.send_json({"success": ok, "messages": messages})
+        elif path == "/api/config/mirror":  # Legacy endpoint kept for compatibility
             base_url = body.get("base_url", "").strip()
             password = body.get("password", "").strip()
-            catalog_url = body.get("catalog_url", "").strip()
-            config = Config.get()
-            if base_url:
-                config["mirrors"]["custom_mirrors"] = [{"base_uri": base_url, "password": password}]
-                self.mirror.base_url = base_url
-                self.mirror.password = password
-            if catalog_url:
-                config["mirrors"]["catalog_url"] = catalog_url
-            config.save()
-            self.send_json({"success": True, "base_url": self.mirror.base_url})
+            result = self.mirror.apply_mirror_config({"baseUri": base_url, "password": password})
+            self.send_json(result)
         elif path == "/api/catalog/import":
             content = body.get("content", "")
             format_type = body.get("format", "gamelist")

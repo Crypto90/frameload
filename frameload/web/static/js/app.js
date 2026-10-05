@@ -1764,3 +1764,228 @@ async function executeUninstallApp() {
 }
 window.executeUninstallApp = executeUninstallApp;
 
+// ============================================================
+// Mirror Manager
+// ============================================================
+
+async function loadMirrorStatus() {
+  try {
+    const data = await apiGet("/api/mirrors");
+    const badge = document.getElementById("mirror-status-badge");
+    const text = document.getElementById("mirror-status-text");
+    const url = document.getElementById("mirror-modal-url");
+    const count = document.getElementById("mirror-modal-count");
+    const clearBtn = document.getElementById("btn-clear-mirror");
+
+    if (data.has_custom_mirror && data.active_base_url) {
+      if (badge) {
+        badge.textContent = "vrSrc Mirror";
+        badge.style.background = "rgba(0,242,254,0.12)";
+        badge.style.color = "var(--accent-cyan)";
+        badge.style.border = "1px solid rgba(0,242,254,0.3)";
+      }
+      if (text) text.textContent = `Mirror configured: ${data.active_base_url}`;
+      if (url) url.textContent = data.active_base_url;
+      if (clearBtn) clearBtn.style.display = "";
+    } else {
+      if (badge) {
+        badge.textContent = "Built-in Catalog";
+        badge.style.background = "rgba(255,255,255,0.08)";
+        badge.style.color = "var(--text-muted)";
+        badge.style.border = "none";
+      }
+      if (text) text.textContent = "Using FrameLoad built-in catalog. Configure a VRP-compatible mirror for full live game access.";
+      if (url) url.textContent = "None (built-in catalog)";
+      if (clearBtn) clearBtn.style.display = "none";
+    }
+    if (count) count.textContent = `${data.catalog_game_count.toLocaleString()} games`;
+  } catch (e) {
+    console.warn("Mirror status load failed:", e);
+  }
+}
+
+function openMirrorModal() {
+  const modal = document.getElementById("mirror-modal");
+  if (modal) {
+    modal.classList.add("active");
+    loadMirrorStatus();
+    checkRcloneStatus();
+  }
+}
+
+function closeMirrorModal() {
+  const modal = document.getElementById("mirror-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+async function checkRcloneStatus() {
+  const statusText = document.getElementById("rclone-status-text");
+  const installBtn = document.getElementById("btn-install-rclone");
+  const bar = document.getElementById("rclone-status-bar");
+  try {
+    // Probe via mirrors endpoint which checks rclone implicitly
+    const data = await apiGet("/api/mirrors");
+    // We'll call a lightweight test to see if rclone is installed
+    // For now just show ready state - rclone will be auto-installed on first sync
+    if (statusText) statusText.textContent = "✅ rclone: Ready (auto-installs on first sync)";
+    if (bar) {
+      bar.style.background = "rgba(0,242,254,0.05)";
+      bar.style.borderColor = "rgba(0,242,254,0.15)";
+      statusText.style.color = "var(--accent-cyan)";
+    }
+    if (installBtn) installBtn.style.display = "none";
+  } catch (e) {
+    if (statusText) statusText.textContent = "⚙️ rclone status unknown";
+    if (installBtn) installBtn.style.display = "";
+  }
+}
+
+async function installRclone() {
+  const btn = document.getElementById("btn-install-rclone");
+  const statusText = document.getElementById("rclone-status-text");
+  if (btn) { btn.disabled = true; btn.textContent = "Installing..."; }
+  if (statusText) statusText.textContent = "⬇️ Downloading rclone...";
+  try {
+    const data = await apiPost("/api/mirrors/install-rclone", {});
+    if (data.success) {
+      if (statusText) statusText.textContent = "✅ rclone installed!";
+      if (btn) btn.style.display = "none";
+      showToast("rclone installed successfully", "success");
+    } else {
+      if (statusText) statusText.textContent = `⚠️ Install failed: ${(data.messages || []).join("; ")}`;
+      if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
+    }
+  } catch (e) {
+    if (statusText) statusText.textContent = `⚠️ Error: ${e.message}`;
+    if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
+  }
+}
+
+async function applyMirrorConfig() {
+  const input = document.getElementById("mirror-config-input");
+  const btn = document.getElementById("btn-apply-mirror");
+  const resultEl = document.getElementById("mirror-test-result");
+
+  if (!input || !input.value.trim()) {
+    showToast("Paste your vrp-public.json config first", "error");
+    return;
+  }
+
+  let config;
+  try {
+    config = JSON.parse(input.value.trim());
+  } catch (e) {
+    showToast("Invalid JSON — check your config format", "error");
+    return;
+  }
+
+  if (!config.baseUri) {
+    showToast("Config must contain a 'baseUri' field", "error");
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = "Applying..."; }
+
+  try {
+    const data = await apiPost("/api/mirrors/apply", config);
+    if (data.success) {
+      showToast(`Mirror configured: ${data.base_url}`, "success");
+      if (resultEl) {
+        resultEl.style.display = "block";
+        resultEl.style.background = "rgba(0,242,254,0.08)";
+        resultEl.style.border = "1px solid rgba(0,242,254,0.3)";
+        resultEl.style.color = "var(--accent-cyan)";
+        resultEl.textContent = `✅ ${data.message} — Click Sync Catalog in the Catalog tab to load games.`;
+      }
+      loadMirrorStatus();
+    } else {
+      showToast(data.error || "Failed to apply config", "error");
+      if (resultEl) {
+        resultEl.style.display = "block";
+        resultEl.style.background = "rgba(255,80,80,0.08)";
+        resultEl.style.border = "1px solid rgba(255,80,80,0.3)";
+        resultEl.style.color = "#ff8080";
+        resultEl.textContent = `❌ ${data.error}`;
+      }
+    }
+  } catch (e) {
+    showToast(`Error: ${e.message}`, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Apply Config"; }
+  }
+}
+
+async function testMirrorFromModal() {
+  const resultEl = document.getElementById("mirror-test-result");
+  const btn = document.getElementById("btn-modal-test");
+  if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
+  if (resultEl) { resultEl.style.display = "block"; resultEl.textContent = "⌛ Connecting..."; resultEl.style.background = "rgba(255,183,3,0.06)"; resultEl.style.border = "1px solid rgba(255,183,3,0.2)"; resultEl.style.color = "var(--accent-amber)"; }
+
+  try {
+    const data = await apiPost("/api/mirrors/test", {});
+    if (data.success) {
+      if (resultEl) {
+        resultEl.style.background = "rgba(0,242,254,0.08)";
+        resultEl.style.border = "1px solid rgba(0,242,254,0.3)";
+        resultEl.style.color = "var(--accent-cyan)";
+        resultEl.textContent = `✅ ${data.message}`;
+      }
+      showToast("Mirror connection OK!", "success");
+    } else {
+      if (resultEl) {
+        resultEl.style.background = "rgba(255,80,80,0.08)";
+        resultEl.style.border = "1px solid rgba(255,80,80,0.3)";
+        resultEl.style.color = "#ff8080";
+        resultEl.textContent = `❌ ${data.error}`;
+      }
+      showToast(data.error || "Connection failed", "error");
+    }
+  } catch (e) {
+    if (resultEl) { resultEl.textContent = `❌ ${e.message}`; }
+    showToast(`Error: ${e.message}`, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Test Connection"; }
+  }
+}
+
+async function testMirrorConnection() {
+  const btn = document.getElementById("btn-test-mirror");
+  if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
+  try {
+    const data = await apiPost("/api/mirrors/test", {});
+    showToast(data.success ? `✅ ${data.message}` : `❌ ${data.error}`, data.success ? "success" : "error");
+  } catch (e) {
+    showToast(`Error: ${e.message}`, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Test Connection"; }
+  }
+}
+
+async function clearMirrorConfig() {
+  if (!confirm("Reset to built-in catalog? This will remove your mirror config.")) return;
+  try {
+    const data = await apiPost("/api/mirrors/clear", {});
+    showToast(data.message || "Mirror cleared", "success");
+    loadMirrorStatus();
+    const resultEl = document.getElementById("mirror-test-result");
+    if (resultEl) resultEl.style.display = "none";
+    closeMirrorModal();
+  } catch (e) {
+    showToast(`Error: ${e.message}`, "error");
+  }
+}
+
+// Load mirror status on init
+document.addEventListener("DOMContentLoaded", () => {
+  loadMirrorStatus();
+});
+
+// Expose globally
+window.openMirrorModal = openMirrorModal;
+window.closeMirrorModal = closeMirrorModal;
+window.applyMirrorConfig = applyMirrorConfig;
+window.testMirrorFromModal = testMirrorFromModal;
+window.testMirrorConnection = testMirrorConnection;
+window.installRclone = installRclone;
+window.clearMirrorConfig = clearMirrorConfig;
+

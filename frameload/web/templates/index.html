@@ -337,6 +337,30 @@
             Uninstall FrameLoad...
           </button>
         </div>
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.2); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"></path></svg>
+              Mirror Manager
+            </h3>
+            <span id="mirror-status-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Built-in Catalog</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px;" id="mirror-status-text">
+            Using FrameLoad built-in catalog. Configure a VRP-compatible mirror for full live game access.
+          </p>
+          <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:14px;">
+            Get mirror config from: <a href="https://t.me/the_vrSrc" target="_blank" rel="noopener" style="color:var(--accent-cyan); text-decoration:none;">t.me/the_vrSrc</a>
+          </p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-primary compact" onclick="openMirrorModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"></path></svg>
+              Configure Mirror
+            </button>
+            <button class="btn-secondary compact" onclick="testMirrorConnection()" id="btn-test-mirror">
+              Test Connection
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -589,6 +613,77 @@
       <div style="display:flex; justify-content:flex-end; gap:12px;">
         <button class="btn-secondary" onclick="closeCleanCacheModal()">Cancel</button>
         <button class="btn-primary" onclick="executeCleanCache()">Clean Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mirror Manager Modal -->
+  <div id="mirror-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:600px;">
+      <button class="modal-close" onclick="closeMirrorModal()">&#x2715;</button>
+      <h2 style="font-size:1.35rem; font-weight:800; color:#fff; margin-bottom:6px; display:flex; align-items:center; gap:10px;">
+        <span style="color:var(--accent-cyan);">📡</span> Mirror Manager
+      </h2>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">
+        Configure a VRP-compatible mirror to access live game downloads. Get the current <code>vrp-public.json</code> config from the vrSrc community.
+      </p>
+
+      <!-- Current Status -->
+      <div id="mirror-modal-status" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:14px; margin-bottom:20px; font-size:0.85rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span><strong>Active Mirror:</strong> <span id="mirror-modal-url" style="color:var(--accent-cyan); font-family:monospace; font-size:0.8rem;">None (built-in catalog)</span></span>
+          <span id="mirror-modal-count" style="color:var(--text-muted);">0 games</span>
+        </div>
+      </div>
+
+      <!-- Sources Info -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px;">
+        <a href="https://t.me/the_vrSrc" target="_blank" rel="noopener" style="text-decoration:none;">
+          <div style="background:rgba(0,242,254,0.06); border:1px solid rgba(0,242,254,0.2); border-radius:var(--radius-md); padding:12px; cursor:pointer; transition:border-color 0.18s;" onmouseover="this.style.borderColor='var(--accent-cyan)'" onmouseout="this.style.borderColor='rgba(0,242,254,0.2)'">
+            <div style="font-weight:700; font-size:0.88rem; color:var(--accent-cyan); margin-bottom:4px;">vrSrc Community Mirror</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">Active • t.me/the_vrSrc</div>
+            <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">Tap to open Telegram →</div>
+          </div>
+        </a>
+        <a href="https://vrsrc.fyi/" target="_blank" rel="noopener" style="text-decoration:none;">
+          <div style="background:rgba(157,78,221,0.06); border:1px solid rgba(157,78,221,0.2); border-radius:var(--radius-md); padding:12px; cursor:pointer; transition:border-color 0.18s;" onmouseover="this.style.borderColor='var(--accent-purple)'" onmouseout="this.style.borderColor='rgba(157,78,221,0.2)'">
+            <div style="font-weight:700; font-size:0.88rem; color:var(--accent-purple); margin-bottom:4px;">vrSrc Website</div>
+            <div style="font-size:0.78rem; color:var(--text-muted);">vrsrc.fyi</div>
+            <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">Tap to open →</div>
+          </div>
+        </a>
+      </div>
+
+      <!-- Paste Config -->
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:0.85rem; font-weight:600; color:var(--text-main); margin-bottom:8px;">
+          Paste your <code>vrp-public.json</code> config:
+        </label>
+        <textarea id="mirror-config-input" rows="5" style="width:100%; background:rgba(0,0,0,0.4); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:12px; color:#fff; font-family:monospace; font-size:0.82rem; resize:vertical; outline:none; transition:border-color 0.18s;" placeholder='{
+  "baseUri": "https://go.srcdl1.xyz/",
+  "password": "Z0w1OVZmZ1B4b0hS"
+}' onfocus="this.style.borderColor='var(--accent-cyan)'" onblur="this.style.borderColor='var(--border-subtle)'"></textarea>
+        <p style="font-size:0.75rem; color:var(--text-dim); margin-top:6px;">
+          💡 Get the current config from <a href="https://t.me/the_vrSrc" target="_blank" rel="noopener" style="color:var(--accent-cyan);">t.me/the_vrSrc</a> — the latest is always pinned in the channel.
+        </p>
+      </div>
+
+      <!-- rclone Status -->
+      <div id="rclone-status-bar" style="background:rgba(255,183,3,0.07); border:1px solid rgba(255,183,3,0.2); border-radius:var(--radius-md); padding:10px 14px; margin-bottom:16px; font-size:0.82rem; display:flex; justify-content:space-between; align-items:center;">
+        <span id="rclone-status-text" style="color:var(--accent-amber);">⚙️ Checking rclone...</span>
+        <button id="btn-install-rclone" class="btn-secondary compact" style="font-size:0.78rem; padding:4px 12px; display:none;" onclick="installRclone()">Install rclone</button>
+      </div>
+
+      <!-- Test result -->
+      <div id="mirror-test-result" style="display:none; border-radius:var(--radius-md); padding:10px 14px; margin-bottom:16px; font-size:0.83rem;"></div>
+
+      <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <button class="btn-danger compact" onclick="clearMirrorConfig()" id="btn-clear-mirror" style="display:none;">Reset to Built-in</button>
+        <div style="display:flex; gap:10px; margin-left:auto;">
+          <button class="btn-secondary" onclick="closeMirrorModal()">Cancel</button>
+          <button class="btn-secondary compact" onclick="testMirrorFromModal()" id="btn-modal-test">Test Connection</button>
+          <button class="btn-primary" onclick="applyMirrorConfig()" id="btn-apply-mirror">Apply Config</button>
+        </div>
       </div>
     </div>
   </div>
