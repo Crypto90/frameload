@@ -40,7 +40,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "auto_open_browser": False,
     },
     "mirrors": {
-        "catalog_url": "https://raw.githubusercontent.com/Crypto90/frameload/main/frameload/catalog/bundled_catalog.json",
+        "catalog_url": "",
         "vrp_config_urls": [
             "https://raw.githubusercontent.com/Crypto90/frameload/main/frameload/catalog/vrp-public.json"
         ],

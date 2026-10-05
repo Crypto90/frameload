@@ -1807,7 +1807,7 @@ async function loadMirrorStatus() {
 function openMirrorModal() {
   const modal = document.getElementById("mirror-modal");
   if (modal) {
-    modal.classList.add("active");
+    modal.classList.add("open");
     loadMirrorStatus();
     checkRcloneStatus();
   }
@@ -1815,7 +1815,7 @@ function openMirrorModal() {
 
 function closeMirrorModal() {
   const modal = document.getElementById("mirror-modal");
-  if (modal) modal.classList.remove("active");
+  if (modal) modal.classList.remove("open");
 }
 
 async function checkRcloneStatus() {

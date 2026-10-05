@@ -16,13 +16,12 @@ from . import vrsrc as _vrsrc
 
 CATALOG_CACHE_FILE = os.path.join(DATA_DIR, "catalog_cache.json")
 GAMELIST_FILE = os.path.join(DATA_DIR, "VRP-GameList.txt")
-BUNDLED_CATALOG_FILE = os.path.join(os.path.dirname(__file__), "bundled_catalog.json")
 
 
 class VrpMirror:
     def __init__(self) -> None:
         self.config = Config.get()
-        self.base_url: str = ""
+        self.base_url: str = "https://go.srcdl1.xyz"
         self.password: str = ""
         self.games: List[CatalogGame] = []
         self.games_by_id: Dict[str, CatalogGame] = {}
@@ -138,37 +137,7 @@ class VrpMirror:
         return _vrsrc.install_rclone(status_cb)
 
     def load_bundled_catalog(self, merge: bool = False) -> bool:
-        """Loads the pre-packaged offline catalog into memory and updates local cache."""
-        if os.path.isfile(BUNDLED_CATALOG_FILE):
-            try:
-                with open(BUNDLED_CATALOG_FILE, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                new_games = list(self.games) if merge else []
-                existing_pkgs = set(self.games_by_pkg.keys()) if merge else set()
-                for item in raw:
-                    pkg = item["package_name"]
-                    if merge and pkg in existing_pkgs:
-                        continue
-                    g = CatalogGame(
-                        name=item["name"],
-                        release_name=item["release_name"],
-                        package_name=pkg,
-                        version_code=str(item.get("version_code", "1")),
-                        last_updated=item.get("last_updated", ""),
-                        size_bytes=int(item.get("size_bytes", 0)),
-                        id=item.get("id", ""),
-                        thumbnail_url=item.get("thumbnail_url", ""),
-                        kind=item.get("kind", "quest")
-                    )
-                    new_games.append(g)
-                if new_games:
-                    self.games = new_games
-                    self.games_by_id = {g.id: g for g in new_games}
-                    self.games_by_pkg = {g.package_name: g for g in new_games}
-                    self.save_cache()
-                    return True
-            except Exception as e:
-                print(f"[FrameLoad] Error loading bundled catalog: {e}")
+        """Removed: Bundled catalog is no longer supported."""
         return False
 
     def load_cache(self) -> None:
@@ -209,8 +178,7 @@ class VrpMirror:
             if len(self.games) >= 50:
                 return
 
-        # 3. Ensure bundled catalog is merged in so user always has full catalog
-        self.load_bundled_catalog(merge=True)
+
 
     def sync_catalog(self, status_callback: Optional[Callable[[str], None]] = None) -> bool:
         """Synchronizes catalog from online endpoints or GitHub raw updates with graceful fallback."""
@@ -242,7 +210,6 @@ class VrpMirror:
         custom_catalog = self.config["mirrors"].get("catalog_url")
         if custom_catalog:
             remote_json_urls.append(custom_catalog)
-        remote_json_urls.append("https://raw.githubusercontent.com/Crypto90/frameload/main/frameload/catalog/bundled_catalog.json")
 
         for json_url in remote_json_urls:
             try:
@@ -310,11 +277,7 @@ class VrpMirror:
                 status_callback(f"Catalog refreshed from local GameList ({len(self.games)} titles).")
             return True
 
-        # 4. Graceful fallback: refresh from bundled offline catalog
-        if self.load_bundled_catalog(merge=True):
-            if status_callback:
-                status_callback(f"Catalog loaded from built-in database ({len(self.games)} titles available).")
-            return True
+
 
         if len(self.games) > 0:
             if status_callback:
@@ -369,7 +332,6 @@ class VrpMirror:
                 self.games = new_games
                 self.games_by_id = {g.id: g for g in new_games}
                 self.games_by_pkg = {g.package_name: g for g in new_games}
-                self.load_bundled_catalog(merge=True)
                 self.save_cache()
                 return True
         except Exception as e:
