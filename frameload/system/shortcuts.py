@@ -18,6 +18,17 @@ MAX_VDF_BACKUPS = 5
 def get_steam_users() -> List[str]:
     userdata = os.path.join(STEAM_DIR, "userdata")
     if not os.path.isdir(userdata):
+        for alt in [
+            os.path.join(HOME, ".steam/steam/userdata"),
+            os.path.join(HOME, ".local/share/Steam/userdata"),
+            os.path.join(HOME, ".steam/root/userdata"),
+            os.path.join(HOME, ".var/app/com.valvesoftware.Steam/.local/share/Steam/userdata"),
+            os.path.join(HOME, ".var/app/com.valvesoftware.Steam/.steam/steam/userdata"),
+        ]:
+            if os.path.isdir(alt):
+                userdata = alt
+                break
+    if not os.path.isdir(userdata):
         return []
     return sorted(d for d in os.listdir(userdata) if d.isdigit() and d != "0")
 

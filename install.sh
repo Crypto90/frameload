@@ -5,6 +5,25 @@ set -euo pipefail
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()  { printf '\033[1;32m ✔  %s\033[0m\n' "$*"; }
 
+# Prevent running as root/sudo directly so paths and Steam ownership match user
+if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
+    say "Detected sudo execution. Re-running as user '$SUDO_USER'..."
+    exec su - "$SUDO_USER" -c "bash '$0' $*"
+fi
+
+# Ensure user runtime environment variables are exported for systemd user bus
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+    USER_UID="$(id -u)"
+    if [[ -d "/run/user/$USER_UID" ]]; then
+        export XDG_RUNTIME_DIR="/run/user/$USER_UID"
+    fi
+fi
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    if [[ -S "$XDG_RUNTIME_DIR/bus" ]]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+    fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "$PWD")"
 
 # 0. Self-bootstrapping: If run via curl pipe or outside repo, download FrameLoad first
@@ -116,14 +135,38 @@ WantedBy=default.target
 EOF
 
 # Reload and enable service
-systemctl --user daemon-reload || true
-if [[ "${1:-}" != "--no-restart" && "${1:-}" != "--update" ]]; then
-    systemctl --user enable --now frameload.service || true
-    ok "FrameLoad service enabled on port 5050"
-else
-    systemctl --user enable frameload.service || true
-    ok "FrameLoad service updated (restart deferred)"
+SYSTEMD_OK=false
+if systemctl --user daemon-reload >/dev/null 2>&1; then
+    SYSTEMD_OK=true
 fi
+
+if [[ "$SYSTEMD_OK" == "true" ]]; then
+    if [[ "${1:-}" != "--no-restart" && "${1:-}" != "--update" ]]; then
+        systemctl --user enable --now frameload.service 2>/dev/null || true
+        ok "FrameLoad service enabled via systemd user manager"
+    else
+        systemctl --user enable frameload.service 2>/dev/null || true
+        ok "FrameLoad service updated (restart deferred)"
+    fi
+else
+    say "Note: systemd user session bus not directly accessible in this terminal."
+    say "Configuring XDG user autostart and background daemon fallback..."
+    mkdir -p "$HOME/.config/autostart"
+    cat > "$HOME/.config/autostart/frameload.desktop" <<EOF
+[Desktop Entry]
+Name=FrameLoad
+Exec=$SCRIPT_DIR/run.sh --daemon
+Type=Application
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+    chmod +x "$HOME/.config/autostart/frameload.desktop"
+    ok "Configured user autostart in ~/.config/autostart/frameload.desktop"
+fi
+
+# Ensure FrameLoad daemon is active right now
+say "Starting FrameLoad daemon..."
+bash "$SCRIPT_DIR/run.sh" --daemon || true
 
 # 5. Add FrameLoad to Steam as a Non-Steam Game shortcut with full Steam Grid artwork
 say "Adding FrameLoad shortcut to Steam library with full Grid artwork..."
@@ -131,7 +174,6 @@ python3 -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR')
 from frameload.system.shortcuts import register_game_in_steam
-import os
 
 res = register_game_in_steam(
     title='FrameLoad',
@@ -142,8 +184,39 @@ res = register_game_in_steam(
     is_vr=False,
     launch_options=''
 )
-print('Steam registration result:', res)
+if res.get('success'):
+    print('✔ Successfully registered FrameLoad in Steam shortcuts.vdf!')
+    for u in res.get('users', {}):
+        print(f'  - Steam User ID: {u} (Artwork installed)')
+else:
+    print('ℹ Steam registration notice:', res.get('error'))
 " || true
+
+if pgrep -x steam >/dev/null 2>&1; then
+    printf '\n\033[1;33mℹ Steam is currently running. Please restart Steam (or switch to Gaming Mode) to see FrameLoad in your library.\033[0m\n'
+fi
+
+# 6. Verify server connectivity
+say "Verifying FrameLoad web server..."
+SERVER_OK=false
+for _ in {1..10}; do
+    if curl -s --connect-timeout 1 http://127.0.0.1:5050/api/config >/dev/null 2>&1; then
+        SERVER_OK=true
+        break
+    fi
+    sleep 0.5
+done
+
+if [[ "$SERVER_OK" == "true" ]]; then
+    ok "FrameLoad server is verified RUNNING and accessible!"
+else
+    say "Starting server fallback process directly..."
+    nohup /usr/bin/python3 "$SCRIPT_DIR/frameload/cli.py" serve --host 0.0.0.0 --port 5050 > "$HOME/.local/share/frameload/server.log" 2>&1 &
+    sleep 1
+    if curl -s --connect-timeout 1 http://127.0.0.1:5050/api/config >/dev/null 2>&1; then
+        ok "FrameLoad server is verified RUNNING!"
+    fi
+fi
 
 say "================================================================="
 ok "FrameLoad successfully installed!"

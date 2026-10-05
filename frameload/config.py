@@ -7,7 +7,25 @@ from pathlib import Path
 from typing import Any, Dict
 
 HOME = os.path.expanduser("~")
-STEAM_DIR = os.path.join(HOME, ".local/share/Steam")
+
+def get_steam_dir() -> str:
+    """Finds the active Steam directory with userdata folder on SteamOS/Linux."""
+    candidates = [
+        os.path.join(HOME, ".steam/steam"),
+        os.path.join(HOME, ".local/share/Steam"),
+        os.path.join(HOME, ".steam/root"),
+        os.path.join(HOME, ".var/app/com.valvesoftware.Steam/.local/share/Steam"),
+        os.path.join(HOME, ".var/app/com.valvesoftware.Steam/.steam/steam"),
+    ]
+    for c in candidates:
+        if os.path.isdir(os.path.join(c, "userdata")):
+            return c
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return os.path.join(HOME, ".local/share/Steam")
+
+STEAM_DIR = get_steam_dir()
 ANCHOR_DIR = os.path.join(HOME, "Applications/quest-frame")
 FRAMELOAD_DIR = os.path.join(HOME, ".local/share/frameload")
 CACHE_DIR = os.path.join(FRAMELOAD_DIR, "cache")
