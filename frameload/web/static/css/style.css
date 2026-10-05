@@ -767,6 +767,27 @@ input:checked + .slider:before {
   animation: slideInRight 0.3s ease;
 }
 
+.toast.toast-error {
+  border-color: #ff3b30;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(255, 59, 48, 0.4);
+  color: #ffdedc;
+  background: rgba(35, 12, 16, 0.95);
+}
+
+.toast.toast-success {
+  border-color: #30d158;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(48, 209, 88, 0.35);
+  color: #e5ffe9;
+  background: rgba(10, 32, 20, 0.95);
+}
+
+.toast.toast-warning {
+  border-color: #ffd60a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(255, 214, 10, 0.35);
+  color: #fff9db;
+  background: rgba(36, 30, 10, 0.95);
+}
+
 @keyframes slideInRight {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }

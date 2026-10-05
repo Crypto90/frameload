@@ -4,10 +4,34 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import sys
 import urllib.parse
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional
+
+# Ensure repository root is in sys.path and package context is established
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+if __name__ == "__main__" and (__package__ is None or __package__ == ""):
+    __package__ = "frameload"
+
+RED = "\033[1;31m"
+GREEN = "\033[1;32m"
+YELLOW = "\033[1;33m"
+CYAN = "\033[1;36m"
+RESET = "\033[0m"
+
+
+def color_excepthook(exc_type, exc_value, exc_traceback):
+    import traceback
+    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    sys.stderr.write(f"{RED}{tb}{RESET}\n")
+
+sys.excepthook = color_excepthook
+
 
 from .catalog.downloader import Downloader
 from .catalog.vrp_mirror import VrpMirror
@@ -353,6 +377,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         except Exception:
             self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR)
 
+    def log_error(self, format: str, *args: Any) -> None:
+        msg = format % args if args else format
+        sys.stderr.write(f"{RED}✖ [HTTP Error] {msg}{RESET}\n")
+
     def log_message(self, format: str, *args: Any) -> None:
         # Suppress noisy standard request logs unless in debug mode
         pass
@@ -371,6 +399,7 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
         if not task.target_apk:
             task.status = "error"
             task.error_message = "No APK found in extracted game folder."
+            sys.stderr.write(f"{RED}✖ [Auto-Install Error]: {task.error_message}{RESET}\n")
             return
 
         task.status = "installing"
@@ -382,25 +411,35 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
                 obb_dir = None
 
         target_device = getattr(task, "device_id", None) or config.get("storage", {}).get("default_device_id", "internal")
-        LeptonInstaller.install_quest_game(
-            package_name=task.game.package_name,
-            title=task.game.name,
-            apk_path=task.target_apk,
-            obb_path=obb_dir,
-            force_flat=(task.game.kind == "flat"),
-            device_id=target_device
-        )
-        task.status = "completed"
+        try:
+            LeptonInstaller.install_quest_game(
+                package_name=task.game.package_name,
+                title=task.game.name,
+                apk_path=task.target_apk,
+                obb_path=obb_dir,
+                force_flat=(task.game.kind == "flat"),
+                device_id=target_device
+            )
+            task.status = "completed"
+            print(f"{GREEN}✔ [Auto-Install Success]: {task.game.name} installed successfully!{RESET}")
+        except Exception as exc:
+            task.status = "error"
+            task.error_message = str(exc)
+            sys.stderr.write(f"{RED}✖ [Auto-Install Failed]: {exc}{RESET}\n")
 
     downloader.set_complete_hook(on_download_complete)
 
     server = ThreadingHTTPServer((host, port), FrameLoadApiHandler)
-    print(f"============================================================")
-    print(f"🚀 FrameLoad Server running at http://{host}:{port}")
+    print(f"{CYAN}============================================================{RESET}")
+    print(f"🚀 {GREEN}FrameLoad Server running at http://{host}:{port}{RESET}")
     print(f"📱 Access directly on Steam Frame or over Wi-Fi from any browser")
-    print(f"============================================================")
+    print(f"{CYAN}============================================================{RESET}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping FrameLoad server...")
+        print(f"\n{YELLOW}Stopping FrameLoad server...{RESET}")
         server.server_close()
+
+
+if __name__ == "__main__":
+    run_server()

@@ -4,6 +4,8 @@ set -euo pipefail
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()  { printf '\033[1;32m ✔  %s\033[0m\n' "$*"; }
+err() { printf '\033[1;31m ✖  %s\033[0m\n' "$*" >&2; }
+warn(){ printf '\033[1;33m ℹ  %s\033[0m\n' "$*"; }
 
 # Prevent running as root/sudo directly so paths and Steam ownership match user
 if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
@@ -101,7 +103,7 @@ cat > "$APPLICATIONS_DIR/frameload.desktop" <<EOF
 [Desktop Entry]
 Name=FrameLoad
 Comment=On-Device VR Sideloading, Catalog Downloader & Game Manager
-Exec=python3 $SCRIPT_DIR/frameload/cli.py %u
+Exec=$SCRIPT_DIR/run.sh %u
 Icon=$SCRIPT_DIR/frameload/web/static/assets/icon.png
 Terminal=false
 Type=Application
@@ -126,7 +128,7 @@ After=network.target
 Type=simple
 WorkingDirectory=$SCRIPT_DIR
 Environment=PYTHONPATH=$SCRIPT_DIR
-ExecStart=/usr/bin/python3 $SCRIPT_DIR/frameload/cli.py serve --host 0.0.0.0 --port 5050
+ExecStart=/usr/bin/python3 -m frameload.cli serve --host 0.0.0.0 --port 5050
 Restart=on-failure
 RestartSec=5
 
@@ -211,10 +213,18 @@ if [[ "$SERVER_OK" == "true" ]]; then
     ok "FrameLoad server is verified RUNNING and accessible!"
 else
     say "Starting server fallback process directly..."
-    nohup /usr/bin/python3 "$SCRIPT_DIR/frameload/cli.py" serve --host 0.0.0.0 --port 5050 > "$HOME/.local/share/frameload/server.log" 2>&1 &
-    sleep 1
+    export PYTHONPATH="$SCRIPT_DIR:${PYTHONPATH:-}"
+    nohup /usr/bin/python3 -m frameload.cli serve --host 0.0.0.0 --port 5050 > "$HOME/.local/share/frameload/server.log" 2>&1 &
+    sleep 1.5
     if curl -s --connect-timeout 1 http://127.0.0.1:5050/api/config >/dev/null 2>&1; then
         ok "FrameLoad server is verified RUNNING!"
+    else
+        err "FrameLoad server failed to start! Recent logs:"
+        if [[ -f "$HOME/.local/share/frameload/server.log" ]]; then
+            tail -n 15 "$HOME/.local/share/frameload/server.log" | while IFS= read -r line; do
+                printf '\033[0;31m  %s\033[0m\n' "$line" >&2
+            done
+        fi
     fi
 fi
 

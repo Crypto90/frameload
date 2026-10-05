@@ -3,7 +3,51 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+# Ensure repository root is in sys.path and package context is established
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+if __name__ == "__main__" and (__package__ is None or __package__ == ""):
+    __package__ = "frameload"
+
+# ANSI Color formatting for terminal outputs
+RED = "\033[1;31m"
+GREEN = "\033[1;32m"
+YELLOW = "\033[1;33m"
+CYAN = "\033[1;36m"
+RESET = "\033[0m"
+
+
+def color_excepthook(exc_type, exc_value, exc_traceback):
+    import traceback
+    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    sys.stderr.write(f"{RED}{tb}{RESET}\n")
+
+sys.excepthook = color_excepthook
+
+
+def print_err(msg: str) -> None:
+    sys.stderr.write(f"{RED}✖ {msg}{RESET}\n")
+
+
+def print_ok(msg: str) -> None:
+    print(f"{GREEN}✔ {msg}{RESET}")
+
+
+def print_info(msg: str) -> None:
+    print(f"{CYAN}ℹ {msg}{RESET}")
+
+
+class ColorArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        print_err(f"Error: {message}")
+        sys.exit(2)
+
 
 from .catalog.vrp_mirror import VrpMirror
 from .installer.package_loader import PackageLoader
@@ -25,7 +69,7 @@ def main() -> None:
         print(json.dumps(res, indent=2))
         return
 
-    parser = argparse.ArgumentParser(
+    parser = ColorArgumentParser(
         prog="frameload",
         description="FrameLoad: On-device VR Sideloading, Game Management, and Installer for Steam Frame"
     )
@@ -94,80 +138,111 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "serve" or args.command is None:
-        host = getattr(args, "host", "0.0.0.0")
-        port = getattr(args, "port", 5050)
-        run_server(host=host, port=port)
-    elif args.command == "info":
-        info = get_system_summary()
-        print(json.dumps(info, indent=2))
-    elif args.command == "storage":
-        overview = StorageManager.get_storage_overview()
-        print(json.dumps(overview, indent=2))
-    elif args.command == "move":
-        print(f"Moving {args.package} to {args.target_device}...")
-        res = StorageManager.move_game(args.package, args.target_device)
-        print(json.dumps(res, indent=2))
-    elif args.command == "list":
-        games = InstalledManager.list_installed()
-        print(f"Installed games ({len(games)}):")
-        for g in games:
-            loc = g.get("device_name", "Internal Storage")
-            print(f" - {g['title']} [{g['package']}] (Location: {loc}, VR: {g['is_vr']}, AppID: {g['appid']})")
-    elif args.command == "sync":
-        mirror = VrpMirror()
-        print("Synchronizing mirror catalog...")
-        success = mirror.sync_catalog(status_callback=print)
-        print("Done." if success else "Failed to sync catalog.")
-    elif args.command == "search":
-        mirror = VrpMirror()
-        res = mirror.search(query=args.query)
-        items = res.get("items", [])
-        print(f"Found {res.get('total_count', 0)} results:")
-        for item in items[:25]:
-            print(f" - {item['name']} ({item['size_formatted']}) [{item['package_name']}]")
-    elif args.command == "install":
-        print(f"Installing from source: {args.source}...")
-        res = PackageLoader.install_source(
-            source_path=args.source,
-            title=args.title,
-            obb_path=args.obb,
-            device_id=args.device,
-            force_flat=args.flat,
-            window_preset=args.window_preset
-        )
-        print("Installation complete:", json.dumps(res, indent=2))
-    elif args.command == "inject-mod":
-        print(f"Injecting mod/content into {args.package}...")
-        res = ModManager.inject_mod(
-            package_name=args.package,
-            source_path=args.source,
-            mod_name=args.name,
-            target_subpath=args.subpath
-        )
-        print("Mod injection complete:", json.dumps(res, indent=2))
-    elif args.command == "handle-url":
-        print(f"Processing deep link URL: {args.url}...")
-        res = ProtocolHandler.handle_url(args.url)
-        print("Result:", json.dumps(res, indent=2))
-    elif args.command == "launch":
-        print(f"Launching {args.package}...")
-        res = GameLauncher.launch(args.package)
-        print(json.dumps(res, indent=2))
-    elif args.command == "uninstall":
-        print(f"Uninstalling {args.package}...")
-        res = Uninstaller.uninstall(args.package, keep_saves=args.keep_saves)
-        print(json.dumps(res, indent=2))
-    elif args.command == "uninstall-app":
-        if not args.yes:
-            confirm = input("⚠️  Are you sure you want to completely uninstall FrameLoad and remove all traces? [y/N]: ").strip().lower()
-            if confirm not in ("y", "yes"):
-                print("Aborted.")
-                sys.exit(0)
-        print("Completely removing FrameLoad and system integrations...")
-        res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
-        print("Uninstallation summary:", json.dumps(res, indent=2))
-        print("✔ FrameLoad successfully removed from the system.")
+    try:
+        if args.command == "serve" or args.command is None:
+            host = getattr(args, "host", "0.0.0.0")
+            port = getattr(args, "port", 5050)
+            run_server(host=host, port=port)
+        elif args.command == "info":
+            info = get_system_summary()
+            print(json.dumps(info, indent=2))
+        elif args.command == "storage":
+            overview = StorageManager.get_storage_overview()
+            print(json.dumps(overview, indent=2))
+        elif args.command == "move":
+            print_info(f"Moving {args.package} to {args.target_device}...")
+            res = StorageManager.move_game(args.package, args.target_device)
+            if res.get("success"):
+                print_ok("Move completed successfully.")
+            else:
+                print_err(f"Move failed: {res.get('error', 'Unknown error')}")
+            print(json.dumps(res, indent=2))
+        elif args.command == "list":
+            games = InstalledManager.list_installed()
+            print_ok(f"Installed games ({len(games)}):")
+            for g in games:
+                loc = g.get("device_name", "Internal Storage")
+                print(f" - {g['title']} [{g['package']}] (Location: {loc}, VR: {g['is_vr']}, AppID: {g['appid']})")
+        elif args.command == "sync":
+            mirror = VrpMirror()
+            print_info("Synchronizing mirror catalog...")
+            success = mirror.sync_catalog(status_callback=print)
+            if success:
+                print_ok("Done.")
+            else:
+                print_err("Failed to sync catalog.")
+        elif args.command == "search":
+            mirror = VrpMirror()
+            res = mirror.search(query=args.query)
+            items = res.get("items", [])
+            print_ok(f"Found {res.get('total_count', 0)} results:")
+            for item in items[:25]:
+                print(f" - {item['name']} ({item['size_formatted']}) [{item['package_name']}]")
+        elif args.command == "install":
+            print_info(f"Installing from source: {args.source}...")
+            res = PackageLoader.install_source(
+                source_path=args.source,
+                title=args.title,
+                obb_path=args.obb,
+                device_id=args.device,
+                force_flat=args.flat,
+                window_preset=args.window_preset
+            )
+            if res.get("success"):
+                print_ok("Installation complete!")
+            else:
+                print_err(f"Installation failed: {res.get('error', 'Unknown error')}")
+            print(json.dumps(res, indent=2))
+        elif args.command == "inject-mod":
+            print_info(f"Injecting mod/content into {args.package}...")
+            res = ModManager.inject_mod(
+                package_name=args.package,
+                source_path=args.source,
+                mod_name=args.name,
+                target_subpath=args.subpath
+            )
+            if res.get("success"):
+                print_ok("Mod injection complete!")
+            else:
+                print_err(f"Mod injection failed: {res.get('error', 'Unknown error')}")
+            print(json.dumps(res, indent=2))
+        elif args.command == "handle-url":
+            print_info(f"Processing deep link URL: {args.url}...")
+            res = ProtocolHandler.handle_url(args.url)
+            if res.get("success"):
+                print_ok("Deep link handled successfully.")
+            else:
+                print_err(f"Deep link error: {res.get('error', 'Unknown error')}")
+            print(json.dumps(res, indent=2))
+        elif args.command == "launch":
+            print_info(f"Launching {args.package}...")
+            res = GameLauncher.launch(args.package)
+            if res.get("success"):
+                print_ok(f"Game {args.package} launched successfully.")
+            else:
+                print_err(f"Failed to launch: {res.get('error', 'Unknown error')}")
+            print(json.dumps(res, indent=2))
+        elif args.command == "uninstall":
+            print_info(f"Uninstalling {args.package}...")
+            res = Uninstaller.uninstall(args.package, keep_saves=args.keep_saves)
+            if res.get("success"):
+                print_ok(f"Successfully uninstalled {args.package}.")
+            else:
+                print_err(f"Failed to uninstall: {res.get('error', 'Unknown error')}")
+            print(json.dumps(res, indent=2))
+        elif args.command == "uninstall-app":
+            if not args.yes:
+                confirm = input(f"{YELLOW}⚠️  Are you sure you want to completely uninstall FrameLoad and remove all traces? [y/N]: {RESET}").strip().lower()
+                if confirm not in ("y", "yes"):
+                    print_info("Aborted.")
+                    sys.exit(0)
+            print_info("Completely removing FrameLoad and system integrations...")
+            res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
+            print("Uninstallation summary:", json.dumps(res, indent=2))
+            print_ok("FrameLoad successfully removed from the system.")
+    except Exception as exc:
+        print_err(f"Operation failed with error: {exc}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

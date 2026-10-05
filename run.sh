@@ -58,7 +58,7 @@ start_daemon_if_needed() {
         fi
     fi
 
-    nohup /usr/bin/python3 "$SCRIPT_DIR/frameload/cli.py" serve --host 0.0.0.0 --port "$PORT" > "$LOG_FILE" 2>&1 &
+    nohup /usr/bin/python3 -m frameload.cli serve --host 0.0.0.0 --port "$PORT" > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
 
     for _ in {1..12}; do
@@ -75,10 +75,17 @@ fi
 if [[ "${1:-}" == "--daemon" ]]; then
     start_daemon_if_needed
     if is_server_alive; then
-        printf "✔ FrameLoad server running at %s\n" "$URL"
+        printf "\033[1;32m✔ FrameLoad server running at %s\033[0m\n" "$URL"
         exit 0
     else
-        printf "✖ Failed to start FrameLoad server. Check %s\n" "$LOG_FILE" >&2
+        printf "\033[1;31m✖ Failed to start FrameLoad server. Check %s\033[0m\n" "$LOG_FILE" >&2
+        if [[ -f "$LOG_FILE" ]]; then
+            printf "\033[1;31m--- Recent Server Log ---\033[0m\n" >&2
+            tail -n 15 "$LOG_FILE" | while IFS= read -r line; do
+                printf "\033[0;31m  %s\033[0m\n" "$line" >&2
+            done
+            printf "\033[1;31m-------------------------\033[0m\n" >&2
+        fi
         exit 1
     fi
 fi

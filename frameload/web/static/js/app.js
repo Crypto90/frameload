@@ -886,7 +886,7 @@ function showToast(message, type = "info") {
   if (!container) return;
 
   const toast = document.createElement("div");
-  toast.className = "toast";
+  toast.className = `toast toast-${type}`;
   toast.textContent = message;
   container.appendChild(toast);
 
