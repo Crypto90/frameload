@@ -82,14 +82,24 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             sort_order = params.get("sort_order", ["desc"])[0]
             page = int(params.get("page", [1])[0])
             per_page = int(params.get("per_page", [36])[0])
-            res = self.mirror.search(
-                query=q, 
-                sort_by=sort_by, 
-                sort_order=sort_order, 
-                page=page, 
-                per_page=per_page,
-                extra_games=self.fdroid.games
-            )
+            kind = params.get("kind", ["vr"])[0]
+            
+            if kind == "flat":
+                res = self.fdroid.search(
+                    query=q, 
+                    sort_by=sort_by, 
+                    sort_order=sort_order, 
+                    page=page, 
+                    per_page=per_page
+                )
+            else:
+                res = self.mirror.search(
+                    query=q, 
+                    sort_by=sort_by, 
+                    sort_order=sort_order, 
+                    page=page, 
+                    per_page=per_page
+                )
             self.send_json(res)
         elif path.startswith("/api/thumbnail/"):
             pkg = path.replace("/api/thumbnail/", "").strip()

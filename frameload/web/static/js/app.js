@@ -11,7 +11,8 @@ const state = {
     totalCount: 0,
     query: "",
     sortBy: "date",
-    sortOrder: "desc"
+    sortOrder: "desc",
+    kind: "vr"
   },
   installed: [],
   downloads: [],
@@ -151,6 +152,15 @@ function setupSearch() {
     });
   }
 
+  const kindSelect = document.getElementById("catalog-kind-select");
+  if (kindSelect) {
+    kindSelect.addEventListener("change", (e) => {
+      state.catalog.kind = e.target.value;
+      state.catalog.page = 1;
+      loadCatalog();
+    });
+  }
+
   const syncBtn = document.getElementById("sync-catalog-btn");
   if (syncBtn) {
     syncBtn.addEventListener("click", syncCatalog);
@@ -170,7 +180,8 @@ async function loadCatalog(page = state.catalog.page) {
       per_page: 36,
       q: state.catalog.query,
       sort_by: state.catalog.sortBy,
-      sort_order: state.catalog.sortOrder
+      sort_order: state.catalog.sortOrder,
+      kind: state.catalog.kind
     });
 
     const res = await fetch(`/api/catalog?${params}`);

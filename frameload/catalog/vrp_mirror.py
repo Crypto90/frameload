@@ -373,13 +373,10 @@ class VrpMirror:
         sort_by: str = "date",
         sort_order: str = "desc",
         page: int = 1,
-        per_page: int = 36,
-        extra_games: Optional[List[CatalogGame]] = None
+        per_page: int = 36
     ) -> Dict[str, Any]:
         """Search, filter, and paginate the game catalog."""
         results = list(self.games)
-        if extra_games:
-            results.extend(extra_games)
 
         if query:
             q = query.lower().strip()

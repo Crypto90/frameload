@@ -137,3 +137,44 @@ class FDroidCatalog:
 
     def get_game(self, game_id: str) -> Optional[CatalogGame]:
         return self.games_by_id.get(game_id)
+
+    def search(
+        self,
+        query: str = "",
+        sort_by: str = "date",
+        sort_order: str = "desc",
+        page: int = 1,
+        per_page: int = 36
+    ) -> Dict[str, Any]:
+        """Search, filter, and paginate the F-Droid catalog."""
+        results = list(self.games)
+
+        if query:
+            q = query.lower().strip()
+            results = [
+                g for g in results
+                if q in g.name.lower() or q in g.package_name.lower() or q in g.release_name.lower()
+            ]
+
+        # Sorting
+        if sort_by == "name":
+            results.sort(key=lambda g: g.name.lower(), reverse=(sort_order == "desc"))
+        elif sort_by == "size":
+            results.sort(key=lambda g: g.size_bytes, reverse=(sort_order == "desc"))
+        elif sort_by == "date":
+            results.sort(key=lambda g: g.last_updated, reverse=(sort_order == "desc"))
+
+        total_count = len(results)
+        total_pages = max(1, (total_count + per_page - 1) // per_page)
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        page_items = results[start_idx:end_idx]
+
+        return {
+            "items": [g.to_dict() for g in page_items],
+            "total_count": total_count,
+            "page": page,
+            "total_pages": total_pages,
+            "per_page": per_page
+        }
