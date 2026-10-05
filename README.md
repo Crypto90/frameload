@@ -184,7 +184,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.0.8}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.0.9}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 

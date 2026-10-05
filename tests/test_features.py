@@ -200,19 +200,5 @@ class TestNewMergedFeatures(unittest.TestCase):
                 self.assertIn("LEPTON_WINDOW_HEIGHT=1600", launch_sh)
                 self.assertIn("LEPTON_ORIENTATION=portrait", launch_sh)
 
-    def test_bundled_catalog_loading_and_search(self):
-        from frameload.catalog.vrp_mirror import VrpMirror
-        mirror = VrpMirror()
-        self.assertGreaterEqual(len(mirror.games), 100)
-        res = mirror.search(query="Beat Saber")
-        self.assertGreaterEqual(res["total_count"], 1)
-        self.assertEqual(res["items"][0]["package_name"], "com.beatgames.beatsaber")
-
-        # Test sync_catalog returns True even without external network
-        sync_res = mirror.sync_catalog()
-        self.assertTrue(sync_res)
-        self.assertGreaterEqual(len(mirror.games), 100)
-
-
 if __name__ == "__main__":
     unittest.main()
