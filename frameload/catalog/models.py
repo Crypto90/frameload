@@ -39,6 +39,7 @@ class CatalogGame:
     kind: str = "quest"  # quest, pcvr, flat
     is_installed: bool = False
     installed_version: str = ""
+    download_url: str = ""
 
     def __post_init__(self) -> None:
         if not self.id:

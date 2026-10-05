@@ -36,6 +36,7 @@ sys.excepthook = color_excepthook
 
 from .catalog.downloader import Downloader
 from .catalog.vrp_mirror import VrpMirror
+from .catalog.fdroid import FDroidCatalog
 from .config import ANCHOR_DIR, Config, DATA_DIR
 from .installer.lepton_quest import LeptonInstaller
 from .installer.package_loader import PackageLoader
@@ -60,6 +61,7 @@ WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.mirror = VrpMirror()
+        self.fdroid = FDroidCatalog()
         self.downloader = Downloader.get()
         super().__init__(*args, directory=WEB_DIR, **kwargs)
 
@@ -80,7 +82,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             sort_order = params.get("sort_order", ["desc"])[0]
             page = int(params.get("page", [1])[0])
             per_page = int(params.get("per_page", [36])[0])
-            res = self.mirror.search(query=q, sort_by=sort_by, sort_order=sort_order, page=page, per_page=per_page)
+            res = self.mirror.search(
+                query=q, 
+                sort_by=sort_by, 
+                sort_order=sort_order, 
+                page=page, 
+                per_page=per_page,
+                extra_games=self.fdroid.games
+            )
             self.send_json(res)
         elif path.startswith("/api/thumbnail/"):
             pkg = path.replace("/api/thumbnail/", "").strip()
@@ -223,7 +232,11 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/catalog/sync":
             success = self.mirror.sync_catalog()
-            self.send_json({"success": success, "total_games": len(self.mirror.games)})
+            
+            # Sync fdroid async or sequentially (doing it sequentially is fine for now)
+            self.fdroid.sync()
+            
+            self.send_json({"success": success, "total_games": len(self.mirror.games) + len(self.fdroid.games)})
         elif path == "/api/mirrors/apply":
             # Accept a vrp-public.json dict with baseUri + password
             config_json = body.get("config", body)  # supports {config:{...}} or direct
@@ -297,7 +310,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/downloads/queue":
             game_id = body.get("game_id", "")
             device_id = body.get("device_id")
-            game = self.mirror.get_game(game_id)
+            game = self.mirror.get_game(game_id) or self.fdroid.get_game(game_id)
             if not game:
                 self.send_json({"error": "Game not found in catalog"}, status=HTTPStatus.NOT_FOUND)
                 return

@@ -124,6 +124,24 @@ class Downloader:
         game_dir = os.path.join(CACHE_DIR, task.id)
         os.makedirs(game_dir, exist_ok=True)
 
+        # If game has a direct download URL (e.g. F-Droid), download and skip decompression
+        if task.game.download_url:
+            dest_file = os.path.join(game_dir, f"{task.id}.apk")
+            if not self._download_file(task.game.download_url, dest_file, task):
+                if task.status != "canceled":
+                    raise RuntimeError("Download failed.")
+            
+            task.status = "ready_to_install"
+            task.progress = 1.0
+            task.target_apk = dest_file
+            
+            if self._on_complete_hook:
+                try:
+                    self._on_complete_hook(task)
+                except Exception as e:
+                    print(f"[FrameLoad] Auto-install hook error: {e}")
+            return
+
         # In Rookie / VRP public mirrors, files are under baseUri/<id>/<id>.7z.001 etc.
         # Or baseUri/<id>.7z
         # Let's probe for the multi-part or single archive
