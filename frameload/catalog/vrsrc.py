@@ -179,8 +179,9 @@ def write_rclone_config(base_url: str, password: str) -> str:
 
 
 def _make_env() -> dict:
-    """Build clean environment for rclone."""
+    """Build clean environment for rclone with the vrSrc API key."""
     env = os.environ.copy()
+    env["RCLONE_HEADER"] = f"X-API-Key: {VRSRC_API_KEY}"
     # Remove proxy vars that could alter TLS fingerprint routing
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
         env.pop(var, None)
