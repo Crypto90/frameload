@@ -119,12 +119,32 @@ class VrpMirror:
         self.password = ""
         self.config["mirrors"]["custom_mirrors"] = []
         self.config.save()
+        
+        # Remove vrp-public.json config
         config_path = os.path.join(DATA_DIR, "vrp-public.json")
         if os.path.isfile(config_path):
             try:
                 os.remove(config_path)
             except OSError:
                 pass
+                
+        # Clear catalog cache
+        if os.path.isfile(CATALOG_CACHE_FILE):
+            try:
+                os.remove(CATALOG_CACHE_FILE)
+            except OSError:
+                pass
+        
+        # Clear VRP-GameList.txt
+        if os.path.isfile(GAMELIST_FILE):
+            try:
+                os.remove(GAMELIST_FILE)
+            except OSError:
+                pass
+        
+        self.games = []
+        self.games_by_id = {}
+        self.games_by_pkg = {}
 
     def test_mirror_connection(self) -> dict:
         """Test connectivity to the configured mirror using rclone."""

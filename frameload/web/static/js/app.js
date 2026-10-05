@@ -31,6 +31,29 @@ const state = {
   selectedGame: null
 };
 
+// --- API Helpers ---
+async function apiGet(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || "API Error");
+  }
+  return res.json();
+}
+
+async function apiPost(url, data = {}) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || "API Error");
+  }
+  return res.json();
+}
+
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   setupTabs();

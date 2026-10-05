@@ -273,8 +273,13 @@ class UpdateManager:
 
         # 4. Trigger systemd service restart in background after response is sent (2s delay)
         try:
+            restart_cmd = (
+                "export XDG_RUNTIME_DIR=\"/run/user/$(id -u)\" && "
+                "export DBUS_SESSION_BUS_ADDRESS=\"unix:path=$XDG_RUNTIME_DIR/bus\" && "
+                "sleep 2 && systemctl --user restart frameload.service"
+            )
             subprocess.Popen(
-                ["bash", "-c", "sleep 2 && systemctl --user restart frameload.service"],
+                ["bash", "-c", restart_cmd],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
