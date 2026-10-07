@@ -10,7 +10,7 @@ const state = {
     totalPages: 1,
     totalCount: 0,
     query: "",
-    sortBy: "date",
+    sortBy: "downloads",
     sortOrder: "desc",
     kind: "vr"
   },
@@ -149,8 +149,12 @@ function setupSearch() {
   if (sortSelect) {
     sortSelect.addEventListener("change", (e) => {
       const val = e.target.value;
-      if (val === "date_desc") { state.catalog.sortBy = "date"; state.catalog.sortOrder = "desc"; }
+      if (val === "downloads_desc") { state.catalog.sortBy = "downloads"; state.catalog.sortOrder = "desc"; }
+      else if (val === "downloads_asc") { state.catalog.sortBy = "downloads"; state.catalog.sortOrder = "asc"; }
+      else if (val === "date_desc") { state.catalog.sortBy = "date"; state.catalog.sortOrder = "desc"; }
+      else if (val === "rating_desc") { state.catalog.sortBy = "rating"; state.catalog.sortOrder = "desc"; }
       else if (val === "name_asc") { state.catalog.sortBy = "name"; state.catalog.sortOrder = "asc"; }
+      else if (val === "name_desc") { state.catalog.sortBy = "name"; state.catalog.sortOrder = "desc"; }
       else if (val === "size_desc") { state.catalog.sortBy = "size"; state.catalog.sortOrder = "desc"; }
       else if (val === "size_asc") { state.catalog.sortBy = "size"; state.catalog.sortOrder = "asc"; }
       state.catalog.page = 1;
@@ -234,7 +238,7 @@ function renderCatalogGrid() {
           <div class="card-title" title="${game.name}">${game.name}</div>
           <div class="card-meta">
             <span>${game.size_formatted}</span>
-            <span>${game.version_code ? 'v' + game.version_code : ''}</span>
+            <span>${game.downloads ? '📥 ' + game.downloads.toLocaleString() : (game.version_code ? 'v' + game.version_code : '')}</span>
           </div>
           <div class="card-actions">
             ${isInstalled 
@@ -628,6 +632,13 @@ function openGameModal(id, mode = "catalog") {
   document.getElementById("modal-game-title").textContent = game.name || game.title;
   document.getElementById("modal-game-pkg").textContent = pkg;
   document.getElementById("modal-game-size").textContent = game.size_formatted || `${Math.round((game.apk_size || 0)/(1024*1024))} MB`;
+
+  const dlEl = document.getElementById("modal-game-downloads");
+  if (dlEl) {
+    dlEl.textContent = (game.downloads !== undefined && game.downloads !== null && game.downloads > 0)
+      ? `${game.downloads.toLocaleString()} downloads`
+      : (mode === "catalog" ? "N/A" : "Installed");
+  }
 
   // Release Notes / Instructions section
   const notesSection = document.getElementById("modal-notes-section");

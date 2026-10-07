@@ -430,7 +430,11 @@ class VrpMirror:
             ]
 
         # Sorting
-        if sort_by == "name":
+        if sort_by in ("downloads", "popularity"):
+            results.sort(key=lambda g: getattr(g, "downloads", 0) or 0, reverse=(sort_order == "desc"))
+        elif sort_by in ("rating", "score"):
+            results.sort(key=lambda g: getattr(g, "rating", 0.0) or 0.0, reverse=(sort_order == "desc"))
+        elif sort_by == "name":
             results.sort(key=lambda g: g.name.lower(), reverse=(sort_order == "desc"))
         elif sort_by == "size":
             results.sort(key=lambda g: g.size_bytes, reverse=(sort_order == "desc"))

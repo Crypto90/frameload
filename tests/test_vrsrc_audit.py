@@ -139,6 +139,28 @@ class TestVrsrcAudit(unittest.TestCase):
         self.assertEqual(task.device_id, "internal")
         self.assertIn("50000000", str(task.total_bytes))
 
+    def test_catalog_downloads_and_ratings_sorting(self):
+        mirror = VrpMirror()
+        g1 = CatalogGame(name="Game A", release_name="Game.A.v1", package_name="com.a", version_code="1", last_updated="2026-01-01", size_bytes=100, downloads=10, rating=3.5)
+        g2 = CatalogGame(name="Game B", release_name="Game.B.v1", package_name="com.b", version_code="1", last_updated="2026-01-02", size_bytes=200, downloads=5000, rating=4.9)
+        g3 = CatalogGame(name="Game C", release_name="Game.C.v1", package_name="com.c", version_code="1", last_updated="2026-01-03", size_bytes=50, downloads=250, rating=4.2)
+        mirror.games = [g1, g2, g3]
+
+        # Sort by downloads descending (most downloads first)
+        res_most = mirror.search(sort_by="downloads", sort_order="desc")
+        names_most = [g["name"] for g in res_most["items"]]
+        self.assertEqual(names_most, ["Game B", "Game C", "Game A"])
+
+        # Sort by downloads ascending (least downloads first)
+        res_least = mirror.search(sort_by="downloads", sort_order="asc")
+        names_least = [g["name"] for g in res_least["items"]]
+        self.assertEqual(names_least, ["Game A", "Game C", "Game B"])
+
+        # Sort by rating descending
+        res_rating = mirror.search(sort_by="rating", sort_order="desc")
+        names_rating = [g["name"] for g in res_rating["items"]]
+        self.assertEqual(names_rating, ["Game B", "Game C", "Game A"])
+
 
 if __name__ == "__main__":
     unittest.main()

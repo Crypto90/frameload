@@ -169,8 +169,12 @@
           </select>
           <label style="font-size:0.85rem; color:var(--text-muted);">Sort by:</label>
           <select id="sort-select" class="select-styled">
+            <option value="downloads_desc">Most Downloads (Popular)</option>
+            <option value="downloads_asc">Least Downloads</option>
             <option value="date_desc">Most Recent Updates</option>
+            <option value="rating_desc">Highest Rated</option>
             <option value="name_asc">Title (A-Z)</option>
+            <option value="name_desc">Title (Z-A)</option>
             <option value="size_desc">Size (Largest first)</option>
             <option value="size_asc">Size (Smallest first)</option>
           </select>
