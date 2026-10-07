@@ -90,6 +90,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
             "controller_models": "steam_frame_roy",
             "haptic_multiplier": 1.2,
             "passthrough": True,
+            "hand_tracking": "synthetic",
         },
     },
     "max_visuals": {
@@ -307,6 +308,7 @@ class TuningManager:
         ctrl_model = str(settings.get("controller_models", "steam_frame_roy"))
         haptic = float(settings.get("haptic_multiplier", 1.2))
         passthrough = 1 if settings.get("passthrough", True) else 0
+        hand_track = str(settings.get("hand_tracking", "synthetic")).lower()
 
         # Calculate FFR level for debug.oculus.foveation.level
         ffr_levels = {"off": 0, "low": 1, "medium": 2, "high": 3, "dynamic": 3}
@@ -333,6 +335,8 @@ class TuningManager:
             "controller_models": ctrl_model,
             "haptic_multiplier": f"{haptic:.2f}",
             "passthrough": passthrough,
+            "hand_tracking": hand_track,
+            "hand_tracking_enabled": 1 if hand_track != "disabled" else 0,
         }
 
         # Write settings.conf in base dir
@@ -360,6 +364,8 @@ class TuningManager:
             f"debug.oculus.textureWidthRatio={scale:.2f}",
             f"debug.oculus.textureHeightRatio={scale:.2f}",
             f"debug.oculus.anisotropic={af}",
+            f"debug.oculus.handTracking={'1' if hand_track != 'disabled' else '0'}",
+            f"debug.oculus.handTracking.mode={hand_track}",
         ]
         prop_content = "\n".join(prop_lines) + "\n"
 
@@ -373,12 +379,19 @@ class TuningManager:
         except OSError:
             pass
 
-        # 5. Engine-Specific Optimizations
+        # 5. Hand Tracking Configuration & Skeleton Files
+        try:
+            from ..installer.hand_tracking import HandTrackingManager
+            HandTrackingManager.generate_hand_tracking_files(base, package_name, mode=hand_track)
+        except Exception as e:
+            print(f"[FrameLoad] Hand tracking file gen error: {e}")
+
+        # 6. Engine-Specific Optimizations
         engine = dep.get("engine", "Unknown")
         if engine == "Unreal":
             TuningManager._apply_unreal_engine_tweaks(game_files_dir, scale, msaa)
 
-        # 6. Build Environment Variables string
+        # 7. Build Environment Variables string
         android_prop_override = ";".join([
             f"ro.product.model={prof['model']}",
             f"ro.product.device={prof['device']}",
@@ -392,6 +405,7 @@ class TuningManager:
             f"debug.oculus.textureWidthRatio={scale:.2f}",
             f"debug.oculus.textureHeightRatio={scale:.2f}",
             f"debug.oculus.anisotropic={af}",
+            f"debug.oculus.handTracking={'1' if hand_track != 'disabled' else '0'}",
         ])
 
         env_block = f"""# === BEGIN STEAM FRAME TUNING ===
@@ -409,6 +423,7 @@ export LEPTON_CPU_LEVEL={cpu}
 export LEPTON_GPU_LEVEL={gpu}
 export LEPTON_CONTROLLER_MODELS={shlex.quote(ctrl_model)}
 export LEPTON_HAPTIC_SCALE={shlex.quote(f"{haptic:.2f}")}
+export LEPTON_HAND_TRACKING={shlex.quote(hand_track)}
 export ANDROID_PROPERTY_OVERRIDE={shlex.quote(android_prop_override)}
 # === END STEAM FRAME TUNING ==="""
 

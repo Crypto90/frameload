@@ -82,6 +82,10 @@ class TestSteamFrameTuning(unittest.TestCase):
             self.assertIn("dynamic_foveation=1", content)
             self.assertIn("anisotropic_filtering=8", content)
 
+            # Check Hand Tracking config files
+            self.assertTrue(os.path.isfile(os.path.join(self.game_dir, "hand_tracking.json")))
+            self.assertTrue(os.path.isfile(os.path.join(self.game_dir, "framebridge_hands.conf")))
+
             # Check local.prop (Android Bionic properties)
             local_prop = os.path.join(self.game_dir, "lepton-data", "local.prop")
             self.assertTrue(os.path.isfile(local_prop))

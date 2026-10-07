@@ -252,6 +252,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json(TuningManager.get_game_tuning(pkg))
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
+        elif path == "/api/tuning/hand-tracking":
+            from .installer.hand_tracking import HandTrackingManager
+            self.send_json(HandTrackingManager.get_diagnostic_report())
         elif path == "/api/mirrors":
             config = Config.get()
             custom_mirrors = config["mirrors"].get("custom_mirrors", [])

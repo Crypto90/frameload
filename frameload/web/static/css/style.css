@@ -1847,4 +1847,119 @@ body.vr-grabbing * {
   line-height: 1.4;
 }
 
+/* ==========================================================================
+   VR Hand Tracking & WebXR Pinch Gestures
+   ========================================================================== */
+.vr-hand-reticle {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  width: 32px;
+  height: 32px;
+  pointer-events: none;
+  z-index: 1000000;
+  transform: translate(-50%, -50%);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease;
+}
+
+.vr-hand-reticle.active {
+  display: flex;
+}
+
+.vr-hand-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 242, 254, 0.75);
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.45);
+  transition: transform 0.08s ease-out, border-color 0.15s, box-shadow 0.15s;
+}
+
+.vr-hand-thumb-ring {
+  width: 22px;
+  height: 22px;
+  transform: translate(-4px, -4px);
+  border-color: rgba(79, 172, 254, 0.7);
+}
+
+.vr-hand-index-ring {
+  width: 22px;
+  height: 22px;
+  transform: translate(4px, 4px);
+  border-color: rgba(0, 242, 254, 0.85);
+}
+
+.vr-hand-center-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 8px #ffffff, 0 0 14px var(--accent-cyan);
+  transition: transform 0.1s, background-color 0.15s;
+}
+
+.vr-hand-label {
+  position: absolute;
+  bottom: -16px;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(0, 242, 254, 0.8);
+  letter-spacing: 0.5px;
+  background: rgba(10, 15, 29, 0.85);
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 0.5px solid rgba(0, 242, 254, 0.3);
+}
+
+/* Reticle states */
+.vr-hand-reticle.pinching .vr-hand-thumb-ring,
+.vr-hand-reticle.pinching .vr-hand-index-ring {
+  transform: translate(0, 0) scale(0.85);
+  border-color: #00ff88;
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.85);
+}
+
+.vr-hand-reticle.pinching .vr-hand-center-dot {
+  background: #00ff88;
+  box-shadow: 0 0 12px #00ff88, 0 0 20px #00ff88;
+  transform: scale(1.6);
+}
+
+.vr-hand-pinch-glow {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 255, 136, 0.4) 0%, transparent 70%);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.15s, transform 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+.vr-hand-reticle.pinching .vr-hand-pinch-glow {
+  opacity: 1;
+  transform: scale(1.4);
+}
+
+.vr-hud-hand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+}
+
+.vr-hud-hand-badge.tracking {
+  background: rgba(0, 255, 136, 0.15);
+  border-color: rgba(0, 255, 136, 0.4);
+  color: #00ff88;
+}
+
 

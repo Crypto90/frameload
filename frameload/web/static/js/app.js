@@ -2178,6 +2178,14 @@ async function openTuningModal(pkg) {
     const hapticSel = document.getElementById("tune-haptic-select");
     if (hapticSel) hapticSel.value = String(data.haptic_multiplier || 1.2);
 
+    const handSel = document.getElementById("tune-hand-select");
+    if (handSel) handSel.value = data.hand_tracking || "synthetic";
+    const handVal = document.getElementById("tune-hand-val");
+    if (handVal) {
+      const labels = { synthetic: "Synthetic (Roy)", optical: "Optical (Monado)", disabled: "Disabled" };
+      handVal.textContent = labels[data.hand_tracking || "synthetic"] || "Synthetic";
+    }
+
     updatePresetChipHighlight();
   } catch (err) {
     console.error("Failed to load tuning for", pkg, err);
@@ -2244,6 +2252,13 @@ function updateTuningPreview() {
   const afSel = document.getElementById("tune-af-select");
   const afVal = document.getElementById("tune-af-val");
   if (afSel && afVal) afVal.textContent = `${afSel.value}x`;
+
+  const handSel = document.getElementById("tune-hand-select");
+  const handVal = document.getElementById("tune-hand-val");
+  if (handSel && handVal) {
+    const labels = { synthetic: "Synthetic (Roy)", optical: "Optical (Monado)", disabled: "Disabled" };
+    handVal.textContent = labels[handSel.value] || handSel.value;
+  }
 
   updatePresetChipHighlight();
 }
@@ -2347,6 +2362,9 @@ function selectTuningPreset(presetName) {
   const hapticSel = document.getElementById("tune-haptic-select");
   if (hapticSel) hapticSel.value = String(p.haptic_multiplier);
 
+  const handSel = document.getElementById("tune-hand-select");
+  if (handSel && p.hand_tracking) handSel.value = p.hand_tracking;
+
   updateTuningPreview();
 
   // Highlight active chip
@@ -2382,7 +2400,8 @@ async function saveGameTuningFromModal() {
     cpu_level: parseInt(document.getElementById("tune-cpu-select")?.value || 4),
     gpu_level: parseInt(document.getElementById("tune-gpu-select")?.value || 4),
     controller_models: document.getElementById("tune-ctrl-select")?.value || "steam_frame_roy",
-    haptic_multiplier: parseFloat(document.getElementById("tune-haptic-select")?.value || 1.2)
+    haptic_multiplier: parseFloat(document.getElementById("tune-haptic-select")?.value || 1.2),
+    hand_tracking: document.getElementById("tune-hand-select")?.value || "synthetic"
   };
 
   try {

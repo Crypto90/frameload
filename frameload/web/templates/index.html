@@ -1007,6 +1007,22 @@
             </div>
           </div>
         </div>
+
+        <!-- 9. Hand Tracking & Skeletal Emulation -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">🖐️ Hand Tracking Bridge</span>
+            <span id="tune-hand-val" class="tuning-card-val">Synthetic (Roy)</span>
+          </div>
+          <select id="tune-hand-select" class="select-styled" onchange="updateTuningPreview()">
+            <option value="synthetic" selected>Synthetic (Steam Frame Roy Capacitive Touch)</option>
+            <option value="optical">Optical (Monado Mercury / Camera AI Pose)</option>
+            <option value="disabled">Disabled (Physical Controllers Only)</option>
+          </select>
+          <p class="tuning-micro-note">
+            Enables 26-joint Meta Quest skeletal hand tracking. In Synthetic mode, Roy controller capacitive touch sensors synthesize natural finger curls and pinch gestures with zero camera lag.
+          </p>
+        </div>
       </div>
 
       <!-- Footer Buttons -->
