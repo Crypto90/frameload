@@ -26,10 +26,27 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 ## ⚡ Key Features
 
 - **🎮 100% On-Device & Standalone:**
-  - Runs natively on SteamOS (ARM64 / aarch64).
-  - Open it directly in SteamVR, Gaming Mode, Desktop Mode, or access it over local Wi-Fi from your phone/tablet/laptop.
+  - Runs natively on SteamOS (ARM64 / aarch64) with **zero companion PC required**.
+  - **Zero-Browser Standalone Window:** Launches as a dedicated native desktop application window (`PyQt6`, `WebKit2GTK`, `pywebview`, or chromeless `--kiosk` profile) with **zero tabs, zero address bars, and zero external browser UI**.
+  - Open it directly in SteamVR Gaming Mode, Desktop Mode, or access it over local Wi-Fi from your phone/tablet/laptop.
+- **🕹️ Dual Input Engine (VR Laser Pointer + Gamepad Navigation):**
+  - Built-in HTML5 Gamepad & VR Pointer API navigator (`gamepad.js`):
+    - **Momentum Drag-to-Scroll:** Grab and flick lists, catalog grids, and modal dialogs with realistic inertial physics friction.
+    - **Laser-Aim Targeted Scrolling:** Point your controller laser at any specific area (card notes, categories carousel, log drawer) and tilt the Right Stick to scroll that exact container smoothly.
+    - **Laser-Aim Contextual Navigation:** Pointing at any element anchors D-Pad / Left Stick directional movement directly to that card.
+    - **True 2D Spatial Vector Navigation:** Seamless joystick movement between cards, chips, search, and action buttons.
+    - **Modal Focus Trapping & VR HUD:** Cleanly traps focus inside open dialogs (B/Grip button exits) with an on-screen VR controller guide bar.
+- **🥽 Steam Frame VR Optimizer & Hardware Spoofing Engine:**
+  - **Meta Quest 3 Hardware Spoofing (`eureka`):** Unlocks 4K textures, dynamic real-time shadows, expanded LOD draw distances, and modern shaders on Quest APKs that downgrade on unverified headsets.
+  - **Eye-Tracked Dynamic Foveated Rendering (DFR):** Connects Steam Frame's hardware eye-tracking cameras directly to OpenXR variable-rate shading (VRS). Renders at full clarity where pupils are gazing while compressing peripheral pixels, saving up to 45% GPU compute.
+  - **Render Resolution Supersampling:** Per-game and global resolution scale multiplier (0.70x to 1.75x) with real-time eye-buffer pixel preview (e.g. 1.25x / ~2580 x 2760 px/eye).
+  - **Display Refresh Rates:** 72Hz, 80Hz, 90Hz, 120Hz, and 144Hz display sync.
+  - **Texture & Edge Filtering:** 4x MSAA override and up to 16x Anisotropic Filtering (razor-sharp angled textures and ground planes).
+  - **Silicon Power Governors:** CPU and GPU clock states (Balanced, Turbo, Boost Max).
+  - **1-Click Optimization Presets:** *Steam Frame Turbo* (Recommended), *Maximum Visuals* (PCVR Clarity), *120Hz Ultra Smooth*, *Battery Saver*, and *Stock*.
+  - **Auto Engine Tuning:** Automatic `Engine.ini` / `ConsoleVariables.ini` optimization for Unreal Engine VR and `boot.config` for Unity.
 - **🌐 Direct Mirror & Catalog Integration:**
-  - Integrated with VRP public mirrors (`meta.7z`, `VRP-GameList.txt`) with instant search, genre filtering, and sorting.
+  - Integrated with VRP public mirrors (`meta.7z`, `VRP-GameList.txt`) with instant search, genre filtering, and sorting across 2,900+ titles.
   - Multi-part archive download with auto-resumption (`Range: bytes`), download speed metrics (EMA), and ETA calculations.
 - **📦 Automated Lepton Container Setup:**
   - Installs games to `~/Applications/quest-frame/<package>/`.
@@ -48,23 +65,6 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
     - Hero Background (`1920x620`)
     - Logo (`logo.png`) and Icon (`icon.png`)
   - Seamless 1-click launch via `steam://rungameid/<gameid>`.
-- **🕹️ Dual Input Engine (VR Controller + Gamepad Navigation):**
-  - Built-in HTML5 Gamepad API navigator (`gamepad.js`):
-    - D-Pad / Left Stick: Navigate cards and controls with glowing focus rings.
-    - LB / RB: Quick tab switching.
-    - `A`: Select / Install / Play.
-    - `B`: Back / Close modals.
-    - `X`: Action button.
-    - `Y`: Instant search focus.
-- **🥽 Steam Frame VR Optimizer & Hardware Spoofing Engine:**
-  - **Meta Quest 3 Hardware Spoofing (`eureka`):** Unlocks 4K textures, dynamic real-time shadows, expanded LOD draw distances, and modern shaders on Quest APKs that downgrade on unverified headsets.
-  - **Eye-Tracked Dynamic Foveated Rendering (DFR):** Connects Steam Frame's hardware eye-tracking cameras directly to OpenXR variable-rate shading (VRS). Renders at full clarity where pupils are gazing while compressing peripheral pixels, saving up to 45% GPU compute.
-  - **Render Resolution Supersampling:** Per-game and global resolution scale multiplier (0.70x to 1.75x) with real-time eye-buffer pixel preview (e.g. 1.25x / ~2580 x 2760 px/eye).
-  - **Display Refresh Rates:** 72Hz, 80Hz, 90Hz, 120Hz, and 144Hz display sync.
-  - **Texture & Edge Filtering:** 4x MSAA override and up to 16x Anisotropic Filtering (razor-sharp angled textures and ground planes).
-  - **Silicon Power Governors:** CPU and GPU clock states (Balanced, Turbo, Boost Max).
-  - **1-Click Optimization Presets:** *Steam Frame Turbo* (Recommended), *Maximum Visuals* (PCVR Clarity), *120Hz Ultra Smooth*, *Battery Saver*, and *Stock*.
-  - **Auto Engine Tuning:** Automatic `Engine.ini` / `ConsoleVariables.ini` optimization for Unreal Engine VR and `boot.config` for Unity.
 - **💾 Save Data & Game Manager:**
   - 1-click game save export/import (`tar.gz`).
   - Per-game runtime settings editor (72Hz, 90Hz, 120Hz refresh rates, resolution scaling, MSAA, controller model rendering).
@@ -274,17 +274,32 @@ bash ~/Applications/FrameLoad/uninstall.sh
 
 ## 🛠️ Command-Line Interface (CLI)
 
-FrameLoad also includes a powerful CLI:
+FrameLoad includes a full-featured CLI for on-device management and scripting:
 
 ```bash
 # Start Web Server & REST API
 frameload serve --host 0.0.0.0 --port 5050
+
+# Launch as a dedicated standalone desktop application window (Zero-Browser Chrome)
+frameload window
 
 # Display Steam Frame system, Lepton, Proton, and battery telemetry
 frameload info
 
 # List installed games
 frameload list
+
+# List Steam Frame VR tuning presets and Quest hardware spoofing profiles
+frameload tune --list
+
+# Apply Steam Frame Turbo (Quest 3 Spoof + 1.25x Supersampling + Eye-Tracked DFR)
+frameload tune com.beatgames.beatsaber --preset steam_frame_turbo
+
+# Apply custom supersampling and refresh rate overrides
+frameload tune com.beatgames.beatsaber --spoof quest3 --scale 1.35 --refresh 90 --fov dynamic --af 16
+
+# Batch-apply an optimization preset across ALL installed games
+frameload tune --batch steam_frame_turbo
 
 # Synchronize VR catalog metadata from mirror
 frameload sync
@@ -316,6 +331,34 @@ frameload uninstall-app --keep-backups
 
 ---
 
+## 🥽 Steam Frame VR Optimizer & Hardware Spoofing Guide
+
+Many standalone VR titles are compiled specifically for Meta Quest headsets. When running inside the Lepton Android container on the Steam Frame, games query Android `Build.MODEL` and `OVRPlugin`. If an unrecognized headset is returned, games automatically lock to low-end **Quest 2 graphics** (low-resolution textures, no dynamic shadows, disabled 90/120Hz, and aggressive edge blur).
+
+FrameLoad's **VR Optimizer** intercepts these queries at the container and OpenXR runtime level:
+
+### 🎭 Hardware Spoofing Profiles
+* **Meta Quest 3 (`eureka`)** *(Recommended)*: Unlocks 4K high-res textures, real-time dynamic shadows, sun cascades, and modern shaders.
+* **Meta Quest Pro (`seacliff`)**: Unlocks eye-tracking and face-tracking API surface in supported titles.
+* **Meta Quest 3S (`panther`)**: Modern shader profile with balanced fillrate footprint.
+* **Meta Quest 2 (`hollywood`)**: Legacy low-overhead profile for battery preservation.
+* **Steam Frame Native (`galileo`)**: Reports native Valve Steam Frame hardware directly to OpenXR.
+
+### 👁️ Steam Frame Eye-Tracked Dynamic Foveation (DFR)
+The Steam Frame features hardware eye-tracking cameras. FrameBridge maps the OpenXR gaze tracker (`XR_EXT_eye_gaze_interaction`) to the game's foveation pipeline (`XR_FB_foveation` / `ovrp_SetFoveationCenter`). Wherever your pupils gaze, full native clarity is rendered, while peripheral pixels use Variable Rate Shading (VRS). This delivers **up to 45% GPU savings with zero perceived loss in clarity**.
+
+### 🕹️ 1-Click Optimization Presets
+
+| Preset | Spoofing | Resolution Scale | Refresh Rate | Foveated Rendering | MSAA / AF | Best For |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| ⚡ **Steam Frame Turbo** | Quest 3 | **1.25x** (~2580x2760 px) | **90 Hz** | **Dynamic DFR (Eye-Tracked)** | 4x / 8x | **Recommended:** Razor-sharp clarity & solid 90 FPS |
+| 🌟 **Maximum Visuals** | Quest 3 | **1.45x** (~3000x3200 px) | **90 Hz** | **Dynamic DFR (Eye-Tracked)** | 4x / 16x | Near-PCVR texture fidelity and distant readability |
+| 🏎️ **120Hz Ultra Smooth** | Quest 3 | **1.00x** (~2060x2200 px) | **120 Hz** | **Dynamic DFR (Eye-Tracked)** | 2x / 4x | Ultra-low latency for fast action & rhythm titles |
+| 🔋 **Battery Saver** | Quest 2 | **0.85x** (~1750x1870 px) | **72 Hz** | **High Fixed FFR** | 2x / 1x | Maximum battery life while traveling |
+| 🔄 **Stock Quest** | Quest 3 | **1.00x** (~2060x2200 px) | **90 Hz** | **Off (Uniform)** | 2x / 1x | Stock unmodified Quest settings |
+
+---
+
 ## 📁 Storage Layout
 
 | Directory | Purpose |
@@ -330,16 +373,18 @@ frameload uninstall-app --keep-backups
 
 ---
 
-## 🎮 VR Controller & Gamepad Bindings
+## 🎮 VR Controller & Laser Pointer Bindings
 
-| Button | Action |
+| Control / Gesture | Action |
 |---|---|
-| **D-Pad / Left Stick** | Navigate between cards, buttons, and inputs |
-| **A / Cross** | Select / Open Game Details / Confirm |
-| **B / Circle** | Back / Close Modal |
-| **X / Square** | Quick Download / Launch Game |
-| **Y / Triangle** | Jump to Search Bar |
-| **LB / RB (L1 / R1)** | Previous / Next Tab |
+| **Laser Pointer Drag & Flick** | **Momentum Drag-to-Scroll:** Grab any page, catalog grid, or modal and flick with natural inertial physics friction |
+| **Laser Aim + Right Stick** | **Targeted Scrolling:** Point your laser at any specific card, release note, chips bar, or log drawer and tilt Right Stick to scroll it smoothly |
+| **Laser Aim + Left Stick / D-Pad** | **Contextual Navigation:** Pointing at any element anchors joystick movement directly to that card |
+| **Index Trigger / A Button** | Select / Open Game Details / Sideload / Confirm |
+| **Grip Button / B Button** | Back / Close Modal dialogs (Modal Focus Trap) |
+| **X Button** | Quick Action (Download / Launch) |
+| **Y Button** | Instant Search Focus |
+| **LB / RB (Bumpers)** | Previous / Next Tab switching |
 
 ---
 
