@@ -139,26 +139,25 @@ launch_app_window() {
         fi
     fi
 
-    # Method 3: Isolated Kiosk-Mode Window for Firefox (SteamOS Default)
-    # Standard --new-window opens Firefox with tabs, address bar, and search menus.
-    # --kiosk creates a true borderless app display without ANY browser chrome!
-    FF_PROFILE="$DATA_DIR/browser_profile"
-    mkdir -p "$FF_PROFILE"
-    if [[ ! -f "$FF_PROFILE/user.js" ]]; then
-        cat > "$FF_PROFILE/user.js" << 'EOF'
-user_pref("browser.shell.checkDefaultBrowser", false);
-user_pref("browser.startup.homepage_override.mstone", "ignore");
-user_pref("datareporting.policy.dataSubmissionPolicyAcceptedVersion", 2);
-user_pref("browser.tabs.warnOnClose", false);
-user_pref("browser.sessionstore.resume_from_crash", false);
-user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
-EOF
-    fi
+    # Method 3: Kiosk-Mode / Standalone Window for Firefox (SteamOS Default)
+    # SteamOS installs Firefox as a Flatpak (org.mozilla.firefox).
+    # Passing an external --profile path outside the Flatpak sandbox triggers:
+    # "Your Firefox profile cannot be loaded. It may be missing or inaccessible."
+    # We clean any invalid profile artifacts and launch directly in kiosk mode or new window.
+    rm -rf "$DATA_DIR/browser_profile" 2>/dev/null || true
 
     if which flatpak >/dev/null 2>&1 && flatpak info org.mozilla.firefox >/dev/null 2>&1; then
-        exec flatpak run org.mozilla.firefox --profile "$FF_PROFILE" --kiosk "$URL"
+        if flatpak run org.mozilla.firefox --kiosk "$URL" 2>/dev/null; then
+            exit 0
+        elif flatpak run org.mozilla.firefox --new-window "$URL" 2>/dev/null; then
+            exit 0
+        fi
     elif which firefox >/dev/null 2>&1; then
-        exec firefox --profile "$FF_PROFILE" --kiosk "$URL"
+        if firefox --kiosk "$URL" 2>/dev/null; then
+            exit 0
+        elif firefox --new-window "$URL" 2>/dev/null; then
+            exit 0
+        fi
     fi
 
     # Method 4: Standard xdg-open / python webbrowser fallback

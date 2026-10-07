@@ -48,7 +48,7 @@ if [[ ! -f "$SCRIPT_DIR/frameload/cli.py" ]]; then
         if [[ -z "$LATEST_TAG" ]]; then
             LATEST_TAG=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Crypto90/frameload/releases/latest 2>/dev/null | awk -F'/' '{print $NF}')
         fi
-        [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v1.2.3"
+        [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v1.2.4"
         say "Downloading release $LATEST_TAG..."
         curl -fsSL "https://github.com/Crypto90/frameload/releases/download/${LATEST_TAG}/frameload-${LATEST_TAG}-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET" || \
         curl -fsSL "https://github.com/Crypto90/frameload/archive/refs/heads/main.tar.gz" | tar -xzf - --strip-components=1 -C "$APP_TARGET"
@@ -112,6 +112,7 @@ else
         say "Installing pywebview in user space for native window..."
         "$PIP_CMD" install --user --quiet pywebview 2>/dev/null || true
     fi
+    rm -rf "$HOME/.local/share/frameload/browser_profile" 2>/dev/null || true
     ok "Configured standalone kiosk window profile for Steam Frame"
 fi
 
