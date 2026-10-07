@@ -98,7 +98,7 @@ class InstalledManager:
                     "installed_time": dep.get("time", 0),
                     "settings": dep.get("settings", {}),
                     "is_running": is_running,
-                    "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else "",
+                    "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
                 })
         return games
 

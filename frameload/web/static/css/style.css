@@ -660,10 +660,13 @@ body {
 
 .modal-close {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  background: rgba(255, 255, 255, 0.06);
-  border: none;
+  top: 18px;
+  right: 18px;
+  z-index: 20;
+  background: rgba(11, 15, 26, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: var(--text-muted);
   width: 36px;
   height: 36px;
@@ -677,8 +680,9 @@ body {
 }
 
 .modal-close:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Settings sliders and toggles */
@@ -1582,6 +1586,107 @@ input:checked + .slider:before {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+/* ==========================================================================
+   VR Laser Pointer & Momentum Drag Styles (VR Headsets & Motion Controllers)
+   ========================================================================== */
+body.vr-grabbing,
+body.vr-grabbing * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.vr-drag-scrollable {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* VR Laser Pointer Touch Ripple Effect */
+.vr-laser-ripple {
+  position: fixed;
+  pointer-events: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-cyan);
+  background: rgba(0, 242, 254, 0.28);
+  box-shadow: 0 0 16px var(--accent-cyan);
+  transform: translate(-50%, -50%) scale(0.3);
+  opacity: 1;
+  transition: transform 0.35s cubic-bezier(0.1, 0.9, 0.2, 1), opacity 0.35s ease-out;
+  z-index: 999999;
+}
+
+.vr-laser-ripple.expand {
+  transform: translate(-50%, -50%) scale(2.4);
+  opacity: 0;
+}
+
+/* Enhanced VR Gamepad Focus Ring */
+.gamepad-focused {
+  outline: 2.5px solid var(--accent-cyan) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 24px rgba(0, 242, 254, 0.8), inset 0 0 12px rgba(0, 242, 254, 0.2) !important;
+  transition: outline 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease !important;
+  z-index: 20;
+}
+
+/* VR Controller & Gamepad HUD Legend */
+.vr-controller-hud {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  background: rgba(10, 15, 29, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 242, 254, 0.25);
+  border-radius: 999px;
+  padding: 8px 22px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  z-index: 99999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(0.1, 0.9, 0.2, 1), transform 0.3s ease;
+}
+
+.vr-controller-hud.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.vr-hud-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.vr-hud-key {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan);
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.vr-hud-divider {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 

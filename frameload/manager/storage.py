@@ -321,7 +321,7 @@ class StorageManager:
                     "artwork_formatted": format_size(art_bytes),
                     "installed_time": install_time,
                     "installed_formatted": time_str,
-                    "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else "",
+                    "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
                 })
 
         # Sort games by total_bytes descending by default (matching Steam's default)

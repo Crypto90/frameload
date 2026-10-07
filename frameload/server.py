@@ -5,7 +5,10 @@ import base64
 import json
 import mimetypes
 import os
+import subprocess
 import sys
+import threading
+import time
 import urllib.parse
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -68,6 +71,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def do_HEAD(self) -> None:
         self.do_GET()
 
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -80,8 +91,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             q = params.get("q", [""])[0]
             sort_by = params.get("sort_by", ["date"])[0]
             sort_order = params.get("sort_order", ["desc"])[0]
-            page = int(params.get("page", [1])[0])
-            per_page = int(params.get("per_page", [36])[0])
+            try:
+                page = max(1, int(params.get("page", ["1"])[0]))
+            except (ValueError, TypeError):
+                page = 1
+            try:
+                per_page = max(1, min(100, int(params.get("per_page", ["36"])[0])))
+            except (ValueError, TypeError):
+                per_page = 36
             kind = params.get("kind", ["vr"])[0]
             
             if kind == "flat":
@@ -101,16 +118,62 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     per_page=per_page
                 )
             self.send_json(res)
+        elif path.startswith("/api/catalog/notes/"):
+            identifier = path.replace("/api/catalog/notes/", "").strip()
+            identifier = os.path.basename(identifier)
+            notes = self.mirror.get_game_notes(identifier)
+            self.send_json({"id": identifier, "notes": notes})
+        elif path.startswith("/api/catalog/game/"):
+            identifier = path.replace("/api/catalog/game/", "").strip()
+            identifier = os.path.basename(identifier)
+            game = self.mirror.get_game(identifier) or self.mirror.games_by_pkg.get(identifier)
+            if game:
+                g_dict = game.to_dict()
+                g_dict["notes"] = self.mirror.get_game_notes(identifier)
+                self.send_json({"success": True, "game": g_dict})
+            else:
+                self.send_json({"error": "Game not found"}, status=HTTPStatus.NOT_FOUND)
         elif path.startswith("/api/thumbnail/"):
-            pkg = path.replace("/api/thumbnail/", "").strip()
+            raw_pkg = path.replace("/api/thumbnail/", "").strip()
+            if "?" in raw_pkg:
+                raw_pkg = raw_pkg.split("?")[0]
+            pkg = os.path.basename(raw_pkg)
+
+            # 1. Exact match in local cache
             thumb_path = os.path.join(DATA_DIR, ".meta/thumbnails", f"{pkg}.jpg")
             if os.path.isfile(thumb_path):
                 self.serve_file(thumb_path, "image/jpeg")
-            else:
-                game = self.mirror.games_by_pkg.get(pkg)
-                title = game.name if game else pkg
-                safe_title = (title[:24] + "...") if len(title) > 24 else title
-                svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
+                return
+
+            # 2. Case-insensitive match in .meta/thumbnails
+            meta_thumb_dir = os.path.join(DATA_DIR, ".meta/thumbnails")
+            found_thumb = None
+            if os.path.isdir(meta_thumb_dir):
+                target_lower = f"{pkg.lower()}.jpg"
+                try:
+                    for entry in os.listdir(meta_thumb_dir):
+                        if entry.lower() == target_lower:
+                            found_thumb = os.path.join(meta_thumb_dir, entry)
+                            break
+                except OSError:
+                    pass
+
+            if found_thumb and os.path.isfile(found_thumb):
+                self.serve_file(found_thumb, "image/jpeg")
+                return
+
+            # 3. Try online cover fetching & cache to disk
+            from .installer.artwork import ArtworkManager
+            fetched = ArtworkManager._fetch_cover_art(pkg, pkg, meta_thumb_dir)
+            if fetched and os.path.isfile(fetched):
+                self.serve_file(fetched, "image/jpeg")
+                return
+
+            # 4. Fallback vector SVG placeholder
+            game = self.mirror.games_by_pkg.get(pkg)
+            title = game.name if game else pkg
+            safe_title = (title[:24] + "...") if len(title) > 24 else title
+            svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0f1424" />
@@ -131,21 +194,24 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
   <rect x="220" y="820" width="160" height="32" rx="16" fill="rgba(255,255,255,0.05)"/>
   <text x="300" y="842" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)" text-anchor="middle">FrameLoad</text>
 </svg>"""
-                try:
-                    self.send_response(HTTPStatus.OK)
-                    self.send_header("Content-Type", "image/svg+xml")
-                    self.send_header("Cache-Control", "public, max-age=86400")
-                    self.end_headers()
-                    self.wfile.write(svg_content.encode("utf-8"))
-                except BrokenPipeError:
-                    pass
+            try:
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/svg+xml")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                self.wfile.write(svg_content.encode("utf-8"))
+            except BrokenPipeError:
+                pass
         elif path == "/api/downloads":
             self.send_json({"tasks": self.downloader.get_all_tasks()})
         elif path == "/api/installed":
             installed = InstalledManager.list_installed()
             self.send_json({"games": installed})
         elif path.startswith("/api/installed/artwork/"):
-            pkg = path.replace("/api/installed/artwork/", "").strip()
+            raw_pkg = path.replace("/api/installed/artwork/", "").strip()
+            if "?" in raw_pkg:
+                raw_pkg = raw_pkg.split("?")[0]
+            pkg = os.path.basename(raw_pkg)
             dep = InstalledManager.get_game(pkg)
             anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, pkg)) if dep else os.path.join(ANCHOR_DIR, pkg)
             art_dir = os.path.join(anchor, "artwork")
@@ -155,6 +221,11 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     mime, _ = mimetypes.guess_type(f)
                     self.serve_file(f, mime or "image/png")
                     return
+            # Fallback to thumbnail
+            thumb_path = os.path.join(DATA_DIR, ".meta/thumbnails", f"{pkg}.jpg")
+            if os.path.isfile(thumb_path):
+                self.serve_file(thumb_path, "image/jpeg")
+                return
             self.send_error(HTTPStatus.NOT_FOUND)
         elif path == "/api/installed/backups":
             pkg = params.get("package", params.get("pkg", [""]))[0]
@@ -222,7 +293,6 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 "games": game_status
             })
         elif path == "/api/diagnostics/mirror":
-            import subprocess, os
             base_url = "https://go.srcdl1.xyz"
             api_key = "a329d018062813601d60cc6936a4f75ffde4a1ef38349a9973eb9720f9e8a457"
             rclone = os.path.expanduser("~/.local/share/frameload/bin/rclone")
@@ -251,12 +321,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.serve_file(index_file, "text/html; charset=utf-8")
         elif path.startswith("/static/"):
             rel = path.replace("/static/", "")
-            static_file = os.path.join(WEB_DIR, "static", rel)
-            if os.path.isfile(static_file):
-                mime, _ = mimetypes.guess_type(static_file)
-                self.serve_file(static_file, mime or "application/octet-stream")
-            else:
+            clean_rel = os.path.normpath(rel).lstrip("/")
+            static_dir = os.path.abspath(os.path.join(WEB_DIR, "static"))
+            static_file = os.path.abspath(os.path.join(static_dir, clean_rel))
+            if not static_file.startswith(static_dir) or not os.path.isfile(static_file):
                 self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            mime, _ = mimetypes.guess_type(static_file)
+            self.serve_file(static_file, mime or "application/octet-stream")
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -516,9 +588,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             purge_games = bool(body.get("purge_games", False))
             keep_backups = bool(body.get("keep_backups", False))
 
-            import threading
             def _deferred_uninstall():
-                import time
                 time.sleep(1.0)
                 Uninstaller.uninstall_frameload_app(purge_games=purge_games, keep_backups=keep_backups)
                 os._exit(0)
@@ -548,15 +618,18 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         return {}
 
     def send_json(self, data: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def serve_file(self, file_path: str, content_type: str) -> None:
         try:
@@ -568,8 +641,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(content)
-        except Exception:
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
 
     def log_error(self, format: str, *args: Any) -> None:
         msg = format % args if args else format

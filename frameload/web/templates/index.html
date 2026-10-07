@@ -533,18 +533,44 @@
   <!-- Game Details & Action Modal -->
   <div id="game-modal" class="modal-backdrop">
     <div class="modal-content">
-      <button id="modal-close-btn" class="modal-close">&times;</button>
-      <h2 id="modal-game-title" style="font-size:1.4rem; font-weight:800; margin-bottom:6px; color:#fff;">Game Title</h2>
-      <p id="modal-game-pkg" style="font-size:0.85rem; color:var(--text-muted); font-family:monospace; margin-bottom:14px;">package.name</p>
+      <button id="modal-close-btn" class="modal-close" onclick="closeModal()">&times;</button>
+      <!-- Game Cover & Header Banner -->
+      <div id="modal-cover-banner" style="position:relative; width:100%; height:160px; border-radius:var(--radius-md); overflow:hidden; margin-bottom:16px; background:rgba(0,0,0,0.4); border:1px solid var(--border-subtle);">
+        <img id="modal-game-cover" src="/static/assets/fallback_cover.svg" alt="Cover" style="width:100%; height:100%; object-fit:cover; object-position:center 20%;" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <div style="position:absolute; inset:0; background:linear-gradient(to top, rgba(11,15,26,0.92) 0%, rgba(11,15,26,0.3) 60%, transparent 100%);"></div>
+        <div style="position:absolute; bottom:12px; left:16px; right:16px; display:flex; justify-content:space-between; align-items:flex-end;">
+          <div>
+            <span id="modal-badge-kind" class="badge vr" style="font-size:0.75rem; text-transform:uppercase;">VR</span>
+            <span id="modal-badge-installed" class="badge installed" style="display:none; margin-left:6px; font-size:0.75rem;">Installed</span>
+          </div>
+          <div id="modal-rating-chip" style="font-size:0.82rem; font-weight:700; color:var(--accent-amber); display:flex; align-items:center; gap:4px; background:rgba(0,0,0,0.6); padding:3px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+            <span>⭐</span> <span id="modal-game-rating">--</span>
+          </div>
+        </div>
+      </div>
+
+      <h2 id="modal-game-title" style="font-size:1.4rem; font-weight:800; margin-bottom:4px; color:#fff;">Game Title</h2>
+      <p id="modal-game-pkg" style="font-size:0.82rem; color:var(--text-muted); font-family:monospace; margin-bottom:12px;">package.name</p>
       
-      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; margin-bottom:20px;">
-        <p style="margin-bottom:6px;"><strong>Size:</strong> <span id="modal-game-size">--</span></p>
-        <p style="margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
-          <span><strong>Storage Drive:</strong> <span id="modal-game-drive">Internal Storage</span></span>
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.84rem;">
+        <div><strong>Size:</strong> <span id="modal-game-size" style="color:var(--text-primary);">--</span></div>
+        <div><strong>Version:</strong> <span id="modal-game-version" style="color:var(--text-primary);">--</span></div>
+        <div><strong>Updated:</strong> <span id="modal-game-updated" style="color:var(--text-primary);">--</span></div>
+        <div><strong>Downloads:</strong> <span id="modal-game-downloads" style="color:var(--text-primary);">--</span></div>
+        <div style="grid-column:span 2; display:flex; align-items:center; justify-content:space-between;">
+          <span><strong>Storage Drive:</strong> <span id="modal-game-drive" style="color:var(--text-primary);">Internal Storage</span></span>
           <button id="modal-game-move-btn" class="btn-secondary compact" style="display:none;" onclick="moveCurrentModalGame()">Move Drive</button>
-        </p>
-        <p style="margin-bottom:6px;"><strong>Target Platform:</strong> <span id="modal-game-platform">Steam Frame (Lepton Container)</span></p>
-        <p><strong>OpenXR Translation:</strong> <span id="modal-game-openxr">FrameBridge Adapter &amp; Controller Models</span></p>
+        </div>
+        <div style="grid-column:span 2;"><strong>Target Runtime:</strong> <span id="modal-game-platform" style="color:var(--accent-cyan);">Steam Frame (Lepton Container)</span></div>
+        <div style="grid-column:span 2;"><strong>OpenXR Layer:</strong> <span id="modal-game-openxr" style="color:var(--accent-purple);">FrameBridge Adapter &amp; Controller Models</span></div>
+      </div>
+
+      <!-- Release Notes & Special Instructions Section -->
+      <div id="modal-notes-section" style="display:none; margin-bottom:16px; background:rgba(0, 242, 254, 0.04); border:1px solid rgba(0, 242, 254, 0.18); border-radius:var(--radius-md); padding:12px 14px;">
+        <div style="font-weight:700; font-size:0.82rem; color:var(--accent-cyan); margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+          <span>💡 Release Notes &amp; Headset Instructions</span>
+        </div>
+        <div id="modal-game-notes" style="font-size:0.82rem; color:var(--text-secondary); line-height:1.5; white-space:pre-wrap; max-height:130px; overflow-y:auto;"></div>
       </div>
 
       <!-- Mods & Custom Content Section (Beat Saber Songs, Mod Packs) -->

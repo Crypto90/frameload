@@ -40,6 +40,10 @@ class CatalogGame:
     is_installed: bool = False
     installed_version: str = ""
     download_url: str = ""
+    downloads: int = 0
+    rating: float = 0.0
+    rating_count: int = 0
+    notes: str = ""
 
     def __post_init__(self) -> None:
         if not self.id:

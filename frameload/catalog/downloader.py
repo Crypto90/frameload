@@ -142,64 +142,100 @@ class Downloader:
                     print(f"[FrameLoad] Auto-install hook error: {e}")
             return
 
-        # In Rookie / VRP public mirrors, files are under baseUri/<id>/<id>.7z.001 etc.
-        # Or baseUri/<id>.7z
-        # Let's probe for the multi-part or single archive
-        part_idx = 1
+        from . import vrsrc as _vrsrc
         downloaded_parts: List[str] = []
         base_uri = mirror.base_url.rstrip("/")
 
-        # First probe for <id>.7z or <id>/<id>.7z.001
-        first_url = f"{base_uri}/{task.id}/{task.id}.7z.{part_idx:03d}"
-        is_multipart = True
+        # If vrsrc rclone mirror is available, use rclone copy with Cloudflare bypass & live progress
+        if _vrsrc.rclone_available():
+            def _on_progress(st: dict):
+                bytes_done = st.get("bytes", 0)
+                total = st.get("totalBytes", task.total_bytes or 0)
+                speed = st.get("speed", 0.0)
+                eta = st.get("eta")
+                task.downloaded_bytes = bytes_done
+                if total > 0:
+                    task.total_bytes = total
+                    task.progress = min(1.0, max(0.0, bytes_done / total))
+                task.speed_bps = float(speed)
+                if eta is not None:
+                    try:
+                        task.eta_seconds = int(eta)
+                    except (ValueError, TypeError):
+                        pass
 
-        try:
-            req = urllib.request.Request(first_url, method="HEAD", headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                if r.status != 200:
-                    is_multipart = False
-        except Exception:
-            is_multipart = False
+            def _cancel_check():
+                return task.status == "canceled" or self._stop_event.is_set()
 
-        if not is_multipart:
-            # Try single file format
-            single_url = f"{base_uri}/{task.id}.7z"
-            dest_file = os.path.join(game_dir, f"{task.id}.7z")
-            if not self._download_file(single_url, dest_file, task):
-                if task.status == "canceled":
-                    return
-                # Also try first_url in case HEAD was blocked
-                if not self._download_file(first_url, os.path.join(game_dir, f"{task.id}.7z.001"), task):
-                    raise RuntimeError(f"Could not download game archive from {base_uri}")
-                downloaded_parts.append(os.path.join(game_dir, f"{task.id}.7z.001"))
-            else:
-                downloaded_parts.append(dest_file)
-        else:
-            # Download all parts
-            while True:
-                if task.status == "canceled":
-                    return
-                part_name = f"{task.id}.7z.{part_idx:03d}"
-                part_url = f"{base_uri}/{task.id}/{part_name}"
-                dest_file = os.path.join(game_dir, part_name)
+            success = _vrsrc.download_game_directory(
+                game_id=task.id,
+                base_url=mirror.base_url,
+                dest_dir=game_dir,
+                progress_cb=_on_progress,
+                cancel_check=_cancel_check
+            )
 
-                # Check if this part exists on remote
-                try:
-                    head_req = urllib.request.Request(part_url, method="HEAD", headers={"User-Agent": USER_AGENT})
-                    with urllib.request.urlopen(head_req, timeout=6) as hr:
-                        if hr.status != 200:
-                            break
-                except Exception:
-                    # No more parts
-                    break
+            if task.status == "canceled":
+                return
 
-                if not self._download_file(part_url, dest_file, task):
+            if success:
+                for f in sorted(os.listdir(game_dir)):
+                    if f.endswith(".7z") or ".7z." in f:
+                        downloaded_parts.append(os.path.join(game_dir, f))
+
+        # Fallback to direct HTTP probe if rclone is unavailable or returned no parts
+        if not downloaded_parts and not task.status == "canceled":
+            part_idx = 1
+            first_url = f"{base_uri}/{task.id}/{task.id}.7z.{part_idx:03d}"
+            is_multipart = True
+
+            try:
+                req = urllib.request.Request(first_url, method="HEAD", headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    if r.status != 200:
+                        is_multipart = False
+            except Exception:
+                is_multipart = False
+
+            if not is_multipart:
+                # Try single file format
+                single_url = f"{base_uri}/{task.id}.7z"
+                dest_file = os.path.join(game_dir, f"{task.id}.7z")
+                if not self._download_file(single_url, dest_file, task):
                     if task.status == "canceled":
                         return
-                    raise RuntimeError(f"Failed to download archive part {part_name}")
+                    # Also try first_url in case HEAD was blocked
+                    if not self._download_file(first_url, os.path.join(game_dir, f"{task.id}.7z.001"), task):
+                        raise RuntimeError(f"Could not download game archive from {base_uri}")
+                    downloaded_parts.append(os.path.join(game_dir, f"{task.id}.7z.001"))
+                else:
+                    downloaded_parts.append(dest_file)
+            else:
+                # Download all parts
+                while True:
+                    if task.status == "canceled":
+                        return
+                    part_name = f"{task.id}.7z.{part_idx:03d}"
+                    part_url = f"{base_uri}/{task.id}/{part_name}"
+                    dest_file = os.path.join(game_dir, part_name)
 
-                downloaded_parts.append(dest_file)
-                part_idx += 1
+                    # Check if this part exists on remote
+                    try:
+                        head_req = urllib.request.Request(part_url, method="HEAD", headers={"User-Agent": USER_AGENT})
+                        with urllib.request.urlopen(head_req, timeout=6) as hr:
+                            if hr.status != 200:
+                                break
+                    except Exception:
+                        # No more parts
+                        break
+
+                    if not self._download_file(part_url, dest_file, task):
+                        if task.status == "canceled":
+                            return
+                        raise RuntimeError(f"Failed to download archive part {part_name}")
+
+                    downloaded_parts.append(dest_file)
+                    part_idx += 1
 
         if not downloaded_parts:
             raise RuntimeError("No files were downloaded.")

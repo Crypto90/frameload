@@ -17,11 +17,22 @@ class ArtworkManager:
         os.makedirs(output_dir, exist_ok=True)
         art_files: Dict[str, str] = {}
 
-        # 1. Check local VRP thumbnail
+        # 1. Check local VRP thumbnail (exact + case-insensitive)
         vrp_thumb = os.path.join(DATA_DIR, ".meta/thumbnails", f"{package_name}.jpg")
         base_img = None
         if os.path.isfile(vrp_thumb):
             base_img = vrp_thumb
+        else:
+            meta_thumb_dir = os.path.join(DATA_DIR, ".meta/thumbnails")
+            if os.path.isdir(meta_thumb_dir):
+                target_lower = f"{package_name.lower()}.jpg"
+                try:
+                    for entry in os.listdir(meta_thumb_dir):
+                        if entry.lower() == target_lower:
+                            base_img = os.path.join(meta_thumb_dir, entry)
+                            break
+                except OSError:
+                    pass
 
         # 2. Try fetching from public game art mirrors if not found locally
         if not base_img:

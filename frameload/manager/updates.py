@@ -183,7 +183,7 @@ class UpdateManager:
                     "release_name": catalog_game.release_name,
                     "size_formatted": catalog_game.size_formatted,
                     "catalog_id": catalog_game.id,
-                    "thumbnail_url": inst.get("thumbnail_url", ""),
+                    "thumbnail_url": inst.get("thumbnail_url") or catalog_game.thumbnail_url or f"/api/thumbnail/{pkg}",
                 })
 
         return {

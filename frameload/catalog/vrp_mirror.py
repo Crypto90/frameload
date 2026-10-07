@@ -179,7 +179,11 @@ class VrpMirror:
                             size_bytes=int(item.get("size_bytes", 0)),
                             id=item.get("id", ""),
                             thumbnail_url=item.get("thumbnail_url", ""),
-                            kind=item.get("kind", "quest")
+                            kind=item.get("kind", "quest"),
+                            downloads=int(item.get("downloads", 0)),
+                            rating=float(item.get("rating", 0.0)),
+                            rating_count=int(item.get("rating_count", 0)),
+                            notes=item.get("notes", ""),
                         )
                         self.games.append(g)
                     self.games_by_id = {g.id: g for g in self.games}
@@ -189,16 +193,10 @@ class VrpMirror:
             except Exception as e:
                 print(f"[FrameLoad] Error loading catalog cache: {e}")
 
-        # 2. Try VRP-GameList.txt if present
-        if os.path.isfile(GAMELIST_FILE) and self.parse_gamelist_file(GAMELIST_FILE):
+        # 2. Try VRP-GameList.txt / GameList.txt if present
+        if self.parse_gamelist_file():
             if len(self.games) >= 50:
                 return
-        alt_gamelist = os.path.join(os.path.dirname(DATA_DIR), "VRP-GameList.txt")
-        if os.path.isfile(alt_gamelist) and self.parse_gamelist_file(alt_gamelist):
-            if len(self.games) >= 50:
-                return
-
-
 
     def sync_catalog(self, status_callback: Optional[Callable[[str], None]] = None) -> bool:
         """Synchronizes catalog from online endpoints or GitHub raw updates with graceful fallback."""
@@ -217,10 +215,20 @@ class VrpMirror:
                 if _vrsrc.fetch_meta_archive(self.base_url, self.password, meta_archive, status_callback):
                     try:
                         extract_archive(meta_archive, DATA_DIR, password=self.password)
-                        os.remove(meta_archive)
+                        if os.path.isfile(meta_archive):
+                            os.remove(meta_archive)
                     except Exception as e:
                         print(f"[FrameLoad] meta.7z extract notice: {e}")
-                    if self.parse_gamelist_file(GAMELIST_FILE):
+
+                    # Ensure both GameList.txt and VRP-GameList.txt are present
+                    extracted_gamelist = os.path.join(DATA_DIR, "GameList.txt")
+                    if os.path.isfile(extracted_gamelist):
+                        try:
+                            shutil.copy2(extracted_gamelist, GAMELIST_FILE)
+                        except OSError:
+                            pass
+
+                    if self.parse_gamelist_file():
                         if status_callback:
                             status_callback(f"Catalog synced from vrSrc mirror! {len(self.games)} titles.")
                         return True
@@ -251,7 +259,11 @@ class VrpMirror:
                                     size_bytes=int(item.get("size_bytes", 0)),
                                     id=item.get("id", ""),
                                     thumbnail_url=item.get("thumbnail_url", ""),
-                                    kind=item.get("kind", "quest")
+                                    kind=item.get("kind", "quest"),
+                                    downloads=int(item.get("downloads", 0)),
+                                    rating=float(item.get("rating", 0.0)),
+                                    rating_count=int(item.get("rating_count", 0)),
+                                    notes=item.get("notes", ""),
                                 )
                                 new_games.append(g)
                             if new_games:
@@ -265,39 +277,12 @@ class VrpMirror:
             except Exception as e:
                 print(f"[FrameLoad] Catalog remote JSON fetch notice for {json_url}: {e}")
 
-        # 2. Check VRP meta.7z mirror if configured
-        if not self.base_url or not self.password:
-            self.update_mirror_config()
-
-        if self.base_url and "vrpirates.wiki" not in self.base_url:
-            meta_url = f"{self.base_url}/meta.7z"
-            meta_archive = os.path.join(DATA_DIR, "meta.7z")
-            try:
-                if status_callback:
-                    status_callback(f"Downloading catalog archive from {meta_url}...")
-                req = urllib.request.Request(meta_url, headers={"User-Agent": "FrameLoad/1.0"})
-                with urllib.request.urlopen(req, timeout=30) as resp, open(meta_archive, "wb") as out_f:
-                    shutil.copyfileobj(resp, out_f)
-                extract_archive(meta_archive, DATA_DIR, password=self.password)
-                try:
-                    os.remove(meta_archive)
-                except OSError:
-                    pass
-                if self.parse_gamelist_file(GAMELIST_FILE):
-                    if status_callback:
-                        status_callback(f"Catalog updated from mirror! {len(self.games)} titles available.")
-                    return True
-            except Exception as e:
-                print(f"[FrameLoad] Mirror meta.7z download notice: {e}")
-
-        # 3. Check local VRP-GameList.txt
-        if os.path.isfile(GAMELIST_FILE) and self.parse_gamelist_file(GAMELIST_FILE):
+        # 2. Check local VRP-GameList.txt / GameList.txt
+        if self.parse_gamelist_file():
             self.load_bundled_catalog(merge=True)
             if status_callback:
                 status_callback(f"Catalog refreshed from local GameList ({len(self.games)} titles).")
             return True
-
-
 
         if len(self.games) > 0:
             if status_callback:
@@ -307,13 +292,26 @@ class VrpMirror:
         return False
 
     def parse_gamelist_file(self, filepath: Optional[str] = None) -> bool:
-        target_path = filepath or GAMELIST_FILE
-        if not os.path.isfile(target_path):
+        target_path = filepath
+        if not target_path or not os.path.isfile(target_path):
+            candidates = [
+                os.path.join(DATA_DIR, "GameList.txt"),
+                os.path.join(DATA_DIR, "VRP-GameList.txt"),
+                GAMELIST_FILE,
+                os.path.join(os.path.dirname(DATA_DIR), "GameList.txt"),
+                os.path.join(os.path.dirname(DATA_DIR), "VRP-GameList.txt"),
+            ]
+            for c in candidates:
+                if os.path.isfile(c):
+                    target_path = c
+                    break
+
+        if not target_path or not os.path.isfile(target_path):
             return False
 
         new_games = []
         try:
-            with open(target_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(target_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 lines = f.readlines()
 
             # Skip header if present
@@ -329,9 +327,31 @@ class VrpMirror:
                     version_code = parts[3].strip()
                     last_updated = parts[4].strip()
                     try:
-                        size_bytes = int(parts[5].strip())
+                        size_mb = float(parts[5].strip())
+                        size_bytes = int(size_mb * 1024 * 1024)
                     except ValueError:
                         size_bytes = 0
+
+                    downloads = 0
+                    if len(parts) > 6 and parts[6].strip():
+                        try:
+                            downloads = int(float(parts[6].strip()))
+                        except ValueError:
+                            downloads = 0
+
+                    rating = 0.0
+                    if len(parts) > 7 and parts[7].strip():
+                        try:
+                            rating = float(parts[7].strip())
+                        except ValueError:
+                            rating = 0.0
+
+                    rating_count = 0
+                    if len(parts) > 8 and parts[8].strip():
+                        try:
+                            rating_count = int(parts[8].strip())
+                        except ValueError:
+                            rating_count = 0
 
                     thumb_url = f"/api/thumbnail/{pkg_name}"
 
@@ -343,7 +363,10 @@ class VrpMirror:
                         last_updated=last_updated,
                         size_bytes=size_bytes,
                         thumbnail_url=thumb_url,
-                        kind="quest"
+                        kind="quest",
+                        downloads=downloads,
+                        rating=rating,
+                        rating_count=rating_count,
                     )
                     new_games.append(game)
 
@@ -357,6 +380,26 @@ class VrpMirror:
             print(f"[FrameLoad] Error parsing {target_path}: {e}")
 
         return False
+
+    def get_game_notes(self, identifier: str) -> str:
+        """Returns release notes / instructions from .meta/notes if available."""
+        if not identifier:
+            return ""
+        game = self.games_by_id.get(identifier) or self.games_by_pkg.get(identifier)
+        rel_name = game.release_name if game else identifier
+        safe_rel = os.path.basename(rel_name.strip())
+        notes_candidates = [
+            os.path.join(DATA_DIR, ".meta/notes", f"{safe_rel}.txt"),
+            os.path.join(DATA_DIR, ".meta/notes", safe_rel),
+        ]
+        for nc in notes_candidates:
+            if os.path.isfile(nc):
+                try:
+                    with open(nc, "r", encoding="utf-8", errors="replace") as f:
+                        return f.read().strip()
+                except OSError:
+                    pass
+        return ""
 
     def save_cache(self) -> None:
         try:

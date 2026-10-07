@@ -184,10 +184,14 @@ def write_rclone_config(base_url: str, password: str) -> str:
 
 
 def _make_env() -> dict:
-    """Build clean environment for rclone with the vrSrc API key."""
+    """Build clean environment for rclone with the vrSrc API key.
+    
+    Cloudflare validates that the HTTP User-Agent matches the client's Go TLS
+    fingerprint (JA3/JA4). Overriding this with a browser User-Agent causes 403 Forbidden.
+    Leaving rclone's native User-Agent lets Cloudflare accept the Go TLS stack + API key.
+    """
     env = os.environ.copy()
     env["RCLONE_HEADER"] = f"X-API-Key: {VRSRC_API_KEY}"
-    env["RCLONE_USER_AGENT"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     # Remove proxy vars that could alter TLS fingerprint routing
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
         env.pop(var, None)
@@ -219,7 +223,7 @@ def fetch_meta_archive(
         if not rclone:
             return False
 
-    config_path = write_rclone_config(base_url, password)
+    write_rclone_config(base_url, password)
     dest_dir = os.path.dirname(dest_path)
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -233,8 +237,6 @@ def fetch_meta_archive(
         "--http-url", base_url.rstrip("/"),
         "--config", os.devnull,
         "--header", f"X-API-Key: {VRSRC_API_KEY}",
-        "--tpslimit", "1.0",
-        "--tpslimit-burst", "3",
         "--no-check-certificate",
         "--progress",
         "--stats", "2s",
@@ -277,6 +279,72 @@ def fetch_meta_archive(
     except Exception as e:
         if status_cb:
             status_cb(f"⚠️ rclone error: {e}")
+        return False
+
+
+def download_game_directory(
+    game_id: str,
+    base_url: str,
+    dest_dir: str,
+    progress_cb: Optional[Callable[[dict], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> bool:
+    """Download game archive parts from vrSrc mirror into dest_dir via rclone."""
+    rclone = _find_rclone()
+    if not rclone:
+        return False
+
+    os.makedirs(dest_dir, exist_ok=True)
+    clean_url = base_url.rstrip("/")
+
+    cmd = [
+        rclone, "copy",
+        f":http:/{game_id}/",
+        dest_dir,
+        "--http-url", clean_url,
+        "--config", os.devnull,
+        "--header", f"X-API-Key: {VRSRC_API_KEY}",
+        "--no-check-certificate",
+        "-v",
+        "--use-json-log",
+        "--stats", "500ms",
+    ]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            env=_make_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+
+        # Stream JSON logs from stderr for live progress
+        if proc.stderr:
+            for line in proc.stderr:
+                if cancel_check and cancel_check():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    return False
+
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if "stats" in data and progress_cb:
+                        progress_cb(data["stats"])
+                except Exception:
+                    pass
+
+        proc.wait()
+        return proc.returncode == 0
+    except Exception as e:
+        print(f"[FrameLoad] Error in vrsrc download_game_directory: {e}")
         return False
 
 

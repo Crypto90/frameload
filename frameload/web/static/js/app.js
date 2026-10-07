@@ -109,6 +109,12 @@ function setupTabs() {
         if (bs) openGameModal(bs.package || bs.id, state.installed && state.installed.length ? "installed" : "catalog");
       }, 500);
     }
+    if (hash === "modal-catalog") {
+      setTimeout(() => {
+        const catGame = (state.catalog && state.catalog.items.find(g => g.notes)) || (state.catalog && state.catalog.items[0]);
+        if (catGame) openGameModal(catGame.id, "catalog");
+      }, 700);
+    }
     if (hash === "sideload") {
       setTimeout(() => {
         const flatCheck = document.getElementById("sideload-flat");
@@ -578,9 +584,73 @@ function openGameModal(id, mode = "catalog") {
   if (!game) return;
   state.selectedGame = game;
 
+  const pkg = game.package_name || game.package;
+  const thumbUrl = game.thumbnail_url || `/api/thumbnail/${pkg}`;
+
+  // Cover image banner
+  const coverEl = document.getElementById("modal-game-cover");
+  if (coverEl) {
+    coverEl.src = thumbUrl;
+  }
+
+  // Badges: Kind & Installed
+  const isInstalled = (mode === "installed") || (state.installed.some(g => g.package === pkg));
+  const kindBadge = document.getElementById("modal-badge-kind");
+  if (kindBadge) {
+    kindBadge.className = `badge ${game.kind === 'flat' ? 'flat' : 'vr'}`;
+    kindBadge.textContent = game.kind === 'flat' ? '2D Flat' : 'VR Quest';
+  }
+  const instBadge = document.getElementById("modal-badge-installed");
+  if (instBadge) {
+    instBadge.style.display = isInstalled ? "inline-block" : "none";
+  }
+
+  // Rating & downloads
+  const ratingEl = document.getElementById("modal-game-rating");
+  if (ratingEl) {
+    ratingEl.textContent = (game.rating && game.rating > 0) ? `${Number(game.rating).toFixed(1)} / 5` : "Community";
+  }
+  const downloadsEl = document.getElementById("modal-game-downloads");
+  if (downloadsEl) {
+    downloadsEl.textContent = game.downloads ? Number(game.downloads).toLocaleString() : "Active";
+  }
+
+  // Version and Last Updated
+  const versionEl = document.getElementById("modal-game-version");
+  if (versionEl) {
+    versionEl.textContent = game.version_code ? `v${game.version_code}` : (game.version || "1.0");
+  }
+  const updatedEl = document.getElementById("modal-game-updated");
+  if (updatedEl) {
+    updatedEl.textContent = game.last_updated || "N/A";
+  }
+
   document.getElementById("modal-game-title").textContent = game.name || game.title;
-  document.getElementById("modal-game-pkg").textContent = game.package_name || game.package;
+  document.getElementById("modal-game-pkg").textContent = pkg;
   document.getElementById("modal-game-size").textContent = game.size_formatted || `${Math.round((game.apk_size || 0)/(1024*1024))} MB`;
+
+  // Release Notes / Instructions section
+  const notesSection = document.getElementById("modal-notes-section");
+  const notesText = document.getElementById("modal-game-notes");
+  if (notesSection && notesText) {
+    if (game.notes && game.notes.trim()) {
+      notesText.textContent = game.notes.trim();
+      notesSection.style.display = "block";
+    } else {
+      notesSection.style.display = "none";
+      if (mode === "catalog" && (game.id || pkg)) {
+        fetch(`/api/catalog/notes/${game.id || pkg}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.notes && data.notes.trim()) {
+              notesText.textContent = data.notes.trim();
+              notesSection.style.display = "block";
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }
 
   const driveEl = document.getElementById("modal-game-drive");
   const moveBtn = document.getElementById("modal-game-move-btn");
