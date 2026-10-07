@@ -242,6 +242,11 @@ class SpatialGamepadNavigator {
     this.repeatDelay = 210; // ms
     this.hudTimer = null;
 
+    // Laser pointer aiming & context tracking
+    this.laserPointedTarget = null;
+    this.laserPointedScrollContainer = null;
+    this.laserPointedFocusable = null;
+
     this.initHUD();
     this.bindEvents();
     this.pollLoop = this.pollLoop.bind(this);
@@ -293,6 +298,26 @@ class SpatialGamepadNavigator {
       console.log("[FrameLoad VR] Controller disconnected");
     });
 
+    // Track laser pointer ray coordinates & aimed scroll/focus targets
+    const updateLaserAim = (e) => {
+      let el = null;
+      if (e.target && e.target.nodeType === 1 && e.target !== document.body && e.target !== document.documentElement) {
+        el = e.target;
+      } else if (typeof document.elementFromPoint === "function" && e.clientX && e.clientY) {
+        el = document.elementFromPoint(e.clientX, e.clientY);
+      }
+      if (!el) return;
+
+      this.laserPointedTarget = el;
+      this.laserPointedScrollContainer = this.findScrollableContainerUnderPoint(el);
+      const focusable = this.findFocusableUnderPoint(el);
+      if (focusable) {
+        this.laserPointedFocusable = focusable;
+      }
+    };
+    window.addEventListener("pointermove", updateLaserAim, { passive: true });
+    window.addEventListener("pointerdown", updateLaserAim, { passive: true });
+
     // Keyboard spatial navigation fallback (Arrow keys, Enter, Esc)
     window.addEventListener("keydown", (e) => {
       if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")) {
@@ -333,6 +358,38 @@ class SpatialGamepadNavigator {
           break;
       }
     });
+  }
+
+  findScrollableContainerUnderPoint(el) {
+    if (!el || el === document.body || el === document.documentElement) return null;
+    let curr = el;
+    while (curr && curr !== document.body && curr !== document.documentElement) {
+      const style = window.getComputedStyle(curr);
+      const overflowY = style.overflowY;
+      const overflowX = style.overflowX;
+      const canScrollY = (overflowY === "auto" || overflowY === "scroll") && (curr.scrollHeight > curr.clientHeight + 4);
+      const canScrollX = (overflowX === "auto" || overflowX === "scroll") && (curr.scrollWidth > curr.clientWidth + 4);
+      if (canScrollY || canScrollX) {
+        return { element: curr, canScrollY, canScrollX };
+      }
+      curr = curr.parentElement;
+    }
+    return null;
+  }
+
+  findFocusableUnderPoint(el) {
+    if (!el) return null;
+    const selector = [
+      "button:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+      ".game-card",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      ".category-chip",
+      ".tab-btn",
+      ".telemetry-chip.kofi-chip"
+    ].join(", ");
+    return el.closest(selector);
   }
 
   getActiveModal() {
@@ -404,6 +461,16 @@ class SpatialGamepadNavigator {
     if (candidates.length === 0) return;
 
     this.showHUD();
+
+    // Laser-Aim Context Anchor: If user has pointed the laser ray at a focusable element,
+    // establish it as the spatial navigation origin immediately!
+    if (this.laserPointedFocusable && candidates.includes(this.laserPointedFocusable)) {
+      if (this.focusedElement !== this.laserPointedFocusable) {
+        this.setFocus(this.laserPointedFocusable);
+        this.laserPointedFocusable = null;
+        return;
+      }
+    }
 
     if (!this.focusedElement || !candidates.includes(this.focusedElement)) {
       this.setFocus(candidates[0]);
@@ -478,12 +545,23 @@ class SpatialGamepadNavigator {
   }
 
   getActiveScrollContainer() {
+    // 1. Check if laser pointer is currently aiming at a scrollable sub-container (chips carousel, notes, logs, queue)
+    if (this.laserPointedScrollContainer && this.laserPointedScrollContainer.element && this.laserPointedScrollContainer.element.isConnected) {
+      const el = this.laserPointedScrollContainer.element;
+      if (el.offsetParent !== null && window.getComputedStyle(el).display !== "none") {
+        return this.laserPointedScrollContainer;
+      }
+    }
+
+    // 2. Fallback to active modal body if modal is open
     const openModal = this.getActiveModal();
     if (openModal) {
       const modalBody = openModal.querySelector(".modal-body, .modal-content, .card-details-grid");
-      if (modalBody) return modalBody;
+      if (modalBody) return { element: modalBody, canScrollY: true, canScrollX: false };
     }
-    return window;
+
+    // 3. Fallback to main window
+    return { element: window, canScrollY: true, canScrollX: false };
   }
 
   pollLoop() {
@@ -530,15 +608,29 @@ class SpatialGamepadNavigator {
     const deadzone = 0.16;
 
     if (Math.abs(axisRY) > deadzone || Math.abs(axisRX) > deadzone) {
-      const scrollContainer = this.getActiveScrollContainer();
-      const scrollY = Math.abs(axisRY) > deadzone ? axisRY * 18 : 0;
-      const scrollX = Math.abs(axisRX) > deadzone ? axisRX * 18 : 0;
+      const scrollInfo = this.getActiveScrollContainer();
+      const target = scrollInfo.element;
+      const canScrollX = scrollInfo.canScrollX;
+      const canScrollY = scrollInfo.canScrollY;
 
-      if (scrollContainer === window) {
+      let scrollX = 0;
+      let scrollY = 0;
+
+      if (canScrollX && !canScrollY) {
+        // Horizontally-oriented sub-container (e.g. Category chips bar):
+        // Allow either vertical or horizontal tilt of the stick to scroll horizontally!
+        const effective = Math.abs(axisRX) > deadzone ? axisRX : (Math.abs(axisRY) > deadzone ? axisRY : 0);
+        scrollX = effective * 18;
+      } else {
+        scrollX = Math.abs(axisRX) > deadzone ? axisRX * 18 : 0;
+        scrollY = Math.abs(axisRY) > deadzone ? axisRY * 18 : 0;
+      }
+
+      if (target === window) {
         window.scrollBy({ left: scrollX, top: scrollY, behavior: "auto" });
       } else {
-        scrollContainer.scrollTop += scrollY;
-        scrollContainer.scrollLeft += scrollX;
+        target.scrollTop += scrollY;
+        target.scrollLeft += scrollX;
       }
       this.showHUD();
     }
@@ -597,11 +689,12 @@ class SpatialGamepadNavigator {
   }
 
   pageScroll(offset) {
-    const container = this.getActiveScrollContainer();
-    if (container === window) {
+    const scrollInfo = this.getActiveScrollContainer();
+    const target = scrollInfo.element;
+    if (target === window) {
       window.scrollBy({ top: offset, behavior: "smooth" });
     } else {
-      container.scrollBy({ top: offset, behavior: "smooth" });
+      target.scrollBy({ top: offset, behavior: "smooth" });
     }
     this.showHUD();
   }
