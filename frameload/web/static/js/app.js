@@ -222,9 +222,9 @@ function renderCatalogGrid() {
     const thumbUrl = game.thumbnail_url || `/api/thumbnail/${game.package_name}`;
 
     return `
-      <div class="game-card" data-id="${game.id}" onclick="openGameModal('${game.id}', 'catalog')">
+      <div class="game-card" data-id="${game.id}" draggable="false" onclick="openGameModal('${game.id}', 'catalog')">
         <div class="card-poster">
-          <img src="${thumbUrl}" alt="${game.name}" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+          <img src="${thumbUrl}" alt="${game.name}" draggable="false" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
           <div class="badge-overlay">
             <span class="badge ${game.kind === 'flat' ? 'flat' : 'vr'}">${game.kind === 'flat' ? '2D' : 'VR'}</span>
             ${isInstalled ? '<span class="badge installed">Installed</span>' : ''}
@@ -411,9 +411,9 @@ function renderInstalledGrid() {
       : null;
 
     return `
-      <div class="game-card" data-package="${game.package}" onclick="openGameModal('${game.package}', 'installed')">
+      <div class="game-card" data-package="${game.package}" draggable="false" onclick="openGameModal('${game.package}', 'installed')">
         <div class="card-poster">
-          <img src="${game.thumbnail_url || '/static/assets/fallback_cover.svg'}" alt="${game.title}" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+          <img src="${game.thumbnail_url || '/static/assets/fallback_cover.svg'}" alt="${game.title}" draggable="false" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
           <div class="badge-overlay">
             <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
             ${game.is_external ? '<span class="badge" style="background:#27ae60; color:#fff;" title="Installed on MicroSD Card">MicroSD</span>' : ''}

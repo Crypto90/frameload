@@ -47,8 +47,20 @@ class VRLaserDragEngine {
     window.addEventListener("pointerdown", this.onPointerDown, { passive: true });
     window.addEventListener("pointermove", this.onPointerMove, { passive: false });
     window.addEventListener("pointerup", this.onPointerUp, { passive: false });
-    window.addEventListener("pointercancel", this.onPointerUp, { passive: false });
+    window.addEventListener("pointercancel", (e) => {
+      if (this.isDragging) {
+        this.onPointerUp(e);
+      } else {
+        this.isPointerDown = false;
+        this.isDragging = false;
+      }
+    }, { passive: false });
     window.addEventListener("click", this.onClickCapture, { capture: true });
+    // Prevent default browser dragstart on images/cards from killing pointer drag
+    window.addEventListener("dragstart", (e) => {
+      e.preventDefault();
+      return false;
+    }, { capture: true });
   }
 
   findScrollTarget(el) {
@@ -224,7 +236,9 @@ class VRLaserDragEngine {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      this.suppressClick = false;
+      setTimeout(() => {
+        this.suppressClick = false;
+      }, 80);
     }
   }
 }
@@ -237,9 +251,10 @@ class SpatialGamepadNavigator {
     this.enabled = true;
     this.focusedElement = null;
     this.lastButtonStates = {};
+    this.stickHoldTimes = {};
     this.lastAxisTime = 0;
-    this.axisThreshold = 0.55;
-    this.repeatDelay = 210; // ms
+    this.axisThreshold = 0.52;
+    this.repeatDelay = 200; // ms
     this.hudTimer = null;
 
     // Laser pointer aiming & context tracking
@@ -555,32 +570,112 @@ class SpatialGamepadNavigator {
       }
     }
 
-    // 2. Fallback to active modal body if modal is open
-    const openModal = this.getActiveModal();
-    if (openModal) {
-      const modalBody = openModal.querySelector(".modal-body, .modal-content, .card-details-grid");
-      if (modalBody) return { element: modalBody, canScrollY: true, canScrollX: false };
+    // 2. Check if current focused element is inside a scrollable container
+    if (this.focusedElement && this.focusedElement.isConnected) {
+      const focusedContainer = this.findScrollableContainerUnderPoint(this.focusedElement);
+      if (focusedContainer) return focusedContainer;
     }
 
-    // 3. Fallback to main window
-    return { element: window, canScrollY: true, canScrollX: false };
+    // 3. Fallback to active modal body if modal is open
+    const openModal = this.getActiveModal();
+    if (openModal) {
+      const modalBody = openModal.querySelector(".modal-body, .modal-content, .card-details-grid, .settings-modal-body");
+      if (modalBody) {
+        return {
+          element: modalBody,
+          canScrollY: modalBody.scrollHeight > modalBody.clientHeight,
+          canScrollX: modalBody.scrollWidth > modalBody.clientWidth
+        };
+      }
+    }
+
+    // 4. Fallback to main window
+    const docEl = document.scrollingElement || document.documentElement || document.body;
+    return {
+      element: window,
+      canScrollY: true,
+      canScrollX: (docEl && docEl.scrollWidth > window.innerWidth)
+    };
   }
 
   pollLoop() {
-    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (let i = 0; i < gamepads.length; i++) {
-      const gp = gamepads[i];
+    const rawGamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (let i = 0; i < rawGamepads.length; i++) {
+      const gp = rawGamepads[i];
       if (!gp) continue;
-      this.handleGamepad(gp);
-      break; // Primary VR controller
+      this.handleGamepad(gp, i);
     }
     requestAnimationFrame(this.pollLoop);
   }
 
-  handleGamepad(gp) {
-    const now = Date.now();
+  applyAnalogScroll(axisX, axisY) {
+    const deadzone = 0.12;
+    const absX = Math.abs(axisX);
+    const absY = Math.abs(axisY);
 
-    // 1. Left Stick & D-Pad (2D Spatial Navigation)
+    if (absX <= deadzone && absY <= deadzone) return;
+
+    const scrollInfo = this.getActiveScrollContainer();
+    const target = scrollInfo.element;
+
+    // Smooth response curve with fine micro-adjustment and high max speed
+    const calcSpeed = (val) => {
+      const mag = Math.abs(val);
+      if (mag <= deadzone) return 0;
+      const normalized = (mag - deadzone) / (1 - deadzone);
+      return Math.sign(val) * Math.pow(normalized, 1.35) * 26; // max 26px per frame
+    };
+
+    let scrollX = calcSpeed(axisX);
+    let scrollY = calcSpeed(axisY);
+
+    // If active container is purely horizontal (e.g. tabs or category chips strip)
+    if (scrollInfo.canScrollX && !scrollInfo.canScrollY) {
+      if (Math.abs(scrollX) < 1 && Math.abs(scrollY) >= 1) {
+        scrollX = scrollY;
+        scrollY = 0;
+      }
+    }
+
+    if (target === window) {
+      window.scrollBy({ left: scrollX, top: scrollY, behavior: "auto" });
+    } else if (target) {
+      target.scrollTop += scrollY;
+      target.scrollLeft += scrollX;
+    }
+    this.showHUD();
+  }
+
+  handleGamepad(gp, gpIndex) {
+    const now = Date.now();
+    const gpKey = `${gpIndex}_${gp.id || ""}`;
+    if (!this.lastButtonStates[gpKey]) {
+      this.lastButtonStates[gpKey] = {};
+    }
+    const prev = this.lastButtonStates[gpKey];
+
+    const hand = (gp.hand || "").toLowerCase();
+    const id = (gp.id || "").toLowerCase();
+    const isExplicitRight = (hand === "right" || id.includes("right") || id.includes("(r)") || id.includes("right controller"));
+    const isExplicitLeft = (hand === "left" || id.includes("left") || id.includes("(l)") || id.includes("left controller"));
+    const isDualStick = gp.axes.length >= 4;
+    const isRightVR = isExplicitRight && gp.axes.length <= 3;
+    const isLeftVR = isExplicitLeft && gp.axes.length <= 3;
+
+    // 1. Right Thumbstick Analog Smooth Scroll (Dedicated for Right VR Controller or Dual Stick Gamepad)
+    if (isRightVR) {
+      // On Right VR Motion Controller, the stick is on axes 0 (X) and 1 (Y)
+      const stickRX = gp.axes[0] || 0;
+      const stickRY = gp.axes[1] || 0;
+      this.applyAnalogScroll(stickRX, stickRY);
+    } else if (isDualStick) {
+      // Standard Gamepad / Steam Deck right stick (axes 2 & 3 or 4 & 5)
+      const stickRX = gp.axes[2] ?? gp.axes[4] ?? 0;
+      const stickRY = gp.axes[3] ?? gp.axes[5] ?? 0;
+      this.applyAnalogScroll(stickRX, stickRY);
+    }
+
+    // 2. Left Stick / Spatial Navigation Stick
     const axisLX = gp.axes[0] || 0;
     const axisLY = gp.axes[1] || 0;
     const dpadUp = gp.buttons[12]?.pressed;
@@ -588,97 +683,80 @@ class SpatialGamepadNavigator {
     const dpadLeft = gp.buttons[14]?.pressed;
     const dpadRight = gp.buttons[15]?.pressed;
 
-    if (now - this.lastAxisTime > this.repeatDelay) {
-      if (axisLY > this.axisThreshold || dpadDown) {
-        this.navigateSpatial("down");
-        this.lastAxisTime = now;
-      } else if (axisLY < -this.axisThreshold || dpadUp) {
-        this.navigateSpatial("up");
-        this.lastAxisTime = now;
-      } else if (axisLX > this.axisThreshold || dpadRight) {
-        this.navigateSpatial("right");
-        this.lastAxisTime = now;
-      } else if (axisLX < -this.axisThreshold || dpadLeft) {
-        this.navigateSpatial("left");
-        this.lastAxisTime = now;
+    const stickTilted = Math.abs(axisLX) > 0.15 || Math.abs(axisLY) > 0.15;
+    if (stickTilted) {
+      if (!this.stickHoldTimes[gpKey]) {
+        this.stickHoldTimes[gpKey] = now;
       }
+      const holdDuration = now - this.stickHoldTimes[gpKey];
+
+      // Discrete spatial navigation jumps
+      if (now - this.lastAxisTime > this.repeatDelay) {
+        if (axisLY > this.axisThreshold || dpadDown) {
+          this.navigateSpatial("down");
+          this.lastAxisTime = now;
+        } else if (axisLY < -this.axisThreshold || dpadUp) {
+          this.navigateSpatial("up");
+          this.lastAxisTime = now;
+        } else if (axisLX > this.axisThreshold || dpadRight) {
+          this.navigateSpatial("right");
+          this.lastAxisTime = now;
+        } else if (axisLX < -this.axisThreshold || dpadLeft) {
+          this.navigateSpatial("left");
+          this.lastAxisTime = now;
+        }
+      }
+
+      // If user holds the Left stick for > 280ms or in single-controller mode, also provide smooth scroll
+      if ((isLeftVR || !isRightVR) && holdDuration > 280) {
+        this.applyAnalogScroll(axisLX * 0.85, axisLY * 0.85);
+      }
+    } else {
+      this.stickHoldTimes[gpKey] = 0;
     }
 
-    // 2. Right Stick (Analog View Smooth Scroll)
-    const axisRX = gp.axes[2] ?? gp.axes[4] ?? 0;
-    const axisRY = gp.axes[3] ?? gp.axes[5] ?? 0;
-    const deadzone = 0.16;
-
-    if (Math.abs(axisRY) > deadzone || Math.abs(axisRX) > deadzone) {
-      const scrollInfo = this.getActiveScrollContainer();
-      const target = scrollInfo.element;
-      const canScrollX = scrollInfo.canScrollX;
-      const canScrollY = scrollInfo.canScrollY;
-
-      let scrollX = 0;
-      let scrollY = 0;
-
-      if (canScrollX && !canScrollY) {
-        // Horizontally-oriented sub-container (e.g. Category chips bar):
-        // Allow either vertical or horizontal tilt of the stick to scroll horizontally!
-        const effective = Math.abs(axisRX) > deadzone ? axisRX : (Math.abs(axisRY) > deadzone ? axisRY : 0);
-        scrollX = effective * 18;
-      } else {
-        scrollX = Math.abs(axisRX) > deadzone ? axisRX * 18 : 0;
-        scrollY = Math.abs(axisRY) > deadzone ? axisRY * 18 : 0;
-      }
-
-      if (target === window) {
-        window.scrollBy({ left: scrollX, top: scrollY, behavior: "auto" });
-      } else {
-        target.scrollTop += scrollY;
-        target.scrollLeft += scrollX;
-      }
-      this.showHUD();
-    }
-
-    // 3. Buttons
-    const aBtn = gp.buttons[0]?.pressed; // A / Trigger / Cross: Select
-    const bBtn = gp.buttons[1]?.pressed; // B / Grip / Circle: Back/Close
-    const xBtn = gp.buttons[2]?.pressed; // X / Primary Thumb: Action
-    const yBtn = gp.buttons[3]?.pressed; // Y / Secondary Thumb: Search
+    // 3. Controller Buttons (Contextual Mapping)
+    const aBtn = gp.buttons[0]?.pressed; // A / Trigger / Cross
+    const bBtn = gp.buttons[1]?.pressed; // B / Grip / Circle
+    const xBtn = gp.buttons[2]?.pressed; // X / Primary Thumb
+    const yBtn = gp.buttons[3]?.pressed; // Y / Secondary Thumb
     const lbBtn = gp.buttons[4]?.pressed; // LB: Prev Tab
     const rbBtn = gp.buttons[5]?.pressed; // RB: Next Tab
     const ltBtn = gp.buttons[6]?.pressed; // LT: Fast Page Up
     const rtBtn = gp.buttons[7]?.pressed; // RT: Fast Page Down
 
-    if (aBtn && !this.lastButtonStates.a) {
+    if (aBtn && !prev.a) {
       this.triggerSelect();
       this.showHUD();
     }
-    if (bBtn && !this.lastButtonStates.b) {
+    if (bBtn && !prev.b) {
       this.triggerBack();
       this.showHUD();
     }
-    if (xBtn && !this.lastButtonStates.x) {
+    if (xBtn && !prev.x) {
       this.triggerAction();
       this.showHUD();
     }
-    if (yBtn && !this.lastButtonStates.y) {
+    if (yBtn && !prev.y) {
       this.triggerSearch();
       this.showHUD();
     }
-    if (lbBtn && !this.lastButtonStates.lb) {
+    if (lbBtn && !prev.lb) {
       this.switchTab(-1);
       this.showHUD();
     }
-    if (rbBtn && !this.lastButtonStates.rb) {
+    if (rbBtn && !prev.rb) {
       this.switchTab(1);
       this.showHUD();
     }
-    if (ltBtn && !this.lastButtonStates.lt) {
+    if (ltBtn && !prev.lt) {
       this.pageScroll(-300);
     }
-    if (rtBtn && !this.lastButtonStates.rt) {
+    if (rtBtn && !prev.rt) {
       this.pageScroll(300);
     }
 
-    this.lastButtonStates = {
+    this.lastButtonStates[gpKey] = {
       a: aBtn,
       b: bBtn,
       x: xBtn,
@@ -926,6 +1004,8 @@ class VRHandTrackingEngine {
     const reticle = this.reticles[handKey];
     if (!reticle) return;
 
+    hand.lastX = hand.x || x;
+    hand.lastY = hand.y || y;
     hand.x = x;
     hand.y = y;
 
@@ -960,6 +1040,8 @@ class VRHandTrackingEngine {
     hand.startTime = performance.now();
     hand.startX = x;
     hand.startY = y;
+    hand.lastX = x;
+    hand.lastY = y;
     hand.isDragging = false;
     hand.targetEl = document.elementFromPoint(x, y);
 
@@ -990,8 +1072,8 @@ class VRHandTrackingEngine {
     }
 
     if (hand.isDragging && hand.scrollTarget) {
-      const scrollDx = x - hand.x;
-      const scrollDy = y - hand.y;
+      const scrollDx = x - hand.lastX;
+      const scrollDy = y - hand.lastY;
 
       if (hand.scrollTarget === window) {
         window.scrollBy({ left: -scrollDx, top: -scrollDy, behavior: "auto" });

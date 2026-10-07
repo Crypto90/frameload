@@ -111,6 +111,34 @@ class TestVrsrcAudit(unittest.TestCase):
         self.assertIn("Access-Control-Allow-Origin", [h[0] for h in headers])
         self.assertIn("Access-Control-Allow-Methods", [h[0] for h in headers])
 
+    def test_config_get_descriptor_and_downloader_queue(self):
+        from frameload.config import Config
+        from frameload.catalog.downloader import Downloader
+
+        # 1. Config.get() returns singleton
+        cfg = Config.get()
+        self.assertIsInstance(cfg, Config)
+        # 2. cfg.get(key, default) returns dictionary value
+        storage_cfg = cfg.get("storage", {})
+        self.assertIsInstance(storage_cfg, dict)
+        self.assertIn("default_device_id", storage_cfg)
+
+        # 3. Downloader.add_to_queue resolves device_id without TypeError
+        downloader = Downloader()
+        game = CatalogGame(
+            name="Queue Test Game",
+            release_name="Queue.Test.Game.v1",
+            package_name="com.queue.test",
+            version_code="1",
+            last_updated="2026-10-01",
+            size_bytes=50000000,
+        )
+        task = downloader.add_to_queue(game)
+        self.assertIsNotNone(task)
+        self.assertEqual(task.status, "queued")
+        self.assertEqual(task.device_id, "internal")
+        self.assertIn("50000000", str(task.total_bytes))
+
 
 if __name__ == "__main__":
     unittest.main()

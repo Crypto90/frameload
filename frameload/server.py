@@ -440,8 +440,13 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             if not game:
                 self.send_json({"error": "Game not found in catalog"}, status=HTTPStatus.NOT_FOUND)
                 return
-            task = self.downloader.add_to_queue(game, device_id=device_id)
-            self.send_json({"success": True, "task": task.to_dict()})
+            try:
+                task = self.downloader.add_to_queue(game, device_id=device_id)
+                self.send_json({"success": True, "task": task.to_dict()})
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json({"error": f"Failed to queue download: {str(e)}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/downloads/cancel":
             task_id = body.get("task_id", "")
             success = self.downloader.cancel_task(task_id)

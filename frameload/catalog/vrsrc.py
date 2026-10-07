@@ -288,6 +288,7 @@ def download_game_directory(
     dest_dir: str,
     progress_cb: Optional[Callable[[dict], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    game_name: Optional[str] = None,
 ) -> bool:
     """Download game archive parts from vrSrc mirror into dest_dir via rclone."""
     rclone = _find_rclone()
@@ -297,55 +298,71 @@ def download_game_directory(
     os.makedirs(dest_dir, exist_ok=True)
     clean_url = base_url.rstrip("/")
 
-    cmd = [
-        rclone, "copy",
-        f":http:/{game_id}/",
-        dest_dir,
-        "--http-url", clean_url,
-        "--config", os.devnull,
-        "--header", f"X-API-Key: {VRSRC_API_KEY}",
-        "--no-check-certificate",
-        "-v",
-        "--use-json-log",
-        "--stats", "500ms",
-    ]
+    candidates = []
+    if game_name:
+        candidates.append(f":http:/{VRSRC_GAME_PATH}/{game_name}/")
+        candidates.append(f":http:/{game_name}/")
+    if game_id:
+        candidates.append(f":http:/{VRSRC_GAME_PATH}/{game_id}/")
+        candidates.append(f":http:/{game_id}/")
 
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            env=_make_env(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
+    for src_path in candidates:
+        cmd = [
+            rclone, "copy",
+            src_path,
+            dest_dir,
+            "--http-url", clean_url,
+            "--config", os.devnull,
+            "--header", f"X-API-Key: {VRSRC_API_KEY}",
+            "--no-check-certificate",
+            "-v",
+            "--use-json-log",
+            "--stats", "500ms",
+        ]
 
-        # Stream JSON logs from stderr for live progress
-        if proc.stderr:
-            for line in proc.stderr:
-                if cancel_check and cancel_check():
-                    proc.terminate()
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                env=_make_env(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+
+            # Stream JSON logs from stderr for live progress
+            if proc.stderr:
+                for line in proc.stderr:
+                    if cancel_check and cancel_check():
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                        return False
+
+                    line = line.strip()
+                    if not line:
+                        continue
                     try:
-                        proc.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                    return False
+                        data = json.loads(line)
+                        if "stats" in data and progress_cb:
+                            progress_cb(data["stats"])
+                    except Exception:
+                        pass
 
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    if "stats" in data and progress_cb:
-                        progress_cb(data["stats"])
-                except Exception:
-                    pass
+            proc.wait()
+            # If files were successfully downloaded, stop and return True
+            if proc.returncode == 0:
+                files = os.listdir(dest_dir)
+                if any(f.endswith(".7z") or ".7z." in f for f in files):
+                    return True
+        except Exception as e:
+            print(f"[FrameLoad] Error in vrsrc download_game_directory ({src_path}): {e}")
 
-        proc.wait()
-        return proc.returncode == 0
-    except Exception as e:
-        print(f"[FrameLoad] Error in vrsrc download_game_directory: {e}")
-        return False
+    # Return True if any archive files exist in dest_dir
+    files = os.listdir(dest_dir) if os.path.exists(dest_dir) else []
+    return any(f.endswith(".7z") or ".7z." in f for f in files)
 
 
 def test_connection(base_url: str, password: str) -> dict:

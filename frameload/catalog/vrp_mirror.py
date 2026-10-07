@@ -26,6 +26,7 @@ class VrpMirror:
         self.games: List[CatalogGame] = []
         self.games_by_id: Dict[str, CatalogGame] = {}
         self.games_by_pkg: Dict[str, CatalogGame] = {}
+        self.update_mirror_config()
         self.load_cache()
 
     def update_mirror_config(self) -> bool:

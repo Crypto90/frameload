@@ -440,6 +440,11 @@ body {
   transition: var(--transition-smooth);
   cursor: pointer;
   position: relative;
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  touch-action: none !important;
 }
 
 .game-card:hover {
@@ -448,12 +453,23 @@ body {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), var(--glow-cyan);
 }
 
+.game-card button,
+.game-card input,
+.game-card select {
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  user-select: auto;
+}
+
 .card-poster {
   position: relative;
   width: 100%;
   aspect-ratio: 2 / 3;
   background: #111728;
   overflow: hidden;
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  user-select: none !important;
 }
 
 .card-poster img, .card-poster svg {
@@ -461,6 +477,11 @@ body {
   height: 100%;
   object-fit: cover;
   transition: transform 0.4s ease;
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  pointer-events: none !important;
 }
 
 .game-card:hover .card-poster img {

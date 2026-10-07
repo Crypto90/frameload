@@ -72,6 +72,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
+class _ConfigGetDescriptor:
+    """Supports both Config.get() -> Config singleton and instance.get(key, default) -> Any."""
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return lambda: self.func(owner)
+        return lambda key=None, default=None: instance._config.get(key, default) if key is not None else instance
+
+
 class Config:
     _instance: Config | None = None
 
@@ -80,11 +91,13 @@ class Config:
         self.ensure_dirs()
         self.load()
 
-    @classmethod
-    def get(cls) -> Config:
+    @staticmethod
+    def _get_singleton(cls):
         if cls._instance is None:
-            cls._instance = Config()
+            cls._instance = cls()
         return cls._instance
+
+    get = _ConfigGetDescriptor(_get_singleton)
 
     def ensure_dirs(self) -> None:
         for path in (FRAMELOAD_DIR, CACHE_DIR, DATA_DIR, BACKUP_DIR, ANCHOR_DIR):
