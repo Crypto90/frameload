@@ -134,7 +134,10 @@ def main() -> None:
     uninst_app_parser = subparsers.add_parser("uninstall-app", help="Completely uninstall FrameLoad and remove all traces from system")
     uninst_app_parser.add_argument("--purge-games", action="store_true", help="Also delete all sideloaded VR games in ~/Applications/quest-frame")
     uninst_app_parser.add_argument("--keep-backups", action="store_true", help="Preserve game save backups in ~/.local/share/frameload/backups")
-    uninst_app_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    # Standalone Window
+    win_parser = subparsers.add_parser("window", help="Launch FrameLoad in a standalone native desktop window")
+    win_parser.add_argument("--url", default="http://127.0.0.1:5050", help="Dashboard URL")
+    win_parser.add_argument("--fullscreen", action="store_true", help="Launch in fullscreen mode")
 
     args = parser.parse_args()
 
@@ -240,6 +243,9 @@ def main() -> None:
             res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
             print("Uninstallation summary:", json.dumps(res, indent=2))
             print_ok("FrameLoad successfully removed from the system.")
+        elif args.command == "window":
+            from .web.window import main as window_main
+            window_main()
     except Exception as exc:
         print_err(f"Operation failed with error: {exc}")
         sys.exit(1)

@@ -68,7 +68,7 @@ start_daemon_if_needed() {
 }
 
 # 1. Direct CLI commands pass-through
-if [[ "${1:-}" == "serve" || "${1:-}" == "info" || "${1:-}" == "install" || "${1:-}" == "sync" || "${1:-}" == "list" || "${1:-}" == "storage" || "${1:-}" == "move" || "${1:-}" == "uninstall" || "${1:-}" == "uninstall-app" || "${1:-}" == "inject-mod" ]]; then
+if [[ "${1:-}" == "serve" || "${1:-}" == "info" || "${1:-}" == "install" || "${1:-}" == "sync" || "${1:-}" == "list" || "${1:-}" == "storage" || "${1:-}" == "move" || "${1:-}" == "uninstall" || "${1:-}" == "uninstall-app" || "${1:-}" == "inject-mod" || "${1:-}" == "window" ]]; then
     exec /usr/bin/python3 -m frameload.cli "$@"
 fi
 
@@ -103,17 +103,26 @@ if [[ "${1:-}" == "--kill" ]]; then
     exit 0
 fi
 
-# 2. Steam & Interactive Launch: Ensure server is running, then open dashboard window
+# 2. Steam & Interactive Launch: Ensure server is running, then open standalone app window
 start_daemon_if_needed
 
-# Launch UI window (SteamOS Gaming Mode & Desktop Mode compatible)
+# Launch UI window (SteamOS Gaming Mode & Standalone VR compatible)
 # In Gaming Mode, gamescope requires a graphic window to be attached to the shortcut PID
-launch_browser_window() {
-    # Method A: Google Chrome / Chromium in app mode (kiosk / app window without address bar)
+launch_app_window() {
+    # Method 1: Native Standalone Python Window (PyQt6 / WebKit2GTK / pywebview)
+    # Launches as a 100% native desktop application with ZERO external browser chrome
+    if /usr/bin/python3 -m frameload.web.window --url "$URL" 2>/dev/null; then
+        exit 0
+    elif python3 -m frameload.web.window --url "$URL" 2>/dev/null; then
+        exit 0
+    fi
+
+    # Method 2: Native or Flatpak Chromium / Chrome in standalone App Mode
     for BROWSER in google-chrome-stable google-chrome chromium-browser chromium; do
         if which "$BROWSER" >/dev/null 2>&1; then
             exec "$BROWSER" \
                 --app="$URL" \
+                --class="FrameLoad" \
                 --window-size=1280,800 \
                 --no-first-run \
                 --no-default-browser-check \
@@ -122,23 +131,37 @@ launch_browser_window() {
         fi
     done
 
-    # Method B: Flatpak Chromium or Chrome
     if which flatpak >/dev/null 2>&1; then
         if flatpak info org.chromium.Chromium >/dev/null 2>&1; then
-            exec flatpak run org.chromium.Chromium --app="$URL" --window-size=1280,800
+            exec flatpak run org.chromium.Chromium --app="$URL" --class="FrameLoad" --window-size=1280,800
         elif flatpak info com.google.Chrome >/dev/null 2>&1; then
-            exec flatpak run com.google.Chrome --app="$URL" --window-size=1280,800
-        elif flatpak info org.mozilla.firefox >/dev/null 2>&1; then
-            exec flatpak run org.mozilla.firefox --new-window "$URL"
+            exec flatpak run com.google.Chrome --app="$URL" --class="FrameLoad" --window-size=1280,800
         fi
     fi
 
-    # Method C: Native Firefox
-    if which firefox >/dev/null 2>&1; then
-        exec firefox --new-window "$URL"
+    # Method 3: Isolated Kiosk-Mode Window for Firefox (SteamOS Default)
+    # Standard --new-window opens Firefox with tabs, address bar, and search menus.
+    # --kiosk creates a true borderless app display without ANY browser chrome!
+    FF_PROFILE="$DATA_DIR/browser_profile"
+    mkdir -p "$FF_PROFILE"
+    if [[ ! -f "$FF_PROFILE/user.js" ]]; then
+        cat > "$FF_PROFILE/user.js" << 'EOF'
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("datareporting.policy.dataSubmissionPolicyAcceptedVersion", 2);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+EOF
     fi
 
-    # Method D: Standard xdg-open / python webbrowser
+    if which flatpak >/dev/null 2>&1 && flatpak info org.mozilla.firefox >/dev/null 2>&1; then
+        exec flatpak run org.mozilla.firefox --profile "$FF_PROFILE" --kiosk "$URL"
+    elif which firefox >/dev/null 2>&1; then
+        exec firefox --profile "$FF_PROFILE" --kiosk "$URL"
+    fi
+
+    # Method 4: Standard xdg-open / python webbrowser fallback
     if which xdg-open >/dev/null 2>&1; then
         xdg-open "$URL" >/dev/null 2>&1 || true
     else
@@ -151,4 +174,4 @@ launch_browser_window() {
     done
 }
 
-launch_browser_window
+launch_app_window
