@@ -68,7 +68,7 @@ start_daemon_if_needed() {
 }
 
 # 1. Direct CLI commands pass-through
-if [[ "${1:-}" == "serve" || "${1:-}" == "info" || "${1:-}" == "install" || "${1:-}" == "sync" || "${1:-}" == "list" || "${1:-}" == "storage" || "${1:-}" == "move" || "${1:-}" == "uninstall" || "${1:-}" == "uninstall-app" || "${1:-}" == "inject-mod" || "${1:-}" == "window" ]]; then
+if [[ "${1:-}" == "serve" || "${1:-}" == "info" || "${1:-}" == "install" || "${1:-}" == "sync" || "${1:-}" == "list" || "${1:-}" == "storage" || "${1:-}" == "move" || "${1:-}" == "uninstall" || "${1:-}" == "uninstall-app" || "${1:-}" == "inject-mod" || "${1:-}" == "window" || "${1:-}" == "tune" ]]; then
     exec /usr/bin/python3 -m frameload.cli "$@"
 fi
 

@@ -56,6 +56,15 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
     - `B`: Back / Close modals.
     - `X`: Action button.
     - `Y`: Instant search focus.
+- **🥽 Steam Frame VR Optimizer & Hardware Spoofing Engine:**
+  - **Meta Quest 3 Hardware Spoofing (`eureka`):** Unlocks 4K textures, dynamic real-time shadows, expanded LOD draw distances, and modern shaders on Quest APKs that downgrade on unverified headsets.
+  - **Eye-Tracked Dynamic Foveated Rendering (DFR):** Connects Steam Frame's hardware eye-tracking cameras directly to OpenXR variable-rate shading (VRS). Renders at full clarity where pupils are gazing while compressing peripheral pixels, saving up to 45% GPU compute.
+  - **Render Resolution Supersampling:** Per-game and global resolution scale multiplier (0.70x to 1.75x) with real-time eye-buffer pixel preview (e.g. 1.25x / ~2580 x 2760 px/eye).
+  - **Display Refresh Rates:** 72Hz, 80Hz, 90Hz, 120Hz, and 144Hz display sync.
+  - **Texture & Edge Filtering:** 4x MSAA override and up to 16x Anisotropic Filtering (razor-sharp angled textures and ground planes).
+  - **Silicon Power Governors:** CPU and GPU clock states (Balanced, Turbo, Boost Max).
+  - **1-Click Optimization Presets:** *Steam Frame Turbo* (Recommended), *Maximum Visuals* (PCVR Clarity), *120Hz Ultra Smooth*, *Battery Saver*, and *Stock*.
+  - **Auto Engine Tuning:** Automatic `Engine.ini` / `ConsoleVariables.ini` optimization for Unreal Engine VR and `boot.config` for Unity.
 - **💾 Save Data & Game Manager:**
   - 1-click game save export/import (`tar.gz`).
   - Per-game runtime settings editor (72Hz, 90Hz, 120Hz refresh rates, resolution scaling, MSAA, controller model rendering).
@@ -184,7 +193,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.2.1}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.2.2}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 

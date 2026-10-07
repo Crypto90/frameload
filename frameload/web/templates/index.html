@@ -366,6 +366,23 @@
             </button>
           </div>
         </div>
+
+        <!-- Global Steam Frame Optimization & Spoofing Card -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.3); padding:24px; border-radius:var(--radius-lg); grid-column:span 2;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+              <span>🥽</span> Steam Frame VR Global Optimizer &amp; Quest 3 Spoofing
+            </h3>
+            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Hardware Accelerator</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+            Automatically unlocks high-res 4K textures, dynamic real-time shadows, Steam Frame eye-tracked foveated rendering (DFR), and supersampled resolution on Quest APKs running in the Lepton container.
+          </p>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <button class="btn-primary compact" onclick="batchApplyTurboToAll()">⚡ Apply Steam Frame Turbo to All Games</button>
+            <button class="btn-secondary compact" onclick="openGlobalTuningModal()">⚙️ Configure Default Tuning</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -781,6 +798,228 @@
         <button id="uninst-submit-btn" class="btn-danger" disabled onclick="executeUninstallApp()">
           Confirm &amp; Completely Remove
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Steam Frame VR Optimizer & Hardware Tuning Modal -->
+  <div id="tuning-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:680px; max-height:90vh; overflow-y:auto;">
+      <button class="modal-close" onclick="closeTuningModal()">&times;</button>
+      
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+        <div>
+          <h2 style="font-size:1.35rem; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <span style="color:var(--accent-cyan);">🥽</span> <span id="tuning-modal-title">Steam Frame VR Optimizer</span>
+          </h2>
+          <p id="tuning-modal-subtitle" style="font-size:0.83rem; color:var(--text-muted); font-family:var(--font-mono, monospace);">
+            package.name
+          </p>
+        </div>
+        <span id="tuning-modal-engine-badge" class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan); font-size:0.78rem;">
+          Unity Engine
+        </span>
+      </div>
+
+      <!-- Quick Preset Selector Strip -->
+      <label style="display:block; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:700; margin-bottom:6px;">
+        1-Click Optimization Presets:
+      </label>
+      <div class="tuning-presets-strip">
+        <button type="button" id="preset-chip-turbo" class="tuning-preset-chip active" onclick="selectTuningPreset('steam_frame_turbo')">
+          <span>⚡</span> Steam Frame Turbo
+        </button>
+        <button type="button" id="preset-chip-visuals" class="tuning-preset-chip" onclick="selectTuningPreset('max_visuals')">
+          <span>🌟</span> Max Visuals (PCVR)
+        </button>
+        <button type="button" id="preset-chip-fps" class="tuning-preset-chip" onclick="selectTuningPreset('high_fps_120')">
+          <span>🏎️</span> 120Hz Ultra Smooth
+        </button>
+        <button type="button" id="preset-chip-battery" class="tuning-preset-chip" onclick="selectTuningPreset('battery_saver')">
+          <span>🔋</span> Battery Saver
+        </button>
+        <button type="button" id="preset-chip-stock" class="tuning-preset-chip" onclick="selectTuningPreset('stock_default')">
+          <span>🔄</span> Stock Quest 3 (1.0x)
+        </button>
+      </div>
+
+      <!-- Settings Cards Grid -->
+      <div class="tuning-grid">
+        <!-- 1. Hardware & Device Spoofing -->
+        <div class="tuning-card" style="grid-column:span 2;">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">🎭 Quest Hardware Spoofing Profile</span>
+            <span class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Graphics Unlock</span>
+          </div>
+          <select id="tune-spoof-profile" class="select-styled" style="width:100%; margin-bottom:6px;" onchange="updateTuningPreview()">
+            <option value="quest3" selected>Meta Quest 3 (eureka) — Unlocks 4K Textures, Dynamic Lighting &amp; Shadows [Recommended]</option>
+            <option value="quest_pro">Meta Quest Pro (seacliff) — Enables Eye &amp; Face Tracking API Surface</option>
+            <option value="quest3s">Meta Quest 3S (panther) — Modern Shaders with Balanced Fillrate</option>
+            <option value="quest2">Meta Quest 2 (hollywood) — Legacy Performance Profile</option>
+            <option value="steam_frame">Valve Steam Frame (galileo) — Native OpenXR Identifier</option>
+          </select>
+          <p class="tuning-micro-note">
+            💡 <strong>Why this matters:</strong> Many Quest titles check <code>Build.MODEL</code> or <code>OVRPlugin</code>. When spoofed as <strong>Quest 3</strong>, games activate full PC-grade shader cascades, dynamic shadows, and 4K textures instead of Quest 2 low-end assets.
+          </p>
+        </div>
+
+        <!-- 2. Resolution Scaling & Supersampling -->
+        <div class="tuning-card" style="grid-column:span 2;">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">🔍 Render Resolution Scale (Supersampling)</span>
+            <span id="tune-scale-display" class="tuning-card-val">1.25x</span>
+          </div>
+          <div class="tuning-slider-wrapper">
+            <input type="range" id="tune-scale-slider" class="tuning-range-slider" min="0.70" max="1.75" step="0.05" value="1.25" oninput="onScaleSliderInput(this.value)">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span id="tune-scale-pixels" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono, monospace);">~2580 x 2760 px/eye</span>
+              <div class="tuning-chips-group">
+                <button type="button" class="tuning-select-chip" onclick="setScaleValue(0.85)">0.85x</button>
+                <button type="button" class="tuning-select-chip" onclick="setScaleValue(1.00)">1.00x</button>
+                <button type="button" class="tuning-select-chip selected" onclick="setScaleValue(1.25)">1.25x</button>
+                <button type="button" class="tuning-select-chip" onclick="setScaleValue(1.35)">1.35x</button>
+                <button type="button" class="tuning-select-chip" onclick="setScaleValue(1.45)">1.45x</button>
+              </div>
+            </div>
+          </div>
+          <p class="tuning-micro-note">
+            Directly supersamples the eye buffer render targets. 1.25x provides razor-sharp distant clarity without aliasing.
+          </p>
+        </div>
+
+        <!-- 3. Refresh Rate -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">⚡ Display Refresh Rate</span>
+            <span id="tune-refresh-val" class="tuning-card-val">90 Hz</span>
+          </div>
+          <select id="tune-refresh-select" class="select-styled" onchange="onRefreshSelect(this.value)">
+            <option value="72">72 Hz (Power Saver)</option>
+            <option value="80">80 Hz (Balanced)</option>
+            <option value="90" selected>90 Hz (Smooth - Recommended)</option>
+            <option value="120">120 Hz (Ultra Smooth)</option>
+            <option value="144">144 Hz (Display Max)</option>
+          </select>
+          <p class="tuning-micro-note">
+            Synchronizes the OpenXR render swapchain to Steam Frame's high-refresh OLED panels.
+          </p>
+        </div>
+
+        <!-- 4. Foveated Rendering & DFR -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">👁️ Foveated Rendering (DFR)</span>
+            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Steam Frame DFR</span>
+          </div>
+          <select id="tune-foveation-select" class="select-styled" onchange="updateTuningPreview()">
+            <option value="dynamic" selected>Dynamic Eye-Tracked (Steam Frame DFR) [+40% GPU]</option>
+            <option value="low">Fixed Low (Subtle Outer VRS)</option>
+            <option value="medium">Fixed Medium (Balanced VRS)</option>
+            <option value="high">Fixed High (Aggressive Edge Compression)</option>
+            <option value="off">Disabled (Full Uniform Resolution)</option>
+          </select>
+          <p class="tuning-micro-note">
+            <strong>Dynamic Eye-Tracked:</strong> Steam Frame eye tracking shifts full shading to pupil center while compressing periphery, providing huge frame rate headroom.
+          </p>
+        </div>
+
+        <!-- 5. MSAA & Anti-Aliasing -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">✨ MSAA Anti-Aliasing</span>
+            <span id="tune-msaa-val" class="tuning-card-val">4x</span>
+          </div>
+          <select id="tune-msaa-select" class="select-styled" onchange="updateTuningPreview()">
+            <option value="0">0x (Disabled - Jagged)</option>
+            <option value="2">2x MSAA (Standard)</option>
+            <option value="4" selected>4x MSAA (Ultra Clean Edges - Recommended)</option>
+          </select>
+          <p class="tuning-micro-note">
+            Eliminates high-frequency specular shimmer on wireframes and metallic edges in VR.
+          </p>
+        </div>
+
+        <!-- 6. Anisotropic Filtering -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">📐 Anisotropic Filtering (AF)</span>
+            <span id="tune-af-val" class="tuning-card-val">8x</span>
+          </div>
+          <select id="tune-af-select" class="select-styled" onchange="updateTuningPreview()">
+            <option value="1">1x (Default Trilinear)</option>
+            <option value="4">4x (Crisp)</option>
+            <option value="8" selected>8x (High - Recommended)</option>
+            <option value="16">16x (Ultra Sharp Floors &amp; Geometry)</option>
+          </select>
+          <p class="tuning-micro-note">
+            Prevents distant ground tracks, floors, and textured walls from turning into blurred mud at oblique angles.
+          </p>
+        </div>
+
+        <!-- 7. Hardware Performance Clocks -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">🚀 Silicon Clocks (CPU / GPU)</span>
+            <span class="tuning-card-val">Turbo (L4/L4)</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:0.75rem; color:var(--text-muted);">CPU Governor:</label>
+              <select id="tune-cpu-select" class="select-styled compact">
+                <option value="2">Eco (Level 2)</option>
+                <option value="3">Balanced (Level 3)</option>
+                <option value="4" selected>Turbo (Level 4)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem; color:var(--text-muted);">GPU Governor:</label>
+              <select id="tune-gpu-select" class="select-styled compact">
+                <option value="2">Eco (Level 2)</option>
+                <option value="3">Balanced (Level 3)</option>
+                <option value="4" selected>Turbo (Level 4)</option>
+                <option value="5">Boost Max (Level 5)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8. Controller Models & Haptics -->
+        <div class="tuning-card">
+          <div class="tuning-card-header">
+            <span class="tuning-card-title">🎮 Steam Frame Controllers &amp; Haptics</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:0.75rem; color:var(--text-muted);">3D Controller:</label>
+              <select id="tune-ctrl-select" class="select-styled compact">
+                <option value="steam_frame_roy" selected>Steam Frame Roy</option>
+                <option value="quest_touch">Meta Quest Touch</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem; color:var(--text-muted);">Haptic Scale:</label>
+              <select id="tune-haptic-select" class="select-styled compact">
+                <option value="0.8">0.8x (Soft)</option>
+                <option value="1.0">1.0x (Normal)</option>
+                <option value="1.2" selected>1.2x (Steam Frame HD)</option>
+                <option value="1.5">1.5x (Strong)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-subtle); padding-top:16px;">
+        <button type="button" class="btn-secondary compact" onclick="selectTuningPreset('stock_default')">
+          ↺ Reset to Stock
+        </button>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="btn-secondary" onclick="closeTuningModal()">Cancel</button>
+          <button type="button" id="btn-save-tuning" class="btn-primary" onclick="saveGameTuningFromModal()">
+            💾 Apply &amp; Save Tuning
+          </button>
+        </div>
       </div>
     </div>
   </div>

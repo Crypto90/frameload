@@ -709,6 +709,7 @@ function openGameModal(id, mode = "catalog") {
   } else {
     actionContainer.innerHTML = `
       <button class="btn-primary" onclick="launchGame('${game.package}'); closeModal();">Launch in VR</button>
+      <button class="btn-secondary" style="border-color:var(--accent-cyan); color:var(--accent-cyan); font-weight:700;" onclick="openTuningModal('${game.package}')">🥽 Steam Frame Optimizer</button>
       <button class="btn-secondary" onclick="backupSaves('${game.package}')">Backup Saves</button>
       <button class="btn-secondary" style="color:var(--accent-danger);" onclick="uninstallGame('${game.package}')">Uninstall</button>
     `;
@@ -2092,4 +2093,354 @@ window.testMirrorFromModal = testMirrorFromModal;
 window.testMirrorConnection = testMirrorConnection;
 window.installRclone = installRclone;
 window.clearMirrorConfig = clearMirrorConfig;
+
+// === Steam Frame VR Optimizer & Hardware Tuning ===
+state.tuningTarget = null;
+state.tuningPresets = null;
+
+async function loadTuningPresets() {
+  if (state.tuningPresets) return state.tuningPresets;
+  try {
+    const data = await apiGet("/api/tuning/presets");
+    state.tuningPresets = data.presets || {};
+    return state.tuningPresets;
+  } catch (e) {
+    console.error("Error loading tuning presets:", e);
+    return {};
+  }
+}
+
+async function openTuningModal(pkg) {
+  state.tuningTarget = pkg;
+  const modal = document.getElementById("tuning-modal");
+  if (!modal) return;
+
+  const game = (state.installed && state.installed.find(g => g.package === pkg)) || state.selectedGame;
+  const titleEl = document.getElementById("tuning-modal-title");
+  const subEl = document.getElementById("tuning-modal-subtitle");
+  const engBadge = document.getElementById("tuning-modal-engine-badge");
+
+  if (pkg === "__global__") {
+    if (titleEl) titleEl.textContent = "Global Steam Frame Optimization Defaults";
+    if (subEl) subEl.textContent = "Applied to all sideloaded Quest games";
+    if (engBadge) { engBadge.textContent = "Global Defaults"; engBadge.className = "badge"; }
+  } else {
+    if (titleEl) titleEl.textContent = (game && game.title) ? `🥽 ${game.title} — VR Optimizer` : "Steam Frame VR Optimizer";
+    if (subEl) subEl.textContent = pkg;
+    if (engBadge) {
+      const eng = (game && game.engine) || "Unity";
+      engBadge.textContent = `${eng} Engine`;
+      engBadge.className = "badge";
+    }
+  }
+
+  // Load current tuning data
+  try {
+    const url = (pkg === "__global__") ? "/api/tuning/global" : `/api/installed/tuning/${pkg}`;
+    const data = await apiGet(url);
+
+    // Populate inputs
+    const spoofSel = document.getElementById("tune-spoof-profile");
+    if (spoofSel) spoofSel.value = data.spoof_profile || "quest3";
+
+    const scaleSlider = document.getElementById("tune-scale-slider");
+    const scale = parseFloat(data.resolution_scale || 1.25);
+    if (scaleSlider) scaleSlider.value = scale;
+    onScaleSliderInput(scale);
+
+    const refreshSel = document.getElementById("tune-refresh-select");
+    if (refreshSel) refreshSel.value = String(data.refresh_rate || 90);
+    const refreshVal = document.getElementById("tune-refresh-val");
+    if (refreshVal) refreshVal.textContent = `${data.refresh_rate || 90} Hz`;
+
+    const fovSel = document.getElementById("tune-foveation-select");
+    if (fovSel) fovSel.value = data.foveated_rendering || "dynamic";
+
+    const msaaSel = document.getElementById("tune-msaa-select");
+    if (msaaSel) msaaSel.value = String(data.msaa !== undefined ? data.msaa : 4);
+    const msaaVal = document.getElementById("tune-msaa-val");
+    if (msaVal) msaaVal.textContent = `${data.msaa !== undefined ? data.msaa : 4}x`;
+
+    const afSel = document.getElementById("tune-af-select");
+    if (afSel) afSel.value = String(data.anisotropic_filtering !== undefined ? data.anisotropic_filtering : 8);
+    const afVal = document.getElementById("tune-af-val");
+    if (afVal) afVal.textContent = `${data.anisotropic_filtering !== undefined ? data.anisotropic_filtering : 8}x`;
+
+    const cpuSel = document.getElementById("tune-cpu-select");
+    if (cpuSel) cpuSel.value = String(data.cpu_level || 4);
+
+    const gpuSel = document.getElementById("tune-gpu-select");
+    if (gpuSel) gpuSel.value = String(data.gpu_level || 4);
+
+    const ctrlSel = document.getElementById("tune-ctrl-select");
+    if (ctrlSel) ctrlSel.value = data.controller_models || "steam_frame_roy";
+
+    const hapticSel = document.getElementById("tune-haptic-select");
+    if (hapticSel) hapticSel.value = String(data.haptic_multiplier || 1.2);
+
+    updatePresetChipHighlight();
+  } catch (err) {
+    console.error("Failed to load tuning for", pkg, err);
+  }
+
+  modal.classList.add("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function closeTuningModal() {
+  const modal = document.getElementById("tuning-modal");
+  if (modal) modal.classList.remove("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function openGlobalTuningModal() {
+  openTuningModal("__global__");
+}
+
+function onScaleSliderInput(val) {
+  const num = parseFloat(val);
+  const disp = document.getElementById("tune-scale-display");
+  if (disp) disp.textContent = `${num.toFixed(2)}x`;
+
+  const pix = document.getElementById("tune-scale-pixels");
+  if (pix) {
+    const w = Math.round(2064 * num);
+    const h = Math.round(2208 * num);
+    pix.textContent = `~${w} x ${h} px/eye`;
+  }
+
+  // Update selected chip
+  document.querySelectorAll(".tuning-select-chip").forEach(chip => {
+    const chipVal = parseFloat(chip.textContent);
+    if (Math.abs(chipVal - num) < 0.02) {
+      chip.classList.add("selected");
+    } else {
+      chip.classList.remove("selected");
+    }
+  });
+
+  updatePresetChipHighlight();
+}
+
+function setScaleValue(val) {
+  const slider = document.getElementById("tune-scale-slider");
+  if (slider) {
+    slider.value = val;
+    onScaleSliderInput(val);
+  }
+}
+
+function onRefreshSelect(val) {
+  const disp = document.getElementById("tune-refresh-val");
+  if (disp) disp.textContent = `${val} Hz`;
+  updatePresetChipHighlight();
+}
+
+function updateTuningPreview() {
+  const msaaSel = document.getElementById("tune-msaa-select");
+  const msaaVal = document.getElementById("tune-msaa-val");
+  if (msaaSel && msaaVal) msaaVal.textContent = `${msaaSel.value}x`;
+
+  const afSel = document.getElementById("tune-af-select");
+  const afVal = document.getElementById("tune-af-val");
+  if (afSel && afVal) afVal.textContent = `${afSel.value}x`;
+
+  updatePresetChipHighlight();
+}
+
+function selectTuningPreset(presetName) {
+  const presets = {
+    steam_frame_turbo: {
+      spoof_profile: "quest3",
+      resolution_scale: 1.25,
+      refresh_rate: 90,
+      foveated_rendering: "dynamic",
+      msaa: 4,
+      anisotropic_filtering: 8,
+      cpu_level: 4,
+      gpu_level: 4,
+      controller_models: "steam_frame_roy",
+      haptic_multiplier: 1.2
+    },
+    max_visuals: {
+      spoof_profile: "quest3",
+      resolution_scale: 1.45,
+      refresh_rate: 90,
+      foveated_rendering: "dynamic",
+      msaa: 4,
+      anisotropic_filtering: 16,
+      cpu_level: 4,
+      gpu_level: 5,
+      controller_models: "steam_frame_roy",
+      haptic_multiplier: 1.4
+    },
+    high_fps_120: {
+      spoof_profile: "quest3",
+      resolution_scale: 1.00,
+      refresh_rate: 120,
+      foveated_rendering: "dynamic",
+      msaa: 2,
+      anisotropic_filtering: 4,
+      cpu_level: 4,
+      gpu_level: 4,
+      controller_models: "steam_frame_roy",
+      haptic_multiplier: 1.0
+    },
+    battery_saver: {
+      spoof_profile: "quest2",
+      resolution_scale: 0.85,
+      refresh_rate: 72,
+      foveated_rendering: "high",
+      msaa: 2,
+      anisotropic_filtering: 1,
+      cpu_level: 2,
+      gpu_level: 2,
+      controller_models: "quest_touch",
+      haptic_multiplier: 0.8
+    },
+    stock_default: {
+      spoof_profile: "quest3",
+      resolution_scale: 1.00,
+      refresh_rate: 90,
+      foveated_rendering: "off",
+      msaa: 2,
+      anisotropic_filtering: 1,
+      cpu_level: 3,
+      gpu_level: 3,
+      controller_models: "quest_touch",
+      haptic_multiplier: 1.0
+    }
+  };
+
+  const p = presets[presetName];
+  if (!p) return;
+
+  const spoofSel = document.getElementById("tune-spoof-profile");
+  if (spoofSel) spoofSel.value = p.spoof_profile;
+
+  setScaleValue(p.resolution_scale);
+
+  const refreshSel = document.getElementById("tune-refresh-select");
+  if (refreshSel) {
+    refreshSel.value = String(p.refresh_rate);
+    onRefreshSelect(p.refresh_rate);
+  }
+
+  const fovSel = document.getElementById("tune-foveation-select");
+  if (fovSel) fovSel.value = p.foveated_rendering;
+
+  const msaaSel = document.getElementById("tune-msaa-select");
+  if (msaaSel) msaaSel.value = String(p.msaa);
+
+  const afSel = document.getElementById("tune-af-select");
+  if (afSel) afSel.value = String(p.anisotropic_filtering);
+
+  const cpuSel = document.getElementById("tune-cpu-select");
+  if (cpuSel) cpuSel.value = String(p.cpu_level);
+
+  const gpuSel = document.getElementById("tune-gpu-select");
+  if (gpuSel) gpuSel.value = String(p.gpu_level);
+
+  const ctrlSel = document.getElementById("tune-ctrl-select");
+  if (ctrlSel) ctrlSel.value = p.controller_models;
+
+  const hapticSel = document.getElementById("tune-haptic-select");
+  if (hapticSel) hapticSel.value = String(p.haptic_multiplier);
+
+  updateTuningPreview();
+
+  // Highlight active chip
+  document.querySelectorAll(".tuning-preset-chip").forEach(chip => chip.classList.remove("active"));
+  const chipMap = {
+    steam_frame_turbo: "preset-chip-turbo",
+    max_visuals: "preset-chip-visuals",
+    high_fps_120: "preset-chip-fps",
+    battery_saver: "preset-chip-battery",
+    stock_default: "preset-chip-stock"
+  };
+  const activeEl = document.getElementById(chipMap[presetName]);
+  if (activeEl) activeEl.classList.add("active");
+
+  showToast(`Preset loaded: ${activeEl ? activeEl.textContent.trim() : presetName}`, "info");
+}
+
+function updatePresetChipHighlight() {
+  // Reset active classes unless exactly matches
+}
+
+async function saveGameTuningFromModal() {
+  const btn = document.getElementById("btn-save-tuning");
+  if (btn) { btn.disabled = true; btn.textContent = "Applying..."; }
+
+  const settings = {
+    spoof_profile: document.getElementById("tune-spoof-profile")?.value || "quest3",
+    resolution_scale: parseFloat(document.getElementById("tune-scale-slider")?.value || 1.25),
+    refresh_rate: parseInt(document.getElementById("tune-refresh-select")?.value || 90),
+    foveated_rendering: document.getElementById("tune-foveation-select")?.value || "dynamic",
+    msaa: parseInt(document.getElementById("tune-msaa-select")?.value || 4),
+    anisotropic_filtering: parseInt(document.getElementById("tune-af-select")?.value || 8),
+    cpu_level: parseInt(document.getElementById("tune-cpu-select")?.value || 4),
+    gpu_level: parseInt(document.getElementById("tune-gpu-select")?.value || 4),
+    controller_models: document.getElementById("tune-ctrl-select")?.value || "steam_frame_roy",
+    haptic_multiplier: parseFloat(document.getElementById("tune-haptic-select")?.value || 1.2)
+  };
+
+  try {
+    if (state.tuningTarget === "__global__") {
+      const res = await apiPost("/api/tuning/global", { settings });
+      if (res.success) {
+        showToast("Global Steam Frame optimization defaults updated!", "success");
+        closeTuningModal();
+      } else {
+        showToast(res.error || "Failed to update global tuning", "error");
+      }
+    } else {
+      const res = await apiPost("/api/installed/tuning", {
+        package: state.tuningTarget,
+        settings
+      });
+      if (res.success) {
+        showToast("✨ Steam Frame optimizations applied! Quest 3 profile & launch script updated.", "success");
+        closeTuningModal();
+        loadInstalled();
+      } else {
+        showToast(res.error || "Failed to apply tuning", "error");
+      }
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "💾 Apply & Save Tuning"; }
+  }
+}
+
+async function batchApplyTurboToAll() {
+  if (!confirm("Apply Steam Frame Turbo (Quest 3 Spoof + 1.25x Supersampling + Eye-Tracked DFR + 4x MSAA) to ALL installed games?")) {
+    return;
+  }
+  showToast("Applying Steam Frame Turbo across all games...", "info");
+  try {
+    const res = await apiPost("/api/tuning/batch-apply", { preset: "steam_frame_turbo" });
+    if (res.success && res.result) {
+      showToast(`⚡ Steam Frame Turbo successfully applied to ${res.result.applied_count} games!`, "success");
+      loadInstalled();
+    } else {
+      showToast(res.error || "Batch optimization failed", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+window.openTuningModal = openTuningModal;
+window.closeTuningModal = closeTuningModal;
+window.openSettingsModal = openTuningModal;
+window.openGlobalTuningModal = openGlobalTuningModal;
+window.selectTuningPreset = selectTuningPreset;
+window.onScaleSliderInput = onScaleSliderInput;
+window.setScaleValue = setScaleValue;
+window.onRefreshSelect = onRefreshSelect;
+window.updateTuningPreview = updateTuningPreview;
+window.saveGameTuningFromModal = saveGameTuningFromModal;
+window.batchApplyTurboToAll = batchApplyTurboToAll;
 

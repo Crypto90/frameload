@@ -165,14 +165,12 @@ class LeptonInstaller:
         elif os.path.exists(marker):
             os.remove(marker)
 
-        # Settings
-        settings = analysis.recommended_settings.copy()
+        # Settings & Steam Frame VR Tuning
+        from ..manager.tuning import TuningManager
+        settings = TuningManager.get_global_tuning().copy()
+        settings.update(analysis.recommended_settings)
         if custom_settings:
             settings.update(custom_settings)
-
-        settings_conf_path = os.path.join(base, "settings.conf")
-        ApkPatcher.generate_settings_conf(settings, settings_conf_path)
-        ApkPatcher.generate_settings_conf(settings, os.path.join(files_dir, "framebridge.conf"))
 
         # Artwork
         ArtworkManager.ensure_artwork(package_name, title, art_dir)
@@ -217,6 +215,9 @@ class LeptonInstaller:
         }
         with open(os.path.join(anchor, "deployment.json"), "w", encoding="utf-8") as f:
             json.dump(dep, f, indent=2)
+
+        # Apply Steam Frame optimizations, Quest 3 spoofing & launch.sh exports
+        TuningManager.apply_tuning_to_game(package_name, settings)
 
         # Register in Steam
         steam_res = register_game_in_steam(

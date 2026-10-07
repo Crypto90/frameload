@@ -49,6 +49,7 @@ from .manager.launcher import GameLauncher
 from .manager.mods import ModManager
 from .manager.settings import SettingsManager
 from .manager.storage import StorageManager
+from .manager.tuning import TuningManager
 from .manager.uninstaller import Uninstaller
 from .manager.updates import UpdateManager
 from .system.protocol import ProtocolHandler
@@ -236,6 +237,21 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "Missing package parameter"}, status=HTTPStatus.BAD_REQUEST)
             else:
                 self.send_json({"mods": ModManager.list_mods(pkg)})
+        elif path == "/api/tuning/presets":
+            self.send_json({
+                "presets": TuningManager.get_presets(),
+                "spoof_profiles": TuningManager.get_spoof_profiles()
+            })
+        elif path == "/api/tuning/global":
+            self.send_json(TuningManager.get_global_tuning())
+        elif path.startswith("/api/installed/tuning/"):
+            pkg = path.replace("/api/installed/tuning/", "").strip()
+            if "?" in pkg:
+                pkg = pkg.split("?")[0]
+            try:
+                self.send_json(TuningManager.get_game_tuning(pkg))
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
         elif path == "/api/mirrors":
             config = Config.get()
             custom_mirrors = config["mirrors"].get("custom_mirrors", [])
@@ -438,12 +454,35 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             pkg = body.get("package", "")
             res = GameLauncher.stop(pkg)
             self.send_json(res)
-        elif path == "/api/installed/settings":
+        elif path == "/api/installed/settings" or path == "/api/installed/tuning":
             pkg = body.get("package", "")
-            settings = body.get("settings", {})
+            settings = body.get("settings", body)
             try:
-                updated = SettingsManager.update_settings(pkg, settings)
+                updated = TuningManager.save_game_tuning(pkg, settings)
+                self.send_json({"success": True, "package": pkg, "settings": updated})
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/installed/tuning/preset":
+            pkg = body.get("package", "")
+            preset = body.get("preset", "steam_frame_turbo")
+            try:
+                updated = TuningManager.apply_preset(pkg, preset)
+                self.send_json({"success": True, "package": pkg, "preset": preset, "settings": updated})
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/tuning/global":
+            settings = body.get("settings", body)
+            try:
+                updated = TuningManager.save_global_tuning(settings)
                 self.send_json({"success": True, "settings": updated})
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/tuning/batch-apply":
+            preset = body.get("preset", "steam_frame_turbo")
+            packages = body.get("packages")
+            try:
+                res = TuningManager.batch_apply(preset, packages)
+                self.send_json({"success": True, "result": res})
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/installed/backup":

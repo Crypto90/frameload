@@ -55,6 +55,7 @@ from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
 from .manager.mods import ModManager
 from .manager.storage import StorageManager
+from .manager.tuning import TuningManager
 from .manager.uninstaller import Uninstaller
 from .server import run_server
 from .system.protocol import ProtocolHandler
@@ -138,6 +139,19 @@ def main() -> None:
     win_parser = subparsers.add_parser("window", help="Launch FrameLoad in a standalone native desktop window")
     win_parser.add_argument("--url", default="http://127.0.0.1:5050", help="Dashboard URL")
     win_parser.add_argument("--fullscreen", action="store_true", help="Launch in fullscreen mode")
+
+    # Steam Frame Hardware Tuning & Quest Spoofing
+    tune_parser = subparsers.add_parser("tune", help="Steam Frame VR hardware tuning, Quest 3 spoofing, and supersampling")
+    tune_parser.add_argument("package", nargs="?", default="", help="Package name of the game")
+    tune_parser.add_argument("--preset", help="Apply a named preset (steam_frame_turbo, max_visuals, high_fps_120, battery_saver, stock_default)")
+    tune_parser.add_argument("--spoof", choices=["quest3", "quest_pro", "quest3s", "quest2", "steam_frame"], help="Hardware spoof profile")
+    tune_parser.add_argument("--scale", type=float, help="Resolution supersampling scale multiplier (e.g. 1.25, 1.45)")
+    tune_parser.add_argument("--refresh", type=int, choices=[72, 80, 90, 120, 144], help="Display refresh rate in Hz")
+    tune_parser.add_argument("--fov", choices=["dynamic", "off", "low", "medium", "high"], help="Foveated rendering mode")
+    tune_parser.add_argument("--msaa", type=int, choices=[0, 2, 4], help="MSAA sample count")
+    tune_parser.add_argument("--af", type=int, choices=[1, 4, 8, 16], help="Anisotropic filtering level")
+    tune_parser.add_argument("--batch", help="Batch apply a named preset across all installed games")
+    tune_parser.add_argument("--list", action="store_true", help="List available tuning presets and spoof profiles")
 
     args = parser.parse_args()
 
@@ -246,6 +260,51 @@ def main() -> None:
         elif args.command == "window":
             from .web.window import main as window_main
             window_main()
+        elif args.command == "tune":
+            if args.list:
+                print_ok("Available Steam Frame VR Tuning Presets:")
+                for pid, p in TuningManager.get_presets().items():
+                    print(f"  {p['icon']} {p['name']} ({pid}) [{p['badge']}]: {p['description']}")
+                print_ok("\nHardware Spoofing Profiles:")
+                for sid, s in TuningManager.get_spoof_profiles().items():
+                    print(f"  • {s['name']} ({sid}): {s['description']}")
+                return
+
+            if args.batch:
+                print_info(f"Applying preset '{args.batch}' to all installed games...")
+                res = TuningManager.batch_apply(args.batch)
+                print_ok(f"Applied to {res['applied_count']} of {res['total']} games.")
+                print(json.dumps(res, indent=2))
+                return
+
+            if not args.package:
+                print_err("Package name is required. Usage: frameload tune <package> [--preset <preset>]")
+                sys.exit(1)
+
+            if args.preset:
+                print_info(f"Applying preset '{args.preset}' to {args.package}...")
+                res = TuningManager.apply_preset(args.package, args.preset)
+                print_ok("Tuning successfully applied!")
+                print(json.dumps(res, indent=2))
+                return
+
+            overrides = {}
+            if args.spoof: overrides["spoof_profile"] = args.spoof
+            if args.scale is not None: overrides["resolution_scale"] = args.scale
+            if args.refresh is not None: overrides["refresh_rate"] = args.refresh
+            if args.fov: overrides["foveated_rendering"] = args.fov
+            if args.msaa is not None: overrides["msaa"] = args.msaa
+            if args.af is not None: overrides["anisotropic_filtering"] = args.af
+
+            if overrides:
+                print_info(f"Applying custom tuning overrides to {args.package}...")
+                res = TuningManager.save_game_tuning(args.package, overrides)
+                print_ok("Settings saved and launch script updated!")
+                print(json.dumps(res, indent=2))
+            else:
+                res = TuningManager.get_game_tuning(args.package)
+                print_ok(f"Current Steam Frame tuning profile for {args.package}:")
+                print(json.dumps(res, indent=2))
     except Exception as exc:
         print_err(f"Operation failed with error: {exc}")
         sys.exit(1)
