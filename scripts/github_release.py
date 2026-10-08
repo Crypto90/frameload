@@ -124,7 +124,13 @@ def main() -> None:
         with open(notes_file, "r", encoding="utf-8") as f:
             body = f.read()
     else:
-        body = f"""# FrameLoad {tag}
+        try:
+            from scripts.build_release import create_release_notes
+            created_path = create_release_notes(tag.lstrip("v"))
+            with open(created_path, "r", encoding="utf-8") as f:
+                body = f.read()
+        except Exception:
+            body = f"""# FrameLoad {tag}
 
 ## ⚡ 1-Click On-Device Installation (Single Command)
 

@@ -29,6 +29,7 @@ Agents working on this repository **MUST** strictly follow this release versioni
    - When bumping a version, update **all** of the following:
      - `frameload/__init__.py` (`__version__ = "X.Y.Z"`)
      - `setup.py` (`version="X.Y.Z"`)
+     - `CHANGELOG.md` (document authentic release notes under `## [vX.Y.Z]`)
      - `scripts/build_release.py` (imports `__version__` dynamically from `frameload`)
      - `README.md` (installation instructions and links)
 3. **Building Releases:**

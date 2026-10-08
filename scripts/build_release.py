@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 
@@ -36,8 +37,8 @@ def create_standalone_tarball() -> str:
         frameload_pkg = os.path.join(ROOT_DIR, "frameload")
         tar.add(frameload_pkg, arcname="frameload")
 
-        # Include root runner and installer scripts
-        for item in ["install.sh", "run.sh", "setup.py", "README.md"]:
+        # Include root runner, installer scripts, and documentation
+        for item in ["install.sh", "run.sh", "setup.py", "README.md", "CHANGELOG.md"]:
             p = os.path.join(ROOT_DIR, item)
             if os.path.isfile(p):
                 tar.add(p, arcname=item)
@@ -129,10 +130,109 @@ def generate_checksums(files: list[str]) -> str:
     return checksums_path
 
 
-def create_release_notes() -> str:
-    """Generates RELEASE_NOTES.md describing release contents and features."""
+def extract_changelog_section(version: str, changelog_path: str | None = None) -> str | None:
+    """Extracts the section for a specific version from CHANGELOG.md.
+    Supports headings like:
+      ## [v1.3.0]
+      ## [1.3.0]
+      ## v1.3.0
+      ## 1.3.0
+    Returns markdown text of the section, or None if not found.
+    """
+    if changelog_path is None:
+        changelog_path = os.path.join(ROOT_DIR, "CHANGELOG.md")
+
+    if not os.path.isfile(changelog_path):
+        return None
+
+    clean_ver = version.lstrip("v")
+    header_patterns = (
+        f"## [v{clean_ver}]",
+        f"## [{clean_ver}]",
+        f"## v{clean_ver}",
+        f"## {clean_ver}",
+    )
+
+    try:
+        with open(changelog_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return None
+
+    in_target = False
+    section_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            if any(stripped.startswith(pat) for pat in header_patterns):
+                in_target = True
+                continue
+            elif in_target:
+                # Reached next version section
+                break
+        elif in_target:
+            section_lines.append(line)
+
+    if not in_target or not section_lines:
+        return None
+
+    res = "".join(section_lines).strip()
+    while res.endswith("---"):
+        res = res[:-3].strip()
+    return res
+
+
+def extract_git_commits(version: str) -> str | None:
+    """Dynamically extracts git commit messages since the previous tag as a fallback."""
+    try:
+        cmd = ["git", "describe", "--tags", "--abbrev=0", "HEAD^"]
+        prev_tag = subprocess.check_output(cmd, cwd=ROOT_DIR, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+        log_range = f"{prev_tag}..HEAD"
+    except Exception:
+        log_range = "-n 10"
+
+    try:
+        if ".." in log_range:
+            cmd = ["git", "log", log_range, "--oneline"]
+        else:
+            cmd = ["git", "log", "-n", "10", "--oneline"]
+        output = subprocess.check_output(cmd, cwd=ROOT_DIR, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+        if output:
+            commits = []
+            for line in output.splitlines():
+                parts = line.strip().split(" ", 1)
+                if len(parts) == 2:
+                    commits.append(f"- {parts[1]} (`{parts[0]}`)")
+                else:
+                    commits.append(f"- {line.strip()}")
+            return "\n".join(commits)
+    except Exception:
+        pass
+    return None
+
+
+def create_release_notes(version: str = VERSION) -> str:
+    """Generates RELEASE_NOTES.md describing release contents and authentic version changes."""
     notes_path = os.path.join(DIST_DIR, "RELEASE_NOTES.md")
-    content = f"""# 🚀 FrameLoad v{VERSION}
+    clean_ver = version.lstrip("v")
+    display_ver = f"v{clean_ver}"
+
+    # 1. Try to extract version details from CHANGELOG.md
+    changelog_section = extract_changelog_section(clean_ver)
+
+    # 2. If not found in CHANGELOG.md, dynamically pull git commit history
+    if not changelog_section:
+        git_commits = extract_git_commits(clean_ver)
+        if git_commits:
+            changelog_section = f"### Commits & Changes in {display_ver}\n{git_commits}"
+        else:
+            changelog_section = (
+                f"- **Universal Sideloading Hub:** Sideload Quest APKs/XAPKs, PCVR EXEs, and Linux native ARM64 apps.\n"
+                f"- **Storage & Updates:** Automated storage management, update alerts, and runtime maintenance."
+            )
+
+    content = f"""# 🚀 FrameLoad {display_ver}
 
 An all-in-one, on-device VR sideloading engine, mirror catalog browser, and game manager engineered specifically for the **Valve Steam Frame (Galileo / Roy)** running SteamOS and the Lepton Android runtime container.
 
@@ -143,17 +243,12 @@ Open Konsole on your Steam Frame in Desktop Mode and run:
 curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/install.sh | bash
 ```
 
-## ✨ Highlights & Features in v{VERSION}
-- **📊 Steam-Style Storage Manager:** Multi-drive overview (Internal NVMe SSD & MicroSD Card) with multi-colored segmented storage visualizer and 1-click drive migrator.
-- **📥 Universal Sideloading Hub & 2D Window Presets:** Sideload Quest APKs/XAPKs, Windows PCVR & Flat EXEs (via Proton ARM64 / FEX-Emu), and Linux native ARM64 apps with theater window presets (Tablet, Ultrawide, IMAX).
-- **🎵 Beat Saber Mods & Custom Songs:** Full custom content management with auto-folder creation, permission unlocking, song listing, and 1-click mod injector.
-- **🔄 On-Device Self-Updating Daemon:** In-headset update alerts with top header chip, prominent banner, and 1-click zero-downtime service reload.
-- **🎨 Complete Steam Grid Visual Assets:** High-resolution vertical posters (600x900), banners (920x430), heroes (1920x620), and 512x512 icons for SteamOS and SteamVR.
-- **☕ Ko-fi Integration:** Direct developer support links in header and diagnostics.
-- **🧹 Full Clean Uninstaller:** Complete trace removal option in Settings & Diagnostics.
+## ✨ Highlights & Changes in {display_ver}
+
+{changelog_section}
 
 ## 📦 Distribution Packages
-- **`frameload-v{VERSION}-standalone.tar.gz`**: Standalone distribution archive including all web UI assets and dependencies.
+- **`frameload-{display_ver}-standalone.tar.gz`**: Standalone distribution archive including all web UI assets and dependencies.
 - **`frameload-installer.sh`**: Self-extracting on-device installer script.
 - **`SHA256SUMS`**: Cryptographic integrity checksums.
 """
