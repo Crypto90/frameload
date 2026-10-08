@@ -188,8 +188,12 @@
       <!-- Games Grid -->
       <div id="catalog-grid" class="games-grid"></div>
 
-      <!-- Pagination -->
-      <div id="catalog-pagination" style="display:flex; justify-content:center; align-items:center; gap:16px; margin-top:32px;"></div>
+      <!-- Infinite Progressive Loading Sentinel & Spinner -->
+      <div id="catalog-infinite-loader" style="display:none; justify-content:center; align-items:center; gap:12px; margin-top:32px; padding:16px; color:var(--text-muted); font-size:0.9rem;">
+        <span class="spinner" style="display:inline-block; width:20px; height:20px; border:2px solid rgba(0, 242, 254, 0.2); border-top-color:var(--accent-cyan); border-radius:50%; animation:spin 0.8s linear infinite;"></span>
+        <span>Loading more titles...</span>
+      </div>
+      <div id="catalog-sentinel" style="height:20px; margin-top:20px;"></div>
     </section>
 
     <!-- 2. Installed Library Tab -->
@@ -224,8 +228,13 @@
 
     <!-- 3. Downloads Tab -->
     <section id="tab-downloads" class="tab-panel">
-      <div class="control-bar">
+      <div class="control-bar" style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="font-size:1.15rem; font-weight:700;">Download &amp; Installation Queue</h2>
+        <div style="display:flex; gap:10px;">
+          <button class="btn-secondary compact" onclick="clearCompletedDownloads()" title="Clear completed and canceled tasks">
+            🧹 Clear Completed
+          </button>
+        </div>
       </div>
       <div id="downloads-list" style="display:flex; flex-direction:column; gap:16px;"></div>
     </section>
@@ -576,14 +585,17 @@
   <!-- Sticky Bottom Active Downloads Drawer -->
   <div id="downloads-drawer" class="downloads-drawer">
     <div class="drawer-inner">
-      <div style="min-width:240px;">
-        <h4 id="drawer-title" style="font-size:0.95rem; font-weight:700; color:#fff;">Downloading...</h4>
-        <p id="drawer-status" style="font-size:0.8rem; color:var(--text-muted);">0% • 0 B/s</p>
+      <div style="min-width:240px; flex:1; max-width:340px;">
+        <h4 id="drawer-title" style="font-size:0.95rem; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Downloading...</h4>
+        <p id="drawer-status" style="font-size:0.8rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">0% • 0 B/s</p>
       </div>
-      <div class="progress-track">
+      <div class="progress-track" style="flex:2; margin:0 16px;">
         <div id="drawer-progress" class="progress-fill"></div>
       </div>
-      <button class="btn-secondary" style="padding:6px 14px; font-size:0.8rem;" onclick="document.querySelector('[data-tab=downloads]').click()">View Queue</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button id="drawer-pause-btn" class="btn-secondary" style="padding:6px 14px; font-size:0.8rem;" onclick="toggleActiveDownloadPause()">⏸ Pause</button>
+        <button class="btn-secondary" style="padding:6px 14px; font-size:0.8rem;" onclick="document.querySelector('[data-tab=downloads]').click()">View Queue</button>
+      </div>
     </div>
   </div>
 

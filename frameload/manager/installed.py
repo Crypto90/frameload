@@ -45,12 +45,24 @@ class InstalledManager:
     def list_installed() -> List[Dict[str, Any]]:
         """Scans internal SSD and mounted MicroSD cards for installed games."""
         games = []
-        running_containers = InstalledManager._get_running_lepton_containers()
-        anchors = InstalledManager.get_all_anchor_dirs()
+        try:
+            running_containers = InstalledManager._get_running_lepton_containers()
+        except Exception:
+            running_containers = []
+        try:
+            anchors = InstalledManager.get_all_anchor_dirs()
+        except Exception:
+            anchors = [{
+                "device_id": "internal",
+                "device_name": "Internal Storage",
+                "path": ANCHOR_DIR,
+                "is_external": False,
+                "mount_path": os.path.expanduser("~"),
+            }]
 
         for anchor_info in anchors:
-            anchor_dir = anchor_info["path"]
-            if not os.path.isdir(anchor_dir):
+            anchor_dir = anchor_info.get("path")
+            if not anchor_dir or not os.path.isdir(anchor_dir):
                 continue
             pattern = os.path.join(anchor_dir, "*/deployment.json")
 
@@ -58,48 +70,56 @@ class InstalledManager:
                 try:
                     with open(dep_path, "r", encoding="utf-8") as f:
                         dep = json.load(f)
-                except (OSError, ValueError):
+                    if not isinstance(dep, dict):
+                        continue
+
+                    pkg = str(dep.get("package") or os.path.basename(os.path.dirname(dep_path)))
+                    game_anchor = os.path.dirname(dep_path)
+                    base = str(dep.get("base") or game_anchor)
+                    raw_appid = dep.get("appid", 0)
+                    try:
+                        appid = int(raw_appid)
+                    except (ValueError, TypeError):
+                        appid = 0
+
+                    # Check files status
+                    apk_path = os.path.join(base, "lepton-app/game.apk")
+                    apk_present = os.path.isfile(apk_path)
+                    apk_size = os.path.getsize(apk_path) if apk_present else 0
+
+                    # Artwork
+                    art_dir = os.path.join(game_anchor, "artwork")
+                    thumb_path = os.path.join(art_dir, "poster.png")
+                    if not os.path.isfile(thumb_path):
+                        thumb_path = os.path.join(art_dir, "icon.png")
+
+                    # Running status
+                    is_running = f"lepton-steamlaunch-{appid}" in running_containers if appid else False
+                    gameid = (appid << 32) | 0x02000000 if appid > 0 else 0
+
+                    games.append({
+                        "package": pkg,
+                        "title": dep.get("title", pkg),
+                        "appid": appid,
+                        "gameid": gameid,
+                        "base": base,
+                        "anchor": game_anchor,
+                        "device_id": dep.get("device_id", anchor_info.get("device_id", "internal")),
+                        "device_name": anchor_info.get("device_name", "Internal Storage"),
+                        "is_external": bool(anchor_info.get("is_external", False)),
+                        "kind": dep.get("kind", "quest"),
+                        "is_vr": bool(dep.get("is_vr", True)),
+                        "engine": dep.get("engine", "Unknown"),
+                        "apk_present": apk_present,
+                        "apk_size": apk_size,
+                        "installed_time": dep.get("time", 0),
+                        "settings": dep.get("settings", {}) if isinstance(dep.get("settings"), dict) else {},
+                        "is_running": is_running,
+                        "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
+                    })
+                except Exception as e:
+                    print(f"[FrameLoad] Error parsing installed game {dep_path}: {e}")
                     continue
-
-                pkg = dep.get("package", os.path.basename(os.path.dirname(dep_path)))
-                game_anchor = os.path.dirname(dep_path)
-                base = dep.get("base", game_anchor)
-                appid = dep.get("appid", 0)
-
-                # Check files status
-                apk_path = os.path.join(base, "lepton-app/game.apk")
-                apk_present = os.path.isfile(apk_path)
-                apk_size = os.path.getsize(apk_path) if apk_present else 0
-
-                # Artwork
-                art_dir = os.path.join(game_anchor, "artwork")
-                thumb_path = os.path.join(art_dir, "poster.png")
-                if not os.path.isfile(thumb_path):
-                    thumb_path = os.path.join(art_dir, "icon.png")
-
-                # Running status
-                is_running = f"lepton-steamlaunch-{appid}" in running_containers
-
-                games.append({
-                    "package": pkg,
-                    "title": dep.get("title", pkg),
-                    "appid": appid,
-                    "gameid": (int(appid) << 32) | 0x02000000 if appid else 0,
-                    "base": base,
-                    "anchor": game_anchor,
-                    "device_id": dep.get("device_id", anchor_info["device_id"]),
-                    "device_name": anchor_info["device_name"],
-                    "is_external": anchor_info["is_external"],
-                    "kind": dep.get("kind", "quest"),
-                    "is_vr": dep.get("is_vr", True),
-                    "engine": dep.get("engine", "Unknown"),
-                    "apk_present": apk_present,
-                    "apk_size": apk_size,
-                    "installed_time": dep.get("time", 0),
-                    "settings": dep.get("settings", {}),
-                    "is_running": is_running,
-                    "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
-                })
         return games
 
     @staticmethod

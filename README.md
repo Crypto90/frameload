@@ -52,7 +52,10 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - **Seamless Input Switcher & Auto-Fallback:** Interactive header chip (`🎮 Knuckles` ↔ `🖐️ Hand Tracking`) and System & Diagnostics control; automatically falls back to optical bare-hand tracking with toast and HUD feedback when controllers disconnect or power down, and instantly wakes up Knuckles mode on any button press or analog stick movement.
   - **WebXR Dashboard Hand & Pinch Navigation:** Browse FrameLoad hands-free in VR with pinch-to-click, pinch drag-to-scroll, and dynamic dual-ring reticle feedback.
 - **🌐 Direct Mirror & Catalog Integration:**
-  - Integrated with VRP public mirrors (`meta.7z`, `VRP-GameList.txt`) with instant search, genre filtering, and sorting across 2,900+ titles.
+  - **Progressive Fuzzy Catalog Browser:** Infinite smooth scrolling eliminating cumbersome Next/Prev buttons, optimized for huge catalogs (2,900+ titles) with zero DOM reflow stutters.
+  - **Pause & Resume Downloads:** Native HTTP Range and archive resumption with live Pause / Resume buttons in both the queue and bottom drawer.
+  - **Live Extraction Progression:** Real-time percentage decompression feedback (`-bsp1` stream) for multi-gigabyte 7z and zip archives.
+  - **1-Click Launch from Downloads:** Instant "Play Now" action for finished installs plus "Clear Completed" task management.
   - Multi-part archive download with auto-resumption (`Range: bytes`), download speed metrics (EMA), and ETA calculations.
 - **📦 Automated Lepton Container Setup:**
   - Installs games to `~/Applications/quest-frame/<package>/`.
@@ -199,7 +202,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.2.8}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.2.9}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 

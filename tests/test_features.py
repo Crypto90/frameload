@@ -200,5 +200,97 @@ class TestNewMergedFeatures(unittest.TestCase):
                 self.assertIn("LEPTON_WINDOW_HEIGHT=1600", launch_sh)
                 self.assertIn("LEPTON_ORIENTATION=portrait", launch_sh)
 
+    def test_download_pause_resume_clear_remove(self):
+        from frameload.catalog.downloader import Downloader
+        from frameload.catalog.models import CatalogGame, DownloadTask
+
+        downloader = Downloader.get()
+        game = CatalogGame(
+            name="Test Game",
+            release_name="Test.Game.v1.0",
+            package_name="com.test.game",
+            version_code="100",
+            last_updated="2026-10-08",
+            size_bytes=1048576,
+            id="test_game_123"
+        )
+        task = downloader.add_to_queue(game)
+        self.assertEqual(task.id, "test_game_123")
+
+        # Test pause
+        paused = downloader.pause_task(task.id)
+        self.assertTrue(paused)
+        self.assertEqual(task.status, "paused")
+
+        # Test resume
+        resumed = downloader.resume_task(task.id)
+        self.assertTrue(resumed)
+        self.assertEqual(task.status, "queued")
+
+        # Test remove
+        removed = downloader.remove_task(task.id)
+        self.assertTrue(removed)
+        self.assertIsNone(downloader.get_task(task.id))
+
+        # Test clear completed
+        task2 = downloader.add_to_queue(game)
+        task2.status = "completed"
+        cleared = downloader.clear_completed()
+        self.assertGreaterEqual(cleared, 1)
+        self.assertIsNone(downloader.get_task(task2.id))
+
+    def test_extraction_progress_callback(self):
+        from frameload.catalog.extractor import extract_archive
+
+        # Create small test zip
+        zip_path = os.path.join(self.tmp_dir, "test_archive.zip")
+        extract_out = os.path.join(self.tmp_dir, "extract_out")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("test1.txt", "hello world")
+            zf.writestr("test2.txt", "second file")
+
+        progress_calls = []
+        def _cb(pct, msg):
+            progress_calls.append((pct, msg))
+
+        success = extract_archive(zip_path, extract_out, progress_callback=_cb)
+        self.assertTrue(success)
+        self.assertTrue(os.path.isfile(os.path.join(extract_out, "test1.txt")))
+        self.assertGreater(len(progress_calls), 0)
+        self.assertGreaterEqual(progress_calls[-1][0], 1.0)
+
+    def test_installed_manager_corrupted_deployment_protection(self):
+        from frameload.manager.installed import InstalledManager
+
+        # Test parsing when anchor has valid and corrupted files
+        game_dir = os.path.join(self.tmp_dir, "valid_game")
+        os.makedirs(game_dir, exist_ok=True)
+        with open(os.path.join(game_dir, "deployment.json"), "w") as f:
+            json.dump({
+                "package": "com.valid.game",
+                "title": "Valid Game",
+                "appid": 999999,
+                "base": game_dir,
+                "kind": "quest",
+                "is_vr": True
+            }, f)
+
+        corrupt_dir = os.path.join(self.tmp_dir, "corrupt_game")
+        os.makedirs(corrupt_dir, exist_ok=True)
+        with open(os.path.join(corrupt_dir, "deployment.json"), "w") as f:
+            f.write("not valid json at all {[[")
+
+        with patch("frameload.manager.installed.InstalledManager.get_all_anchor_dirs", return_value=[{
+            "device_id": "internal",
+            "device_name": "Internal Storage",
+            "path": self.tmp_dir,
+            "is_external": False,
+            "mount_path": self.tmp_dir
+        }]):
+            installed = InstalledManager.list_installed()
+            self.assertEqual(len(installed), 1)
+            self.assertEqual(installed[0]["package"], "com.valid.game")
+
+
 if __name__ == "__main__":
     unittest.main()

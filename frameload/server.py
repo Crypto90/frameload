@@ -206,8 +206,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/downloads":
             self.send_json({"tasks": self.downloader.get_all_tasks()})
         elif path == "/api/installed":
-            installed = InstalledManager.list_installed()
-            self.send_json({"games": installed})
+            try:
+                installed = InstalledManager.list_installed()
+                self.send_json({"games": installed})
+            except Exception as e:
+                print(f"[FrameLoad] Error listing installed games: {e}")
+                self.send_json({"games": [], "error": str(e)})
         elif path.startswith("/api/installed/artwork/"):
             raw_pkg = path.replace("/api/installed/artwork/", "").strip()
             if "?" in raw_pkg:
@@ -305,8 +309,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             device_id = params.get("device", [None])[0]
             self.send_json(StorageManager.get_storage_overview(device_id))
         elif path == "/api/updates":
-            app_status = UpdateManager.check_app_update()
-            game_status = UpdateManager.check_game_updates(self.mirror)
+            try:
+                app_status = UpdateManager.check_app_update()
+            except Exception as e:
+                app_status = {"has_update": False, "error": str(e)}
+            try:
+                game_status = UpdateManager.check_game_updates(self.mirror)
+            except Exception as e:
+                game_status = {"updates_count": 0, "games": [], "error": str(e)}
             self.send_json({
                 "app": app_status,
                 "games": game_status
@@ -450,6 +460,21 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/downloads/cancel":
             task_id = body.get("task_id", "")
             success = self.downloader.cancel_task(task_id)
+            self.send_json({"success": success})
+        elif path == "/api/downloads/pause":
+            task_id = body.get("task_id", "")
+            success = self.downloader.pause_task(task_id)
+            self.send_json({"success": success})
+        elif path == "/api/downloads/resume":
+            task_id = body.get("task_id", "")
+            success = self.downloader.resume_task(task_id)
+            self.send_json({"success": success})
+        elif path == "/api/downloads/clear":
+            count = self.downloader.clear_completed()
+            self.send_json({"success": True, "cleared": count})
+        elif path == "/api/downloads/remove":
+            task_id = body.get("task_id", "")
+            success = self.downloader.remove_task(task_id)
             self.send_json({"success": success})
         elif path == "/api/installed/launch":
             pkg = body.get("package", "")
@@ -719,12 +744,17 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
             return
 
         task.status = "installing"
+        task.status_detail = "Installing into Lepton container..."
         # Find obb folder if present
-        obb_dir = os.path.join(task.extracted_path, "Android/obb")
-        if not os.path.isdir(obb_dir):
-            obb_dir = os.path.join(task.extracted_path, "obb")
-            if not os.path.isdir(obb_dir):
-                obb_dir = None
+        obb_dir = None
+        if task.extracted_path and os.path.isdir(task.extracted_path):
+            cand1 = os.path.join(task.extracted_path, "Android/obb")
+            if os.path.isdir(cand1):
+                obb_dir = cand1
+            else:
+                cand2 = os.path.join(task.extracted_path, "obb")
+                if os.path.isdir(cand2):
+                    obb_dir = cand2
 
         target_device = getattr(task, "device_id", None) or config.get("storage", {}).get("default_device_id", "internal")
         try:
@@ -737,10 +767,12 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
                 device_id=target_device
             )
             task.status = "completed"
+            task.status_detail = "Installed & Ready to Play"
             print(f"{GREEN}✔ [Auto-Install Success]: {task.game.name} installed successfully!{RESET}")
         except Exception as exc:
             task.status = "error"
             task.error_message = str(exc)
+            task.status_detail = f"Install failed: {exc}"
             sys.stderr.write(f"{RED}✖ [Auto-Install Failed]: {exc}{RESET}\n")
 
     downloader.set_complete_hook(on_download_complete)

@@ -175,19 +175,57 @@ function setupSearch() {
   if (syncBtn) {
     syncBtn.addEventListener("click", syncCatalog);
   }
+
+  initCatalogInfiniteScroll();
 }
 
-// --- Catalog API ---
-async function loadCatalog(page = state.catalog.page) {
+// --- Progressive Infinite Catalog Loading ---
+function buildGameCardHTML(game, installedPkgs) {
+  const isInstalled = installedPkgs.has(game.package_name);
+  const thumbUrl = game.thumbnail_url || `/api/thumbnail/${game.package_name}`;
+
+  return `
+    <div class="game-card" data-id="${game.id}" draggable="false" onclick="openGameModal('${game.id}', 'catalog')">
+      <div class="card-poster">
+        <img src="${thumbUrl}" alt="${game.name}" draggable="false" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <div class="badge-overlay">
+          <span class="badge ${game.kind === 'flat' ? 'flat' : 'vr'}">${game.kind === 'flat' ? '2D' : 'VR'}</span>
+          ${isInstalled ? '<span class="badge installed">Installed</span>' : ''}
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title" title="${game.name}">${game.name}</div>
+        <div class="card-meta">
+          <span>${game.size_formatted}</span>
+          <span>${game.downloads ? '📥 ' + game.downloads.toLocaleString() : (game.version_code ? 'v' + game.version_code : '')}</span>
+        </div>
+        <div class="card-actions">
+          ${isInstalled 
+            ? `<button class="card-btn play" onclick="event.stopPropagation(); launchGame('${game.package_name}')">Play</button>`
+            : `<button class="card-btn download" onclick="event.stopPropagation(); queueDownload('${game.id}')">Download</button>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadCatalog(page = 1, append = false) {
   const container = document.getElementById("catalog-grid");
+  const loader = document.getElementById("catalog-infinite-loader");
   if (!container) return;
 
-  container.innerHTML = `<div class="loading-state">Scanning VR mirror catalog...</div>`;
+  if (!append) {
+    state.catalog.page = 1;
+    state.catalog.items = [];
+    state.catalog.hasMore = true;
+    container.innerHTML = `<div class="loading-state">Scanning VR mirror catalog...</div>`;
+  }
 
   try {
     const params = new URLSearchParams({
       page: page,
-      per_page: 36,
+      per_page: 40,
       q: state.catalog.query,
       sort_by: state.catalog.sortBy,
       sort_order: state.catalog.sortOrder,
@@ -197,78 +235,89 @@ async function loadCatalog(page = state.catalog.page) {
     const res = await fetch(`/api/catalog?${params}`);
     const data = await res.json();
 
-    state.catalog.items = data.items || [];
+    const newItems = data.items || [];
     state.catalog.page = data.page || 1;
     state.catalog.totalPages = data.total_pages || 1;
     state.catalog.totalCount = data.total_count || 0;
+    state.catalog.hasMore = state.catalog.page < state.catalog.totalPages;
 
-    renderCatalogGrid();
-    renderPagination();
+    const installedPkgs = new Set((state.installed || []).map(g => g.package));
+
+    if (append) {
+      state.catalog.items = state.catalog.items.concat(newItems);
+      if (newItems.length > 0) {
+        const cardsHtml = newItems.map(game => buildGameCardHTML(game, installedPkgs)).join("");
+        container.insertAdjacentHTML("beforeend", cardsHtml);
+      }
+    } else {
+      state.catalog.items = newItems;
+      if (newItems.length === 0) {
+        container.innerHTML = `<div class="empty-state">No VR titles match your query. Click "Sync Catalog" to refresh mirror metadata.</div>`;
+      } else {
+        container.innerHTML = newItems.map(game => buildGameCardHTML(game, installedPkgs)).join("");
+      }
+    }
+
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
   } catch (err) {
-    container.innerHTML = `<div class="error-state">Failed to load catalog. Ensure the mirror is reachable.</div>`;
-    console.error(err);
+    if (!append) {
+      container.innerHTML = `<div class="error-state">Failed to load catalog. Ensure the mirror is reachable.</div>`;
+    }
+    console.error("Error loading catalog:", err);
+  } finally {
+    state.catalog.loadingMore = false;
+    if (loader) loader.style.display = "none";
   }
+}
+
+async function loadMoreCatalog() {
+  if (state.catalog.loadingMore || !state.catalog.hasMore) return;
+  state.catalog.loadingMore = true;
+
+  const loader = document.getElementById("catalog-infinite-loader");
+  if (loader) loader.style.display = "flex";
+
+  const nextPage = (state.catalog.page || 1) + 1;
+  await loadCatalog(nextPage, true);
+}
+
+function initCatalogInfiniteScroll() {
+  const sentinel = document.getElementById("catalog-sentinel");
+  if (!sentinel) return;
+
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && state.activeTab === "catalog") {
+          loadMoreCatalog();
+        }
+      });
+    }, { rootMargin: "350px 0px" });
+    observer.observe(sentinel);
+  }
+
+  // Smooth scroll fallback
+  window.addEventListener("scroll", () => {
+    if (state.activeTab !== "catalog") return;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const windowHeight = window.innerHeight;
+    const docHeight = document.documentElement.scrollHeight;
+    if (docHeight - (scrollY + windowHeight) < 450) {
+      loadMoreCatalog();
+    }
+  }, { passive: true });
 }
 
 function renderCatalogGrid() {
   const container = document.getElementById("catalog-grid");
   if (!container) return;
-
-  if (state.catalog.items.length === 0) {
+  if (!state.catalog.items || state.catalog.items.length === 0) {
     container.innerHTML = `<div class="empty-state">No VR titles match your query. Click "Sync Catalog" to refresh mirror metadata.</div>`;
     return;
   }
-
-  const installedPkgs = new Set(state.installed.map(g => g.package));
-
-  container.innerHTML = state.catalog.items.map(game => {
-    const isInstalled = installedPkgs.has(game.package_name);
-    const thumbUrl = game.thumbnail_url || `/api/thumbnail/${game.package_name}`;
-
-    return `
-      <div class="game-card" data-id="${game.id}" draggable="false" onclick="openGameModal('${game.id}', 'catalog')">
-        <div class="card-poster">
-          <img src="${thumbUrl}" alt="${game.name}" draggable="false" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
-          <div class="badge-overlay">
-            <span class="badge ${game.kind === 'flat' ? 'flat' : 'vr'}">${game.kind === 'flat' ? '2D' : 'VR'}</span>
-            ${isInstalled ? '<span class="badge installed">Installed</span>' : ''}
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-title" title="${game.name}">${game.name}</div>
-          <div class="card-meta">
-            <span>${game.size_formatted}</span>
-            <span>${game.downloads ? '📥 ' + game.downloads.toLocaleString() : (game.version_code ? 'v' + game.version_code : '')}</span>
-          </div>
-          <div class="card-actions">
-            ${isInstalled 
-              ? `<button class="card-btn play" onclick="event.stopPropagation(); launchGame('${game.package_name}')">Play</button>`
-              : `<button class="card-btn download" onclick="event.stopPropagation(); queueDownload('${game.id}')">Download</button>`
-            }
-          </div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
+  const installedPkgs = new Set((state.installed || []).map(g => g.package));
+  container.innerHTML = state.catalog.items.map(game => buildGameCardHTML(game, installedPkgs)).join("");
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
-}
-
-function renderPagination() {
-  const container = document.getElementById("catalog-pagination");
-  if (!container) return;
-
-  const { page, totalPages } = state.catalog;
-  if (totalPages <= 1) {
-    container.innerHTML = "";
-    return;
-  }
-
-  container.innerHTML = `
-    <button class="btn-secondary" ${page <= 1 ? 'disabled' : ''} onclick="loadCatalog(${page - 1})">Previous</button>
-    <span class="page-indicator">Page ${page} of ${totalPages}</span>
-    <button class="btn-secondary" ${page >= totalPages ? 'disabled' : ''} onclick="loadCatalog(${page + 1})">Next</button>
-  `;
 }
 
 async function syncCatalog() {
@@ -281,7 +330,7 @@ async function syncCatalog() {
     const data = await res.json();
     if (data.success) {
       showToast(`✅ Catalog synced! ${data.total_games} games available.`, "success");
-      loadCatalog(1);
+      loadCatalog(1, false);
     } else {
       showToast("⚠️ Could not download metadata. Check network connection.", "error");
     }
@@ -292,7 +341,7 @@ async function syncCatalog() {
   }
 }
 
-// --- Download Queue ---
+// --- Download Queue Controls ---
 async function queueDownload(gameId) {
   showToast("Adding game to download queue...", "info");
   try {
@@ -327,9 +376,73 @@ async function cancelDownload(taskId) {
   }
 }
 
+async function pauseDownload(taskId) {
+  try {
+    await fetch("/api/downloads/pause", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_id: taskId })
+    });
+    showToast("⏸ Download paused", "info");
+    pollDownloadsOnce();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function resumeDownload(taskId) {
+  try {
+    await fetch("/api/downloads/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_id: taskId })
+    });
+    showToast("▶ Download resumed", "info");
+    pollDownloadsOnce();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function removeDownload(taskId) {
+  try {
+    await fetch("/api/downloads/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_id: taskId })
+    });
+    pollDownloadsOnce();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function clearCompletedDownloads() {
+  try {
+    const res = await fetch("/api/downloads/clear", { method: "POST" });
+    const data = await res.json();
+    showToast(`🧹 Cleared ${data.cleared || 0} completed tasks`, "info");
+    pollDownloadsOnce();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function toggleActiveDownloadPause() {
+  const active = state.downloads.find(t => t.status === "downloading" || t.status === "paused");
+  if (!active) return;
+  if (active.status === "downloading") {
+    pauseDownload(active.id);
+  } else if (active.status === "paused") {
+    resumeDownload(active.id);
+  }
+}
+
 function startPollingDownloads() {
   setInterval(pollDownloadsOnce, 1200);
 }
+
+const knownCompletedTaskIds = new Set();
 
 async function pollDownloadsOnce() {
   try {
@@ -338,6 +451,15 @@ async function pollDownloadsOnce() {
     state.downloads = data.tasks || [];
     renderDownloadsDrawer();
     renderDownloadsTab();
+
+    // Check for newly completed tasks to alert user and refresh installed library
+    state.downloads.forEach(t => {
+      if (t.status === "completed" && !knownCompletedTaskIds.has(t.id)) {
+        knownCompletedTaskIds.add(t.id);
+        showToast(`🎉 ${t.game.name} is installed and ready to play!`, "success");
+        loadInstalled();
+      }
+    });
   } catch (err) {
     // Silent polling error
   }
@@ -347,7 +469,9 @@ function renderDownloadsDrawer() {
   const drawer = document.getElementById("downloads-drawer");
   if (!drawer) return;
 
-  const activeTask = state.downloads.find(t => t.status === "downloading" || t.status === "decompressing" || t.status === "installing");
+  const activeTask = state.downloads.find(t => 
+    t.status === "downloading" || t.status === "decompressing" || t.status === "installing" || t.status === "paused"
+  );
 
   if (!activeTask) {
     drawer.classList.remove("visible");
@@ -355,9 +479,46 @@ function renderDownloadsDrawer() {
   }
 
   drawer.classList.add("visible");
-  document.getElementById("drawer-title").textContent = activeTask.game.name;
-  document.getElementById("drawer-status").textContent = `${activeTask.status.toUpperCase()} • ${activeTask.speed_formatted} • ${activeTask.downloaded_formatted} / ${activeTask.total_formatted}`;
-  document.getElementById("drawer-progress").style.width = `${activeTask.progress_percent}%`;
+  const titleEl = document.getElementById("drawer-title");
+  const statusEl = document.getElementById("drawer-status");
+  const progressEl = document.getElementById("drawer-progress");
+  const pauseBtn = document.getElementById("drawer-pause-btn");
+
+  if (titleEl) titleEl.textContent = activeTask.game.name;
+
+  if (progressEl) {
+    progressEl.className = "progress-fill";
+    if (activeTask.status === "decompressing") progressEl.classList.add("extracting");
+    else if (activeTask.status === "installing") progressEl.classList.add("installing");
+    else if (activeTask.status === "completed") progressEl.classList.add("completed");
+    progressEl.style.width = `${activeTask.status === 'completed' ? 100 : activeTask.progress_percent}%`;
+  }
+
+  if (statusEl) {
+    if (activeTask.status === "decompressing") {
+      statusEl.textContent = `EXTRACTING • ${activeTask.status_detail || (activeTask.progress_percent + '%')}`;
+    } else if (activeTask.status === "installing") {
+      statusEl.textContent = `INSTALLING • ${activeTask.status_detail || 'Setting up Lepton container...'}`;
+    } else if (activeTask.status === "paused") {
+      statusEl.textContent = `PAUSED • ${activeTask.downloaded_formatted} / ${activeTask.total_formatted}`;
+    } else {
+      statusEl.textContent = `DOWNLOADING • ${activeTask.speed_formatted} • ${activeTask.downloaded_formatted} / ${activeTask.total_formatted} • ETA: ${activeTask.eta_seconds}s`;
+    }
+  }
+
+  if (pauseBtn) {
+    if (activeTask.status === "downloading") {
+      pauseBtn.style.display = "inline-flex";
+      pauseBtn.textContent = "⏸ Pause";
+      pauseBtn.onclick = () => pauseDownload(activeTask.id);
+    } else if (activeTask.status === "paused") {
+      pauseBtn.style.display = "inline-flex";
+      pauseBtn.textContent = "▶ Resume";
+      pauseBtn.onclick = () => resumeDownload(activeTask.id);
+    } else {
+      pauseBtn.style.display = "none";
+    }
+  }
 }
 
 function renderDownloadsTab() {
@@ -369,20 +530,70 @@ function renderDownloadsTab() {
     return;
   }
 
-  container.innerHTML = state.downloads.map(t => `
-    <div class="download-item-card">
-      <div class="download-info">
-        <h3>${t.game.name}</h3>
-        <p>${t.status.toUpperCase()} • ${t.speed_formatted} • ETA: ${t.eta_seconds}s</p>
+  container.innerHTML = state.downloads.map(t => {
+    let statusText = t.status.toUpperCase();
+    let fillClass = "";
+
+    if (t.status === "decompressing") {
+      statusText = `EXTRACTING (${t.status_detail || (t.progress_percent + '%')})`;
+      fillClass = "extracting";
+    } else if (t.status === "installing") {
+      statusText = `INSTALLING (${t.status_detail || 'Configuring container...'})`;
+      fillClass = "installing";
+    } else if (t.status === "completed") {
+      statusText = `INSTALLED &amp; READY TO PLAY`;
+      fillClass = "completed";
+    } else if (t.status === "paused") {
+      statusText = `PAUSED • ${t.downloaded_formatted} / ${t.total_formatted}`;
+    } else if (t.status === "error") {
+      statusText = `ERROR: ${t.error_message || 'Download failed'}`;
+    } else if (t.status === "downloading") {
+      statusText = `DOWNLOADING • ${t.speed_formatted} • ${t.downloaded_formatted} / ${t.total_formatted} • ETA: ${t.eta_seconds}s`;
+    }
+
+    let actionsHtml = "";
+    if (t.status === "downloading") {
+      actionsHtml = `
+        <button class="btn-secondary" onclick="pauseDownload('${t.id}')">⏸ Pause</button>
+        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">✖ Cancel</button>
+      `;
+    } else if (t.status === "paused") {
+      actionsHtml = `
+        <button class="btn-primary" onclick="resumeDownload('${t.id}')">▶ Resume</button>
+        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">✖ Cancel</button>
+      `;
+    } else if (t.status === "completed") {
+      const launchPkg = t.game.package_name || (t.game.to_dict && t.game.to_dict().package_name) || "";
+      actionsHtml = `
+        <button class="btn-primary" onclick="launchGame('${launchPkg}')">🚀 Play Now</button>
+        <button class="btn-secondary" onclick="removeDownload('${t.id}')">✖ Dismiss</button>
+      `;
+    } else if (t.status === "error") {
+      actionsHtml = `
+        <button class="btn-primary" onclick="resumeDownload('${t.id}')">🔄 Retry</button>
+        <button class="btn-secondary" onclick="removeDownload('${t.id}')">✖ Dismiss</button>
+      `;
+    } else {
+      actionsHtml = `
+        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">✖ Cancel</button>
+      `;
+    }
+
+    return `
+      <div class="download-item-card" data-id="${t.id}">
+        <div class="download-info">
+          <h3>${t.game.name}</h3>
+          <p>${statusText}</p>
+        </div>
+        <div class="progress-track" style="margin: 12px 0;">
+          <div class="progress-fill ${fillClass}" style="width: ${t.status === 'completed' ? 100 : t.progress_percent}%;"></div>
+        </div>
+        <div class="download-actions">
+          ${actionsHtml}
+        </div>
       </div>
-      <div class="progress-track" style="margin: 12px 0;">
-        <div class="progress-fill" style="width: ${t.progress_percent}%;"></div>
-      </div>
-      <div class="download-actions">
-        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">Cancel</button>
-      </div>
-    </div>
-  `).join("");
+    `;
+  }).join("");
 }
 
 // --- Installed Library API ---
@@ -392,13 +603,33 @@ async function loadInstalled() {
 
   try {
     const res = await fetch("/api/installed");
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
     const data = await res.json();
-    state.installed = data.games || [];
+    state.installed = Array.isArray(data.games) ? data.games : [];
     renderInstalledGrid();
   } catch (err) {
-    container.innerHTML = `<div class="error-state">Failed to load installed library.</div>`;
+    console.error("Error loading installed library:", err);
+    container.innerHTML = `
+      <div class="error-state" style="padding:40px; text-align:center;">
+        <p style="margin-bottom:12px; font-weight:600;">Failed to load installed library: ${err.message}</p>
+        <button class="btn-primary compact" onclick="loadInstalled()">🔄 Retry Now</button>
+      </div>
+    `;
   }
 }
+
+// Global window bindings
+window.pauseDownload = pauseDownload;
+window.resumeDownload = resumeDownload;
+window.removeDownload = removeDownload;
+window.clearCompletedDownloads = clearCompletedDownloads;
+window.toggleActiveDownloadPause = toggleActiveDownloadPause;
+window.cancelDownload = cancelDownload;
+window.loadCatalog = loadCatalog;
+window.loadMoreCatalog = loadMoreCatalog;
+window.loadInstalled = loadInstalled;
 
 function renderInstalledGrid() {
   const container = document.getElementById("library-grid");

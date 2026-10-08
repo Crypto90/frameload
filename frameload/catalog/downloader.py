@@ -70,11 +70,49 @@ class Downloader:
             task = self.tasks.get(task_id)
             if not task:
                 return False
+            task.status = "canceled"
+            task.speed_bps = 0.0
+            task.eta_seconds = 0
+            task.status_detail = "Canceled"
+            return True
+
+    def pause_task(self, task_id: str) -> bool:
+        with self._lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return False
+            task.status = "paused"
+            task.speed_bps = 0.0
+            task.eta_seconds = 0
+            task.status_detail = f"Paused ({task.progress_percent}%)"
+            return True
+
+    def resume_task(self, task_id: str) -> bool:
+        with self._lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return False
+            task.status = "queued"
+            task.status_detail = "Queued..."
+            self._queue.put(task_id)
+            self._start_worker()
+            return True
+
+    def clear_completed(self) -> int:
+        with self._lock:
+            to_remove = [k for k, t in self.tasks.items() if t.status in ("completed", "canceled")]
+            for k in to_remove:
+                del self.tasks[k]
+            return len(to_remove)
+
+    def remove_task(self, task_id: str) -> bool:
+        with self._lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return False
             if task_id == self.active_task_id:
                 task.status = "canceled"
-                # Download thread checks status
-            else:
-                task.status = "canceled"
+            del self.tasks[task_id]
             return True
 
     def get_all_tasks(self) -> List[Dict]:
@@ -94,11 +132,12 @@ class Downloader:
 
             with self._lock:
                 task = self.tasks.get(task_id)
-                if not task or task.status == "canceled":
+                if not task or task.status in ("canceled", "paused"):
                     self._queue.task_done()
                     continue
                 self.active_task_id = task_id
                 task.status = "downloading"
+                task.status_detail = "Downloading..."
 
             try:
                 self._execute_download(task)
@@ -131,18 +170,28 @@ class Downloader:
         if task.game.download_url:
             dest_file = os.path.join(game_dir, f"{task.id}.apk")
             if not self._download_file(task.game.download_url, dest_file, task):
-                if task.status != "canceled":
-                    raise RuntimeError("Download failed.")
+                if task.status in ("canceled", "paused"):
+                    return
+                raise RuntimeError("Download failed.")
             
             task.status = "ready_to_install"
             task.progress = 1.0
             task.target_apk = dest_file
+            task.extracted_path = game_dir
             
             if self._on_complete_hook:
                 try:
+                    task.status = "installing"
+                    task.status_detail = "Installing..."
                     self._on_complete_hook(task)
+                    task.status_detail = "Installed & Ready to Play"
                 except Exception as e:
                     print(f"[FrameLoad] Auto-install hook error: {e}")
+                    task.status = "error"
+                    task.error_message = f"Install failed: {e}"
+            else:
+                task.status = "completed"
+                task.status_detail = "Installed & Ready to Play"
             return
 
         from . import vrsrc as _vrsrc
@@ -168,7 +217,7 @@ class Downloader:
                         pass
 
             def _cancel_check():
-                return task.status == "canceled" or self._stop_event.is_set()
+                return task.status in ("canceled", "paused") or self._stop_event.is_set()
 
             success = _vrsrc.download_game_directory(
                 game_id=task.id,
@@ -250,21 +299,28 @@ class Downloader:
 
         # Decompression stage
         task.status = "decompressing"
-        task.progress = 1.0
-        extract_dest = os.path.join(DATA_DIR, task.game.release_name)
+        task.progress = 0.05
+        task.status_detail = "Preparing extraction..."
+        extract_dest = os.path.join(DATA_DIR, task.game.release_name or task.game.name or task.id)
         os.makedirs(extract_dest, exist_ok=True)
+
+        def _on_extract_progress(pct: float, msg: str):
+            task.status = "decompressing"
+            task.progress = pct
+            task.status_detail = msg or f"Extracting {int(pct*100)}%"
 
         primary_archive = downloaded_parts[0]
         success = extract_archive(
             archive_path=primary_archive,
             output_dir=extract_dest,
             password=mirror.password,
-            progress_callback=lambda msg: setattr(task, "error_message", msg)
+            progress_callback=_on_extract_progress
         )
 
         if not success:
             task.status = "error"
             task.error_message = "Decompression failed. The download may be corrupted."
+            task.status_detail = "Decompression failed."
             return
 
         task.extracted_path = extract_dest
@@ -289,12 +345,17 @@ class Downloader:
         # Trigger auto-install hook if present
         if self._on_complete_hook:
             try:
+                task.status = "installing"
+                task.status_detail = "Installing into Lepton container..."
                 self._on_complete_hook(task)
+                task.status_detail = "Installed & Ready to Play"
             except Exception as e:
                 task.status = "error"
                 task.error_message = f"Install failed: {e}"
+                task.status_detail = f"Install failed: {e}"
         else:
             task.status = "completed"
+            task.status_detail = "Ready to Play"
 
     def _download_file(self, url: str, dest_path: str, task: DownloadTask) -> bool:
         """Downloads a single file with resume support and speed calculation."""
@@ -323,7 +384,7 @@ class Downloader:
 
                 with open(dest_path, mode) as out_f:
                     while True:
-                        if task.status == "canceled":
+                        if task.status in ("canceled", "paused"):
                             return False
 
                         chunk = resp.read(chunk_size)

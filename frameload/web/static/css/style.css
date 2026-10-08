@@ -340,7 +340,7 @@ body {
 /* Main Container */
 .main-content {
   flex: 1;
-  padding: 24px;
+  padding: 24px 24px 120px 24px;
   max-width: 1720px;
   margin: 0 auto;
   width: 100%;
@@ -348,6 +348,7 @@ body {
 
 .tab-panel {
   display: none;
+  padding-bottom: 110px;
   animation: fadeIn 0.25s ease-out;
 }
 
@@ -652,6 +653,67 @@ body {
   border-radius: var(--radius-full);
   transition: width 0.3s ease;
   box-shadow: var(--glow-cyan);
+}
+
+.progress-fill.extracting {
+  background: linear-gradient(90deg, var(--accent-amber), #ff8800);
+  box-shadow: 0 0 14px rgba(255, 183, 3, 0.4);
+}
+
+.progress-fill.installing {
+  background: linear-gradient(90deg, #9d4edd, var(--accent-cyan));
+  box-shadow: 0 0 14px rgba(157, 78, 221, 0.4);
+  animation: pulseGlow 1.5s infinite alternate;
+}
+
+.progress-fill.completed {
+  background: linear-gradient(90deg, var(--accent-emerald), #00ff88);
+  box-shadow: 0 0 14px rgba(0, 245, 212, 0.4);
+}
+
+/* Download Queue Cards */
+.download-item-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all var(--transition-normal);
+}
+
+.download-item-card:hover {
+  border-color: var(--border-active);
+  background: var(--bg-card-hover);
+}
+
+.download-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.download-info h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.download-info p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.download-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 /* Modals */

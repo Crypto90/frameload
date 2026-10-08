@@ -75,6 +75,8 @@ class DownloadTask:
     extracted_path: str = ""
     device_id: str = "internal"
 
+    status_detail: str = ""
+
     @property
     def speed_formatted(self) -> str:
         return format_speed(self.speed_bps)
@@ -88,6 +90,7 @@ class DownloadTask:
             "id": self.id,
             "game": self.game.to_dict(),
             "status": self.status,
+            "status_detail": self.status_detail,
             "progress": self.progress,
             "progress_percent": self.progress_percent,
             "downloaded_bytes": self.downloaded_bytes,
