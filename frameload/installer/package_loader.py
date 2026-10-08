@@ -10,7 +10,7 @@ import zipfile
 from typing import Any, Dict, List, Optional
 
 from ..config import CACHE_DIR
-from .apk_patcher import ApkPatcher
+from .apk_analysis import ApkAnalysis, inspect_apk
 from .lepton_quest import LeptonInstaller
 from .linux_native import LinuxNativeInstaller
 from .windows_proton import WindowsProtonInstaller
@@ -45,6 +45,19 @@ class PackageLoader:
             except OSError:
                 pass
             raise ValueError(f"Unsupported file format: {ext} (supported: .apk, .xapk, .apks, .zip, .exe, .AppImage, .sh, or folder)")
+
+    @staticmethod
+    def _analysis_fields(analysis: ApkAnalysis) -> Dict[str, Any]:
+        """What the sideload preview shows about an APK before it is installed."""
+        return {
+            "is_vr": analysis.is_vr,
+            "engine": analysis.engine,
+            "version_name": analysis.version_name,
+            "xr_runtime": analysis.xr_runtime,
+            "framebridge": analysis.framebridge,
+            "hand_tracking": analysis.hand_tracking,
+            "compat": analysis.compat,
+        }
 
     @staticmethod
     def _inspect_directory(dir_path: str) -> Dict[str, Any]:
@@ -89,7 +102,7 @@ class PackageLoader:
             # Pick largest APK
             primary_apk = max(apks, key=os.path.getsize)
 
-        analysis = ApkPatcher.inspect(primary_apk)
+        analysis = inspect_apk(primary_apk)
         pkg = analysis.package_name
 
         # Detect matching OBB directory or file
@@ -126,9 +139,8 @@ class PackageLoader:
             "source_type": "directory",
             "path": dir_path,
             "package_name": pkg,
-            "title": title,
-            "is_vr": analysis.is_vr,
-            "engine": analysis.engine,
+            "title": analysis.label or title,
+            **PackageLoader._analysis_fields(analysis),
             "primary_apk": primary_apk,
             "all_apks": apks,
             "matched_obb": matched_obb,
@@ -218,7 +230,7 @@ class PackageLoader:
                 "path": archive_path,
                 "package_name": pkg_name,
                 "title": title,
-                "is_vr": is_vr or True,  # Default VR for Quest packages
+                "is_vr": None,  # known once the base APK has been extracted and read
                 "engine": engine,
                 "primary_entry": primary_entry,
                 "apk_entries": apk_entries,
@@ -230,7 +242,7 @@ class PackageLoader:
     @staticmethod
     def _inspect_single_apk(apk_path: str) -> Dict[str, Any]:
         """Inspects a single APK and checks for adjacent OBB files or folders."""
-        analysis = ApkPatcher.inspect(apk_path)
+        analysis = inspect_apk(apk_path)
         pkg = analysis.package_name
 
         # Look for adjacent OBB
@@ -255,9 +267,8 @@ class PackageLoader:
             "source_type": "apk",
             "path": apk_path,
             "package_name": pkg,
-            "title": title,
-            "is_vr": analysis.is_vr,
-            "engine": analysis.engine,
+            "title": analysis.label or title,
+            **PackageLoader._analysis_fields(analysis),
             "primary_apk": apk_path,
             "matched_obb": matched_obb,
             "has_obb": matched_obb is not None,
@@ -271,7 +282,6 @@ class PackageLoader:
         obb_path: Optional[str] = None,
         device_id: Optional[str] = None,
         force_flat: Optional[bool] = None,
-        window_preset: Optional[str] = None,
         custom_settings: Optional[Dict[str, Any]] = None,
         target_anchor: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -348,7 +358,6 @@ class PackageLoader:
                 obb_path=chosen_obb,
                 custom_settings=custom_settings,
                 force_flat=force_flat,
-                window_preset=window_preset,
                 device_id=device_id,
                 target_anchor=target_anchor,
             )
@@ -373,7 +382,6 @@ class PackageLoader:
                     obb_path=chosen_obb,
                     custom_settings=custom_settings,
                     force_flat=force_flat,
-                    window_preset=window_preset,
                     device_id=device_id,
                     target_anchor=target_anchor,
                 )
@@ -393,7 +401,6 @@ class PackageLoader:
                 obb_path=chosen_obb,
                 custom_settings=custom_settings,
                 force_flat=force_flat,
-                window_preset=window_preset,
                 device_id=device_id,
                 target_anchor=target_anchor,
             )

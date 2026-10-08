@@ -107,9 +107,9 @@ class TestVrsrcAudit(unittest.TestCase):
         handler = MagicMock()
         FrameLoadApiHandler.do_OPTIONS(handler)
         handler.send_response.assert_called_once()
+        # Other sites must not be granted access to the unauthenticated local API.
         headers = [call[0] for call in handler.send_header.call_args_list]
-        self.assertIn("Access-Control-Allow-Origin", [h[0] for h in headers])
-        self.assertIn("Access-Control-Allow-Methods", [h[0] for h in headers])
+        self.assertNotIn("Access-Control-Allow-Origin", [h[0] for h in headers])
 
     def test_config_get_descriptor_and_downloader_queue(self):
         from frameload.config import Config

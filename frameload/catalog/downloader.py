@@ -1,6 +1,7 @@
 """Download queue manager with resumption and speed tracking."""
 from __future__ import annotations
 
+import hashlib
 import os
 import queue
 import shutil
@@ -14,6 +15,14 @@ from .extractor import extract_archive
 from .models import CatalogGame, DownloadTask
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 class Downloader:
@@ -154,7 +163,49 @@ class Downloader:
                     self.active_task_id = None
                 self._queue.task_done()
 
+    def _execute_direct_download(self, task: DownloadTask) -> None:
+        """Single-file download (F-Droid): fetch the APK, check it against the catalog's SHA-256, install."""
+        game_dir = os.path.join(CACHE_DIR, task.id)
+        os.makedirs(game_dir, exist_ok=True)
+        dest_file = os.path.join(game_dir, f"{task.id}.apk")
+        expected = (task.game.sha256 or "").lower()
+
+        if not (expected and os.path.isfile(dest_file) and _sha256_file(dest_file) == expected):
+            # A finished file that failed the check cannot be resumed (the server answers 416).
+            if os.path.isfile(dest_file) and task.total_bytes and os.path.getsize(dest_file) >= task.total_bytes:
+                os.remove(dest_file)
+            if not self._download_file(task.game.download_url, dest_file, task):
+                if task.status in ("canceled", "paused"):
+                    return
+                raise RuntimeError("Download failed. Check the network connection and try again.")
+            if expected:
+                task.status_detail = "Verifying download..."
+                if _sha256_file(dest_file) != expected:
+                    os.remove(dest_file)
+                    raise RuntimeError("The downloaded file does not match the catalog's checksum and was discarded.")
+
+        task.progress = 1.0
+        task.downloaded_bytes = os.path.getsize(dest_file)
+        task.speed_bps = 0.0
+        task.eta_seconds = 0
+        task.target_apk = dest_file
+        task.extracted_path = game_dir
+
+        if not self._on_complete_hook:
+            task.status = "ready_to_install"
+            task.status_detail = "Downloaded"
+            return
+        task.status = "installing"
+        task.status_detail = "Installing..."
+        self._on_complete_hook(task)  # sets the final status
+        if task.status == "completed" and self.config["download"].get("delete_cache_after_install", True):
+            shutil.rmtree(game_dir, ignore_errors=True)
+
     def _execute_download(self, task: DownloadTask) -> None:
+        if task.game.download_url:
+            self._execute_direct_download(task)
+            return
+
         from .vrp_mirror import VrpMirror
 
         mirror = VrpMirror()
@@ -169,34 +220,6 @@ class Downloader:
 
         game_dir = os.path.join(CACHE_DIR, task.id)
         os.makedirs(game_dir, exist_ok=True)
-
-        # If game has a direct download URL (e.g. F-Droid), download and skip decompression
-        if task.game.download_url:
-            dest_file = os.path.join(game_dir, f"{task.id}.apk")
-            if not self._download_file(task.game.download_url, dest_file, task):
-                if task.status in ("canceled", "paused"):
-                    return
-                raise RuntimeError("Download failed.")
-            
-            task.status = "ready_to_install"
-            task.progress = 1.0
-            task.target_apk = dest_file
-            task.extracted_path = game_dir
-            
-            if self._on_complete_hook:
-                try:
-                    task.status = "installing"
-                    task.status_detail = "Installing..."
-                    self._on_complete_hook(task)
-                    task.status_detail = "Installed & Ready to Play"
-                except Exception as e:
-                    print(f"[FrameLoad] Auto-install hook error: {e}")
-                    task.status = "error"
-                    task.error_message = f"Install failed: {e}"
-            else:
-                task.status = "completed"
-                task.status_detail = "Installed & Ready to Play"
-            return
 
         from . import vrsrc as _vrsrc
         downloaded_parts: List[str] = []

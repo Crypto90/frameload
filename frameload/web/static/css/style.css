@@ -187,21 +187,6 @@ body {
   border-color: rgba(255, 183, 3, 0.3);
 }
 
-.telemetry-chip.input-mode {
-  color: var(--accent-cyan);
-  border-color: rgba(0, 242, 254, 0.35);
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.2s ease;
-}
-
-.telemetry-chip.input-mode:hover {
-  background: rgba(0, 242, 254, 0.12);
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 12px rgba(0, 242, 254, 0.25);
-  transform: translateY(-1px);
-}
-
 .telemetry-chip.kofi-chip {
   background: rgba(255, 94, 91, 0.12);
   border-color: rgba(255, 94, 91, 0.4);
@@ -1973,119 +1958,291 @@ body.vr-grabbing * {
   line-height: 1.4;
 }
 
-/* ==========================================================================
-   VR Hand Tracking & WebXR Pinch Gestures
-   ========================================================================== */
-.vr-hand-reticle {
-  position: fixed;
-  top: -100px;
-  left: -100px;
-  width: 32px;
-  height: 32px;
-  pointer-events: none;
-  z-index: 1000000;
-  transform: translate(-50%, -50%);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s ease;
-}
-
-.vr-hand-reticle.active {
-  display: flex;
-}
-
-.vr-hand-ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1.5px solid rgba(0, 242, 254, 0.75);
-  box-shadow: 0 0 10px rgba(0, 242, 254, 0.45);
-  transition: transform 0.08s ease-out, border-color 0.15s, box-shadow 0.15s;
-}
-
-.vr-hand-thumb-ring {
-  width: 22px;
-  height: 22px;
-  transform: translate(-4px, -4px);
-  border-color: rgba(79, 172, 254, 0.7);
-}
-
-.vr-hand-index-ring {
-  width: 22px;
-  height: 22px;
-  transform: translate(4px, 4px);
-  border-color: rgba(0, 242, 254, 0.85);
-}
-
-.vr-hand-center-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 0 8px #ffffff, 0 0 14px var(--accent-cyan);
-  transition: transform 0.1s, background-color 0.15s;
-}
-
-.vr-hand-label {
-  position: absolute;
-  bottom: -16px;
-  font-size: 9px;
-  font-weight: 700;
-  color: rgba(0, 242, 254, 0.8);
+/* Settings dialog sections */
+.tuning-section-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: rgba(10, 15, 29, 0.85);
-  padding: 1px 4px;
-  border-radius: 4px;
-  border: 0.5px solid rgba(0, 242, 254, 0.3);
+  color: var(--text-muted);
+  font-weight: 700;
+  margin: 18px 0 8px;
 }
 
-/* Reticle states */
-.vr-hand-reticle.pinching .vr-hand-thumb-ring,
-.vr-hand-reticle.pinching .vr-hand-index-ring {
-  transform: translate(0, 0) scale(0.85);
-  border-color: #00ff88;
-  box-shadow: 0 0 16px rgba(0, 255, 136, 0.85);
+.tuning-section-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 10px;
 }
 
-.vr-hand-reticle.pinching .vr-hand-center-dot {
-  background: #00ff88;
-  box-shadow: 0 0 12px #00ff88, 0 0 20px #00ff88;
-  transform: scale(1.6);
+.tuning-section-note.warn {
+  color: var(--accent-amber);
 }
 
-.vr-hand-pinch-glow {
-  position: absolute;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 255, 136, 0.4) 0%, transparent 70%);
-  opacity: 0;
-  transform: scale(0.5);
-  transition: opacity 0.15s, transform 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+.tuning-card.inactive {
+  opacity: 0.55;
 }
 
-.vr-hand-reticle.pinching .vr-hand-pinch-glow {
-  opacity: 1;
-  transform: scale(1.4);
-}
-
-.vr-hud-hand-badge {
-  display: inline-flex;
+.tuning-toggle {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  background: rgba(0, 242, 254, 0.12);
-  border: 1px solid rgba(0, 242, 254, 0.3);
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.72rem;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  margin-bottom: 6px;
+}
+
+.tuning-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-cyan);
+}
+
+/* Steam Frame compatibility verdict for an APK */
+.compat-notice {
+  border: 1px solid var(--border-subtle);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.compat-notice .compat-title {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.compat-notice ul {
+  margin: 6px 0 0 18px;
+  color: var(--text-muted);
+}
+
+.compat-notice li + li {
+  margin-top: 4px;
+}
+
+.compat-notice.compat-ready { border-left-color: var(--accent-emerald); }
+.compat-notice.compat-likely { border-left-color: var(--accent-cyan); }
+.compat-notice.compat-needs_port { border-left-color: var(--accent-amber); }
+.compat-notice.compat-blocked { border-left-color: var(--accent-danger); }
+.compat-issue.error { color: var(--text-main); }
+
+.badge.compat-needs_port { background: var(--accent-amber); color: #1a1200; }
+.badge.compat-blocked { background: var(--accent-danger); color: #fff; }
+
+/* 2D app cards: icons are shown whole, with a one-line summary */
+.game-card.app-card .card-poster img {
+  object-fit: contain;
+  padding: 18%;
+}
+
+.card-summary {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.7em;
+  margin-bottom: 6px;
+}
+
+/* Hand tracking status rows */
+.hand-game-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hand-game-row:hover {
+  border-color: var(--accent-cyan);
+}
+
+.hand-game-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hand-game-meta {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+/* Job log (porting, setup) and self-test rows */
+.job-log {
+  max-height: 46vh;
+  overflow: auto;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.doctor-row {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.doctor-row:last-child {
+  border-bottom: none;
+  margin-bottom: 12px;
+}
+
+.doctor-state {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.4px;
+  padding-top: 2px;
+}
+
+.doctor-state.ok { color: var(--accent-emerald); }
+.doctor-state.warn { color: var(--accent-amber); }
+.doctor-state.fail { color: var(--accent-danger); }
+.doctor-state.info { color: var(--text-dim); }
+
+.doctor-name {
+  color: var(--text-main);
   font-weight: 600;
+}
+
+.doctor-detail {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Sideload: upload row, file browser, pairing code */
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.upload-row label {
+  cursor: pointer;
+}
+
+.files-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+.file-row:hover,
+.file-row:focus-visible {
+  background: rgba(0, 242, 254, 0.08);
+}
+
+.file-row .file-kind {
+  width: 54px;
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.file-row.is-dir .file-kind {
   color: var(--accent-cyan);
 }
 
-.vr-hud-hand-badge.tracking {
-  background: rgba(0, 255, 136, 0.15);
-  border-color: rgba(0, 255, 136, 0.4);
-  color: #00ff88;
+.file-row .file-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
+.file-row .file-size {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
 
+.pairing-code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 2rem;
+  letter-spacing: 0.35em;
+  color: #fff;
+  text-align: center;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+}
+
+.log-finding {
+  border-left: 4px solid var(--border-subtle);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.log-finding strong {
+  display: block;
+  color: var(--text-main);
+}
+
+.log-finding span {
+  color: var(--text-muted);
+}
+
+.log-finding.error { border-left-color: var(--accent-danger); }
+.log-finding.warn { border-left-color: var(--accent-amber); }
+.log-finding.ok { border-left-color: var(--accent-emerald); }

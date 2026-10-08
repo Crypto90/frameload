@@ -7,6 +7,7 @@ import subprocess
 from typing import Any, Dict
 
 from ..config import ANCHOR_DIR, FRAMELOAD_DIR, HOME
+from ..system import fsutil
 from ..system.shortcuts import unregister_app_from_steam, unregister_game_from_steam
 from .installed import InstalledManager
 
@@ -20,7 +21,7 @@ class Uninstaller:
             # Check if directory exists even without deployment.json
             target = os.path.join(ANCHOR_DIR, package_name)
             if os.path.isdir(target):
-                shutil.rmtree(target, ignore_errors=True)
+                fsutil.remove_tree(target)
                 return {"success": True, "package": package_name, "message": "Cleaned up orphaned directory"}
             raise FileNotFoundError(f"Game {package_name} is not installed.")
 
@@ -43,15 +44,15 @@ class Uninstaller:
             except Exception as e:
                 print(f"[FrameLoad] Could not auto-backup saves before uninstall: {e}")
 
-        # 3. Remove game directory
-        if os.path.isdir(anchor):
-            shutil.rmtree(anchor, ignore_errors=True)
+        # 3. Remove game directory (Lepton's containers own some of the files)
+        removed = fsutil.remove_tree(anchor) if os.path.isdir(anchor) else True
 
         # 4. Unregister from Steam
         steam_removed = unregister_game_from_steam(launch_script, appid)
 
         return {
-            "success": True,
+            "success": removed,
+            "error": "" if removed else f"Some files in {anchor} could not be deleted.",
             "package": package_name,
             "title": dep.get("title", package_name),
             "steam_shortcut_removed": steam_removed
@@ -108,6 +109,13 @@ class Uninstaller:
             except OSError as e:
                 summary["details"].append(f"remove desktop file: {e}")
 
+        wrapper = os.path.join(HOME, ".local/bin/frameload")
+        if os.path.isfile(wrapper):
+            try:
+                os.remove(wrapper)
+            except OSError as e:
+                summary["details"].append(f"remove command wrapper: {e}")
+
         # 3. Remove FrameLoad shortcut and grid artwork (poster, banner, hero, logo, icon) from Steam
         try:
             summary["steam_shortcut_removed"] = unregister_app_from_steam(title="FrameLoad", exe_substring="frameload")
@@ -142,19 +150,27 @@ class Uninstaller:
 
             # Remove anchor directory ~/Applications/quest-frame
             if os.path.isdir(ANCHOR_DIR):
-                shutil.rmtree(ANCHOR_DIR, ignore_errors=True)
+                fsutil.remove_tree(ANCHOR_DIR)
 
             # Check MicroSD mounts for quest-frame directory
             try:
                 from .storage import StorageManager
-                devices = StorageManager.get_storage_devices()
-                for dev in devices:
-                    if dev.id != "internal" and dev.is_mounted and dev.mount_path:
-                        sd_anchor = os.path.join(dev.mount_path, "quest-frame")
+                for dev in StorageManager.get_devices():
+                    if dev.get("id") != "internal" and dev.get("path"):
+                        sd_anchor = os.path.join(dev["path"], "quest-frame")
                         if os.path.isdir(sd_anchor):
-                            shutil.rmtree(sd_anchor, ignore_errors=True)
+                            fsutil.remove_tree(sd_anchor)
             except Exception as e:
                 summary["details"].append(f"microsd cleanup: {e}")
+
+        # Ported games must keep being signed with the same key, or updates cannot install over them.
+        try:
+            from ..installer import porting
+            saved = porting.backup_signing_keys()
+            if saved:
+                summary["details"].append(f"signing keys of ported games saved to {saved}")
+        except Exception as e:
+            summary["details"].append(f"signing key backup: {e}")
 
         # 5. Clean up data, cache, and config in ~/.local/share/frameload
         if purge_all_data and os.path.isdir(FRAMELOAD_DIR):

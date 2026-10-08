@@ -30,8 +30,12 @@ class GameLauncher:
         launched_via_steam = False
         gid = steam_gameid(appid) if appid else 0
 
-        steam_running = subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0
-        if steam_running and gid:
+        from ..system import steam_session
+        from ..system.steamos import is_steam_running
+        steam_running = is_steam_running()
+        # Steam only knows shortcuts that existed when it started; a newer game is started directly.
+        in_library = not steam_session.is_pending(launch_script)
+        if steam_running and gid and in_library:
             try:
                 subprocess.Popen(
                     ["steam", "-ifrunning", f"steam://rungameid/{gid}"],
@@ -50,6 +54,7 @@ class GameLauncher:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 cwd=anchor,
+                env=dict(os.environ, FRAMELOAD_DETACHED="1"),
                 start_new_session=True
             )
 
@@ -58,6 +63,7 @@ class GameLauncher:
             "package": package_name,
             "title": dep.get("title", package_name),
             "launched_via_steam": launched_via_steam,
+            "in_steam_library": in_library,
             "gameid": gid,
         }
 

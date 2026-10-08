@@ -131,26 +131,42 @@ class TestNewMergedFeatures(unittest.TestCase):
             self.assertEqual(len(ModManager.list_mods(pkg)), 0)
 
     def test_protocol_handler(self):
-        # 1. frameload://install
-        with patch("frameload.catalog.downloader.Downloader.get") as mock_dl_get:
-            mock_dl = mock_dl_get.return_value
-            from unittest.mock import MagicMock
-            mock_task = MagicMock()
-            mock_task.id = "task_1"
-            mock_dl.enqueue.return_value = mock_task
-            res = ProtocolHandler.handle_url("frameload://install?url=http://example.com/test.zip&pkg=com.beatgames.beatsaber&title=Beat%20Saber")
-            self.assertTrue(res["success"])
-            self.assertEqual(res["action"], "install")
-            self.assertEqual(res["package"], "com.beatgames.beatsaber")
+        from frameload.system.protocol import PendingLinks
+        PendingLinks._items.clear()
 
-        # 2. frameload://sideload
+        # 1. An install link is only queued for confirmation; nothing is downloaded yet.
+        with patch("frameload.catalog.downloader.Downloader.get") as mock_dl_get:
+            res = ProtocolHandler.handle_url("frameload://install?url=https://example.com/Beat%20Game.apk&title=Beat%20Game")
+            self.assertTrue(res["success"] and res["needs_confirmation"])
+            mock_dl_get.assert_not_called()
+            pending = PendingLinks.all()
+            self.assertEqual([(p["kind"], p["title"], p["host"]) for p in pending], [("download", "Beat Game", "example.com")])
+
+            # Confirming it queues a direct download of exactly that address.
+            mock_dl_get.return_value.add_to_queue.return_value.id = "task_1"
+            done = ProtocolHandler.confirm(res["pending_id"])
+            game = mock_dl_get.return_value.add_to_queue.call_args[0][0]
+            self.assertEqual((done["task_id"], game.download_url), ("task_1", "https://example.com/Beat%20Game.apk"))
+            with self.assertRaises(KeyError):
+                ProtocolHandler.confirm(res["pending_id"])  # a request can be confirmed once
+
+        # Links that are not a plain https .apk are refused outright.
+        for bad in ("frameload://install?url=http://example.com/a.apk",
+                    "frameload://install?url=https://example.com/a.zip",
+                    "frameload://install?url=file:///etc/passwd",
+                    "frameload://install"):
+            self.assertFalse(ProtocolHandler.handle_url(bad)["success"], bad)
+
+        # 2. frameload://sideload waits for confirmation too.
         dummy_file = os.path.join(self.tmp_dir, "mock_game.xapk")
         with open(dummy_file, "w") as f:
             f.write("mock")
-        with patch("frameload.installer.package_loader.PackageLoader.install_source", return_value={"success": True}):
-            res = ProtocolHandler.handle_url(f"frameload://sideload?path={dummy_file}&title=MockApp&flat=true&preset=tablet")
-            self.assertTrue(res["success"])
-            self.assertEqual(res["action"], "sideload")
+        with patch("frameload.installer.package_loader.PackageLoader.install_source", return_value={"success": True}) as install:
+            res = ProtocolHandler.handle_url(f"frameload://sideload?path={dummy_file}&title=MockApp")
+            self.assertTrue(res["success"] and res["needs_confirmation"])
+            install.assert_not_called()
+            self.assertEqual(ProtocolHandler.confirm(res["pending_id"])["action"], "sideload")
+            install.assert_called_once()
 
         # 3. frameload://launch
         with patch("frameload.manager.launcher.GameLauncher.launch", return_value={"success": True}):
@@ -164,41 +180,28 @@ class TestNewMergedFeatures(unittest.TestCase):
             self.assertTrue(res["success"])
             self.assertEqual(res["action"], "sync")
 
-    def test_flat_window_preset_configuration(self):
+    def test_flat_app_gets_lepton_window_marker(self):
         target_anchor = os.path.join(self.tmp_dir, "flat_anchor")
         apk_path = os.path.join(self.tmp_dir, "flat_app.apk")
-        with open(apk_path, "wb") as f:
-            f.write(b"PK\x05\x06" + b"\x00" * 18)
+        with zipfile.ZipFile(apk_path, "w") as zf:
+            zf.writestr("classes.dex", b"dex")
 
-        with patch("frameload.system.shortcuts.register_game_in_steam", return_value={"success": True}):
+        with patch("frameload.installer.lepton_quest.register_game_in_steam", return_value={"success": True}):
             res = LeptonInstaller.install_quest_game(
                 package_name="com.test.flatapp",
                 title="Flat App",
                 apk_path=apk_path,
                 target_anchor=target_anchor,
                 force_flat=True,
-                window_preset="phone"
             )
-            self.assertTrue(res["success"])
-            self.assertEqual(res["window_preset"], "phone")
-
-            # Verify lepton-window.json
-            win_json_path = os.path.join(res["anchor"], "lepton-window.json")
-            self.assertTrue(os.path.isfile(win_json_path))
-            with open(win_json_path, "r") as f:
-                win_cfg = json.load(f)
-                self.assertEqual(win_cfg["preset"], "phone")
-                self.assertEqual(win_cfg["width"], 900)
-                self.assertEqual(win_cfg["height"], 1600)
-                self.assertEqual(win_cfg["orientation"], "portrait")
-
-            # Verify launch.sh contains the window environment variables
-            with open(os.path.join(res["anchor"], "launch.sh"), "r") as f:
-                launch_sh = f.read()
-                self.assertIn("LEPTON_FLATSCREEN=1", launch_sh)
-                self.assertIn("LEPTON_WINDOW_WIDTH=900", launch_sh)
-                self.assertIn("LEPTON_WINDOW_HEIGHT=1600", launch_sh)
-                self.assertIn("LEPTON_ORIENTATION=portrait", launch_sh)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["kind"], "flat")
+        # The marker file is the one thing that makes Lepton show a 2D window.
+        self.assertTrue(os.path.isfile(os.path.join(res["anchor"], "lepton-app", "lepton-show-flatscreen")))
+        with open(os.path.join(res["anchor"], "launch.sh"), "r", encoding="utf-8") as f:
+            launch_sh = f.read()
+        self.assertIn("STEAM_COMPAT_INSTALL_PATH", launch_sh)
+        self.assertNotIn("LEPTON_WINDOW_WIDTH", launch_sh)
 
     def test_download_pause_resume_clear_remove(self):
         from frameload.catalog.downloader import Downloader

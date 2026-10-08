@@ -3,7 +3,8 @@ from setuptools import find_packages, setup
 
 setup(
     name="frameload",
-    version="1.3.1",
+    version="1.3.2",
+    license="GPL-3.0-only",
     description="All-in-One On-Device VR Sideloading, Catalog Downloader, and Game Manager for Steam Frame",
     author="Crypto90",
     packages=find_packages(),
@@ -11,7 +12,6 @@ setup(
     package_data={
         "frameload": [
             "catalog/*.json",
-            "installer/shims/arm64-v8a/*",
             "web/templates/*",
             "web/static/css/*",
             "web/static/js/*",

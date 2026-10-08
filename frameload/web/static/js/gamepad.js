@@ -286,8 +286,6 @@ class SpatialGamepadNavigator {
         <div class="vr-hud-item"><span class="vr-hud-key">LB / RB</span> Tabs</div>
         <div class="vr-hud-divider"></div>
         <div class="vr-hud-item"><span class="vr-hud-key">R-Stick</span> Scroll</div>
-        <div class="vr-hud-divider"></div>
-        <div class="vr-hud-item" id="vr-hud-hands-item"><span class="vr-hud-key">🖐️ Pinch</span> Select / Drag</div>
       `;
       document.body.appendChild(hud);
     }
@@ -301,16 +299,6 @@ class SpatialGamepadNavigator {
     this.hudTimer = setTimeout(() => {
       this.hudElement.classList.remove("visible");
     }, 5500);
-  }
-
-  updateHUDHandsMode(isHands) {
-    const handsItem = document.getElementById("vr-hud-hands-item");
-    if (handsItem) {
-      handsItem.innerHTML = isHands
-        ? `<span class="vr-hud-key" style="border-color:#00ff88; color:#00ff88; box-shadow:0 0 10px rgba(0,255,136,0.4);">🖐️ Active</span> Pinch / Drag`
-        : `<span class="vr-hud-key">🖐️ Pinch</span> Select / Drag`;
-    }
-    this.showHUD();
   }
 
   bindEvents() {
@@ -489,6 +477,15 @@ class SpatialGamepadNavigator {
 
     this.showHUD();
 
+    // A focused slider takes left/right itself; up/down still leave it.
+    const current = this.focusedElement;
+    if (current && current.isConnected && current.type === "range" && (direction === "left" || direction === "right")) {
+      if (direction === "left") current.stepDown(); else current.stepUp();
+      current.dispatchEvent(new Event("input", { bubbles: true }));
+      current.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+
     // Laser-Aim Context Anchor: If user has pointed the laser ray at a focusable element,
     // establish it as the spatial navigation origin immediately!
     if (this.laserPointedFocusable && candidates.includes(this.laserPointedFocusable)) {
@@ -657,25 +654,12 @@ class SpatialGamepadNavigator {
   }
 
   handleGamepad(gp, gpIndex) {
-    // If user locked mode to hands, ignore controller buttons and sticks
-    if (window.vrInputManager && window.vrInputManager.mode === "hands") {
-      return;
-    }
-
     const now = Date.now();
     const gpKey = `${gpIndex}_${gp.id || ""}`;
     if (!this.lastButtonStates[gpKey]) {
       this.lastButtonStates[gpKey] = {};
     }
     const prev = this.lastButtonStates[gpKey];
-
-    // Auto wake-up: if in auto mode and hands are currently active, any button/stick movement restores Knuckles mode
-    const stickMoved = gp.axes && gp.axes.some(a => Math.abs(a) > 0.22);
-    const anyButtonPressed = gp.buttons && gp.buttons.some(b => b.pressed);
-    if ((stickMoved || anyButtonPressed) && window.vrInputManager && window.vrInputManager.mode === "auto" && window.vrInputManager.activeType === "hands") {
-      window.vrInputManager.switchActiveType("controllers", "🎮 Knuckles active (Wake-up)");
-      window.vrInputManager.syncUI();
-    }
 
     const hand = (gp.hand || "").toLowerCase();
     const id = (gp.id || "").toLowerCase();
@@ -803,9 +787,18 @@ class SpatialGamepadNavigator {
   }
 
   triggerSelect() {
-    if (this.focusedElement) {
-      this.focusedElement.click();
+    const el = this.focusedElement;
+    if (!el) return;
+    if (el.tagName === "SELECT") {
+      // A script cannot open a native dropdown, so Select steps through its options.
+      const options = Array.from(el.options).filter(o => !o.disabled && !o.hidden);
+      if (options.length === 0) return;
+      const next = options[(options.indexOf(el.selectedOptions[0]) + 1) % options.length];
+      el.value = next.value;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
     }
+    el.click();
   }
 
   triggerBack() {
@@ -880,447 +873,10 @@ class SpatialGamepadNavigator {
   }
 }
 
-/* ==========================================================================
-   3. WebXR Hand Tracking & Gesture Navigation Engine
-   ========================================================================== */
-class VRHandTrackingEngine {
-  constructor() {
-    this.supported = false;
-    this.activeSession = null;
-    this.refSpace = null;
-    this.isTracking = false;
-    this.pinchThresholdMm = 24.0;
-    this.pinchReleaseMm = 35.0;
-
-    this.hands = {
-      left: {
-        active: false,
-        pinching: false,
-        x: -100,
-        y: -100,
-        tipDistMm: 50.0,
-        pinchStrength: 0,
-        startTime: 0,
-        startX: 0,
-        startY: 0,
-        isDragging: false,
-        scrollTarget: null,
-        targetEl: null,
-      },
-      right: {
-        active: false,
-        pinching: false,
-        x: -100,
-        y: -100,
-        tipDistMm: 50.0,
-        pinchStrength: 0,
-        startTime: 0,
-        startX: 0,
-        startY: 0,
-        isDragging: false,
-        scrollTarget: null,
-        targetEl: null,
-      },
-    };
-
-    this.reticles = {};
-    this.initReticles();
-    this.initWebXR();
-  }
-
-  initReticles() {
-    ["left", "right"].forEach((handKey) => {
-      let reticle = document.getElementById(`vr-hand-reticle-${handKey}`);
-      if (!reticle) {
-        reticle = document.createElement("div");
-        reticle.id = `vr-hand-reticle-${handKey}`;
-        reticle.className = `vr-hand-reticle vr-hand-${handKey}`;
-        reticle.innerHTML = `
-          <div class="vr-hand-pinch-glow"></div>
-          <div class="vr-hand-ring vr-hand-thumb-ring"></div>
-          <div class="vr-hand-ring vr-hand-index-ring"></div>
-          <div class="vr-hand-center-dot"></div>
-          <div class="vr-hand-label">${handKey === "left" ? "L" : "R"}</div>
-        `;
-        document.body.appendChild(reticle);
-      }
-      this.reticles[handKey] = reticle;
-    });
-  }
-
-  initWebXR() {
-    if (!navigator.xr) {
-      console.log("[FrameLoad VR] WebXR not available in this environment. Hand tracking running in emulation/bridge mode.");
-      return;
-    }
-
-    navigator.xr.isSessionSupported("immersive-vr").then((supported) => {
-      this.supported = supported;
-      if (supported) {
-        console.log("[FrameLoad VR] WebXR Immersive VR supported with Hand Tracking extensions.");
-        this.updateHUDHandsStatus(true, "WebXR Ready");
-      }
-    }).catch(() => {});
-  }
-
-  attachSession(session, refSpace) {
-    this.activeSession = session;
-    this.refSpace = refSpace;
-    this.isTracking = true;
-    this.updateHUDHandsStatus(true, "Hands Active");
-
-    session.addEventListener("end", () => {
-      this.activeSession = null;
-      this.isTracking = false;
-      this.hideReticles();
-      this.updateHUDHandsStatus(false, "Disconnected");
-    });
-  }
-
-  updateFromXRFrame(frame, refSpace) {
-    if (!frame || !this.activeSession) return;
-    if (window.vrInputManager && window.vrInputManager.activeType === "controllers") {
-      this.hideReticles();
-      return;
-    }
-    const session = this.activeSession;
-    const space = refSpace || this.refSpace;
-    if (!space) return;
-
-    for (const source of session.inputSources) {
-      if (!source.hand) continue;
-
-      const handKey = source.handedness === "left" ? "left" : "right";
-      const handState = this.hands[handKey];
-      const reticle = this.reticles[handKey];
-
-      const thumbTipJoint = source.hand.get("thumb-tip");
-      const indexTipJoint = source.hand.get("index-finger-tip");
-
-      if (!thumbTipJoint || !indexTipJoint) continue;
-
-      const thumbPose = frame.getJointPose(thumbTipJoint, space);
-      const indexPose = frame.getJointPose(indexTipJoint, space);
-
-      if (!thumbPose || !indexPose) {
-        handState.active = false;
-        if (reticle) reticle.classList.remove("active");
-        continue;
-      }
-
-      handState.active = true;
-      if (reticle) reticle.classList.add("active");
-
-      // 3D Distance in millimeters
-      const dx = thumbPose.transform.position.x - indexPose.transform.position.x;
-      const dy = thumbPose.transform.position.y - indexPose.transform.position.y;
-      const dz = thumbPose.transform.position.z - indexPose.transform.position.z;
-      const distMm = Math.hypot(dx, dy, dz) * 1000.0;
-      handState.tipDistMm = distMm;
-
-      // Project pointer aim pose to 2D screen coordinate
-      let screenX = (indexPose.transform.position.x + 0.5) * window.innerWidth;
-      let screenY = (-indexPose.transform.position.y + 0.5) * window.innerHeight;
-
-      if (source.targetRaySpace) {
-        const rayPose = frame.getPose(source.targetRaySpace, space);
-        if (rayPose) {
-          screenX = (rayPose.transform.position.x * 2.0 + 0.5) * window.innerWidth;
-          screenY = (-rayPose.transform.position.y * 2.0 + 0.5) * window.innerHeight;
-        }
-      }
-
-      screenX = Math.max(10, Math.min(window.innerWidth - 10, screenX));
-      screenY = Math.max(10, Math.min(window.innerHeight - 10, screenY));
-
-      this.processHandPosition(handKey, screenX, screenY, distMm, source);
-    }
-  }
-
-  processHandPosition(handKey, x, y, distMm, source = null) {
-    const hand = this.hands[handKey];
-    const reticle = this.reticles[handKey];
-    if (!reticle) return;
-
-    hand.lastX = hand.x || x;
-    hand.lastY = hand.y || y;
-    hand.x = x;
-    hand.y = y;
-
-    reticle.style.left = `${x}px`;
-    reticle.style.top = `${y}px`;
-
-    // Dynamic visual ring convergence as fingers get closer
-    const thumbRing = reticle.querySelector(".vr-hand-thumb-ring");
-    const indexRing = reticle.querySelector(".vr-hand-index-ring");
-    const convergence = Math.max(0, Math.min(1, (distMm - this.pinchThresholdMm) / 32.0));
-
-    if (thumbRing && indexRing) {
-      thumbRing.style.transform = `translate(${-4 * convergence}px, ${-4 * convergence}px)`;
-      indexRing.style.transform = `translate(${4 * convergence}px, ${4 * convergence}px)`;
-    }
-
-    // Pinch detection state machine
-    if (!hand.pinching && distMm <= this.pinchThresholdMm) {
-      this.onPinchDown(handKey, x, y, source);
-    } else if (hand.pinching && distMm >= this.pinchReleaseMm) {
-      this.onPinchUp(handKey, x, y);
-    } else if (hand.pinching) {
-      this.onPinchMove(handKey, x, y);
-    }
-  }
-
-  onPinchDown(handKey, x, y, source = null) {
-    const hand = this.hands[handKey];
-    const reticle = this.reticles[handKey];
-
-    hand.pinching = true;
-    hand.startTime = performance.now();
-    hand.startX = x;
-    hand.startY = y;
-    hand.lastX = x;
-    hand.lastY = y;
-    hand.isDragging = false;
-    hand.targetEl = document.elementFromPoint(x, y);
-
-    if (reticle) {
-      reticle.classList.add("pinching");
-    }
-
-    // Find scroll target
-    hand.scrollTarget = window.vrLaserDragEngine?.findScrollTarget(hand.targetEl) || window;
-
-    // Trigger haptic feedback pulse on pinch
-    if (source && source.gamepad && source.gamepad.hapticActuators && source.gamepad.hapticActuators[0]) {
-      try {
-        source.gamepad.hapticActuators[0].pulse(0.35, 25);
-      } catch (_) {}
-    }
-  }
-
-  onPinchMove(handKey, x, y) {
-    const hand = this.hands[handKey];
-    const dx = x - hand.startX;
-    const dy = y - hand.startY;
-    const dist = Math.hypot(dx, dy);
-
-    if (!hand.isDragging && dist >= 8) {
-      hand.isDragging = true;
-      document.body.classList.add("vr-grabbing");
-    }
-
-    if (hand.isDragging && hand.scrollTarget) {
-      const scrollDx = x - hand.lastX;
-      const scrollDy = y - hand.lastY;
-
-      if (hand.scrollTarget === window) {
-        window.scrollBy({ left: -scrollDx, top: -scrollDy, behavior: "auto" });
-      } else {
-        hand.scrollTarget.scrollLeft -= scrollDx;
-        hand.scrollTarget.scrollTop -= scrollDy;
-      }
-    }
-  }
-
-  onPinchUp(handKey, x, y) {
-    const hand = this.hands[handKey];
-    const reticle = this.reticles[handKey];
-
-    hand.pinching = false;
-    if (reticle) {
-      reticle.classList.remove("pinching");
-    }
-
-    if (hand.isDragging) {
-      hand.isDragging = false;
-      document.body.classList.remove("vr-grabbing");
-    } else {
-      // Tap / Click action
-      const duration = performance.now() - hand.startTime;
-      if (duration < 450) {
-        const el = document.elementFromPoint(x, y);
-        if (el) {
-          window.vrLaserDragEngine?.createLaserRipple(x, y);
-          el.click();
-        }
-      }
-    }
-  }
-
-  updateHUDHandsStatus(active, label = "") {
-    const hudItem = document.getElementById("vr-hud-hands-item");
-    if (hudItem) {
-      if (active) {
-        hudItem.innerHTML = `<span class="vr-hud-key" style="border-color:#00ff88; color:#00ff88;">🖐️ ${label || "Tracking"}</span> Pinch / Drag`;
-      } else {
-        hudItem.innerHTML = `<span class="vr-hud-key">🖐️ Pinch</span> Select / Drag`;
-      }
-    }
-  }
-
-  hideReticles() {
-    ["left", "right"].forEach((handKey) => {
-      const reticle = this.reticles[handKey];
-      if (reticle) reticle.classList.remove("active", "pinching");
-    });
-  }
-}
-
-/* ==========================================================================
-   4. VR Input Coordinator & Automatic Hand Tracking Fallback Manager
-   ========================================================================== */
-class VRInputManager {
-  constructor() {
-    this.mode = localStorage.getItem("frameload_vr_input_mode") || "auto"; // 'auto', 'controllers', 'hands'
-    this.activeType = "controllers";
-    this.activeControllersCount = 0;
-    this.init();
-  }
-
-  init() {
-    this.updateActiveState(false);
-    this.bindEvents();
-    this.syncUI();
-    // Periodic check for controller state changes
-    setInterval(() => this.pollControllersState(), 1200);
-  }
-
-  bindEvents() {
-    window.addEventListener("gamepadconnected", (e) => {
-      this.pollControllersState(true);
-    });
-
-    window.addEventListener("gamepaddisconnected", () => {
-      setTimeout(() => this.pollControllersState(true), 200);
-    });
-  }
-
-  pollControllersState(isEvent = false) {
-    const rawGps = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
-    const count = rawGps.length;
-    const previousCount = this.activeControllersCount;
-    this.activeControllersCount = count;
-
-    if (this.mode === "auto") {
-      if (count > 0 && (previousCount === 0 || isEvent)) {
-        this.switchActiveType("controllers", `🎮 Knuckles active (${count} connected)`);
-      } else if (count === 0 && (previousCount > 0 || this.activeType !== "hands")) {
-        this.switchActiveType("hands", "🖐️ Controllers off — Switched to Optical Hand Tracking");
-      }
-    }
-    this.syncUI();
-  }
-
-  setMode(mode, showNotice = true) {
-    if (!["auto", "controllers", "hands"].includes(mode)) return;
-    this.mode = mode;
-    localStorage.setItem("frameload_vr_input_mode", mode);
-
-    if (mode === "auto") {
-      this.pollControllersState(true);
-      if (showNotice && typeof showToast === "function") {
-        showToast(`🔄 Auto-Switch Mode Enabled (${this.activeType === "controllers" ? "Knuckles Active" : "Hand Tracking Active"})`, "info");
-      }
-    } else if (mode === "controllers") {
-      this.switchActiveType("controllers", showNotice ? "🎮 Motion Controllers Mode (Forced)" : "");
-    } else if (mode === "hands") {
-      this.switchActiveType("hands", showNotice ? "🖐️ Optical Hand Tracking Mode (Forced)" : "");
-    }
-    this.syncUI();
-  }
-
-  toggleMode() {
-    const next = this.mode === "auto" ? "controllers" : (this.mode === "controllers" ? "hands" : "auto");
-    this.setMode(next, true);
-  }
-
-  switchActiveType(type, toastMessage = "") {
-    this.activeType = type;
-    if (toastMessage && typeof showToast === "function") {
-      showToast(toastMessage, "info");
-    }
-
-    if (type === "hands") {
-      window.vrControllerEngine?.updateHUDHandsMode?.(true);
-    } else {
-      window.vrHandEngine?.hideReticles?.();
-      window.vrControllerEngine?.updateHUDHandsMode?.(false);
-    }
-  }
-
-  updateActiveState() {
-    const rawGps = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
-    this.activeControllersCount = rawGps.length;
-    if (this.mode === "auto") {
-      this.activeType = this.activeControllersCount > 0 ? "controllers" : "hands";
-    } else {
-      this.activeType = this.mode;
-    }
-  }
-
-  syncUI() {
-    const headerChip = document.getElementById("header-input-mode");
-    const headerLabel = document.getElementById("header-input-label");
-    const dot = headerChip?.querySelector(".pulse-dot");
-
-    if (headerLabel) {
-      if (this.mode === "auto") {
-        if (this.activeType === "controllers") {
-          headerLabel.textContent = `🎮 Knuckles (${this.activeControllersCount || 1})`;
-          if (dot) dot.style.background = "var(--accent-cyan)";
-        } else {
-          headerLabel.textContent = "🖐️ Hand Tracking";
-          if (dot) dot.style.background = "#00ff88";
-        }
-      } else if (this.mode === "controllers") {
-        headerLabel.textContent = "🎮 Knuckles (Locked)";
-        if (dot) dot.style.background = "var(--accent-amber)";
-      } else {
-        headerLabel.textContent = "🖐️ Hands (Locked)";
-        if (dot) dot.style.background = "#00ff88";
-      }
-    }
-
-    // Update radios in System tab
-    const radios = document.querySelectorAll('input[name="vr-input-mode"]');
-    radios.forEach(r => {
-      r.checked = (r.value === this.mode);
-    });
-
-    const sysBadge = document.getElementById("sys-input-badge");
-    if (sysBadge) {
-      if (this.mode === "auto") {
-        sysBadge.textContent = this.activeType === "controllers" ? "Auto (Knuckles Active)" : "Auto (Hand Tracking Fallback)";
-        sysBadge.style.background = "rgba(0, 242, 254, 0.15)";
-        sysBadge.style.color = "var(--accent-cyan)";
-      } else if (this.mode === "controllers") {
-        sysBadge.textContent = "Controllers Forced";
-        sysBadge.style.background = "rgba(255, 184, 0, 0.15)";
-        sysBadge.style.color = "var(--accent-amber)";
-      } else {
-        sysBadge.textContent = "Hand Tracking Forced";
-        sysBadge.style.background = "rgba(0, 255, 136, 0.15)";
-        sysBadge.style.color = "#00ff88";
-      }
-    }
-  }
-}
-
-// Window global helper functions
-window.setVRInputMode = function(mode) {
-  window.vrInputManager?.setMode(mode);
-};
-
-window.toggleVRInputMode = function() {
-  window.vrInputManager?.toggleMode();
-};
-
 // Global initialization
 document.addEventListener("DOMContentLoaded", () => {
   window.vrLaserDragEngine = new VRLaserDragEngine();
   window.vrControllerEngine = new SpatialGamepadNavigator();
-  window.vrHandEngine = new VRHandTrackingEngine();
-  window.vrInputManager = new VRInputManager();
   // Backward compatibility alias for any existing references
   window.gamepadNav = window.vrControllerEngine;
 });

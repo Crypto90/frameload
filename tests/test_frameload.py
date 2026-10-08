@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 import zipfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from axml_builder import build_axml, manifest  # noqa: E402
 from frameload.catalog.models import CatalogGame, DownloadTask
 from frameload.installer.apk_patcher import ApkPatcher
 from frameload.installer.artwork import ArtworkManager
@@ -50,8 +54,8 @@ class TestFrameLoadCore(unittest.TestCase):
                 # Add mock OpenXR library
                 zf.writestr("lib/arm64-v8a/libopenxr_loader.so", b"mock openxr")
                 zf.writestr("lib/arm64-v8a/libil2cpp.so", b"mock unity")
-                # Add synthetic manifest text
-                zf.writestr("AndroidManifest.xml", b"\x00package\x00com.example.testgame\x00com.oculus.intent.category.VR\x00")
+                zf.writestr("AndroidManifest.xml", build_axml(manifest(
+                    "com.example.testgame", categories=("android.intent.category.LAUNCHER", "com.oculus.intent.category.VR"))))
 
             analysis = ApkPatcher.inspect(tmp_path)
             self.assertTrue(analysis.is_vr)
@@ -64,11 +68,21 @@ class TestFrameLoadCore(unittest.TestCase):
                 os.remove(tmp_path)
 
     def test_artwork_fallback(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            ArtworkManager.ensure_artwork("com.test.app", "Test App Title", tmp_dir)
-            self.assertTrue(os.path.isfile(os.path.join(tmp_dir, "poster.svg")))
-            self.assertTrue(os.path.isfile(os.path.join(tmp_dir, "poster.png")))
-            self.assertTrue(os.path.isfile(os.path.join(tmp_dir, "banner.png")))
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp_dir, \
+                patch.object(ArtworkManager, "_fetch_cover_art", return_value=None), \
+                patch.object(ArtworkManager, "_local_thumbnail", return_value=None):
+            art = ArtworkManager.ensure_artwork("com.test.app", "Test App Title", tmp_dir)
+            # Every slot Steam shows gets a real PNG of the right size (SVG is not displayed by Steam).
+            import struct
+            for name, size in (("poster.png", (600, 900)), ("banner.png", (460, 215)),
+                               ("hero.png", (1920, 620)), ("icon.png", (256, 256))):
+                with open(os.path.join(tmp_dir, name), "rb") as f:
+                    data = f.read(24)
+                self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n", name)
+                self.assertEqual(struct.unpack(">II", data[16:24]), size, name)
+                self.assertIn(name, art)
+            self.assertFalse(os.path.exists(os.path.join(tmp_dir, "poster.svg")))
 
 
 if __name__ == "__main__":

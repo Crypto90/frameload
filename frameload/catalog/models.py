@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 def format_bytes(size: int) -> str:
@@ -44,6 +44,15 @@ class CatalogGame:
     rating: float = 0.0
     rating_count: int = 0
     notes: str = ""
+    version_name: str = ""
+    summary: str = ""
+    description: str = ""
+    categories: List[str] = field(default_factory=list)
+    license: str = ""
+    anti_features: List[str] = field(default_factory=list)
+    sha256: str = ""  # expected checksum of a direct download
+    source: str = ""  # catalog the entry came from, e.g. "fdroid"
+    update_available: bool = False
 
     def __post_init__(self) -> None:
         if not self.id:

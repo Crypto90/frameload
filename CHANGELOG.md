@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.2] - 2026-10-08
+
+### Added
+- **Real APK inspection:** A binary `AndroidManifest.xml` / `resources.arsc` reader replaces the byte-pattern guess, so package name, version, app label, launcher activity, VR and hand-tracking declarations are read correctly.
+- **Steam Frame compatibility verdict:** Every APK is classed as ready, should run, needs porting first, or cannot run, with the reasons shown in the Sideload preview, the library and the settings dialog.
+- **Hand input setting:** Automatic / Controllers / Hands per game, mapped to FrameBridge's `controller_fix`. Games that require hand tracking get hands automatically.
+- **F-Droid store:** Categories, summaries and descriptions, version names, installed and update markers, and SHA-256 verification of every download before install.
+- **Gamepad control of dropdowns and sliders** in dialogs.
+- **On-headset porting of Quest games (experimental):** "Port for Steam Frame" runs FramePort's command line on the headset (OVRPort conversion, FrameBridge adapter, signing) and replaces the game's APK, keeping saves, OBB files and settings. Once set up, a sideloaded game that needs porting is ported automatically after install (switchable); games installed earlier are ported when setup finishes. One-time setup under System & Diagnostics; `frameload port` on the command line.
+- **Self-test:** `frameload doctor` and a System & Diagnostics card check Lepton, podman, launcher tools, the Steam library, installed games and the porting setup.
+- **Automatic migration of older installs:** on start, games installed by earlier versions get the current launcher, their OBB files moved to where Lepton reads them, and unused files removed. Running games and games installed by FramePort are left alone.
+- **`frameload allow-host <name>`** to open the dashboard under an extra host name, with an on-page notice when an address is refused.
+- **LICENSE** file (GPL-3.0), matching what the README has always stated.
+- **Upload from a phone or PC, and a file browser:** send an APK (with its OBB files) from another device straight to the headset, or pick files in the headset from Home, Downloads and removable drives.
+- **Device pairing:** another device on the network is let in once with a six-digit code shown on the headset; paired devices are listed and can be removed.
+- **Steam library state:** FrameLoad shows which new games Steam has not loaded yet, starts those itself, and offers a safe Steam restart that rewrites the shortcuts while Steam is stopped.
+- **Launch log with diagnosis** for every Android app.
+- **F-Droid updates:** "Update N Apps" for installed apps with a newer version in the catalog.
+- **Install links ask first:** `frameload://install` and `frameload://sideload` now wait for confirmation in the dashboard.
+
+### Changed
+- **Per-game settings rebuilt** on what Lepton and FrameBridge read: foveated rendering, typing window, navigation bar, resolution scale, refresh rate, vibration strength, space warp, play space. The dialog is generated from the server's schema.
+- **Launcher (`launch.sh`)** now carries only variables Lepton honours, refuses a second concurrent launch, ends the game when Steam's launcher process is gone, and finds Lepton at start time.
+- **OBB files** are placed directly in `lepton-app/obb/`, where Lepton links them from.
+- **2D detection:** an unticked "2D window" box means "decide from the APK" instead of forcing VR.
+- **Lepton** is treated as part of the Steam Frame; the dashboard no longer prompts to install it.
+- **Save backups** now include the app's private storage (`lepton-data/internal`), where most games save, and are made and restored inside podman's user namespace so files owned by the container are included.
+- **Self-update** verifies the package against the release's `SHA256SUMS`, refuses unsafe archive entries, checks GitHub every six hours instead of every minute, and restarts FrameLoad even when it does not run as a systemd service.
+- **Releases** are published from version tags only, not from every push to `main`.
+- **Steam artwork:** real PNG/JPEG files for every slot (the app's icon for F-Droid apps, a generated image otherwise) instead of one cover copied five times or an SVG Steam does not show.
+- **Storage:** FAT/exFAT/NTFS drives are refused for games, a missing drive is an error instead of a silent install to internal storage, and a move verifies the copy and never overwrites the destination.
+- **Windows and Linux launchers** use the Frame's OpenXR runtime file when present and set `SteamGameId`; both are marked experimental.
+
+### Removed
+- **Controls that had no effect:** Quest hardware spoofing, MSAA, anisotropic filtering, CPU/GPU levels, controller model choice, 2D window size presets, and the `local.prop`, `lepton-window.json`, `hand_tracking.json` and `framebridge_hands.conf` files. Lepton reads none of them. Stored values from older versions are discarded.
+- **"Synthetic" and "optical" hand tracking modes and the dashboard's WebXR hand engine / input switcher.** They were never connected to an XR session, and the Frame has no camera hand tracking.
+- **APK "shim injection":** no shim binaries were ever shipped, so APKs were copied unchanged. Use FramePort to port a Quest game.
+
+### Fixed
+- **Security:** any device on the same network could control FrameLoad without a login; other devices now need pairing.
+- **Security:** the unauthenticated API answered any website (`Access-Control-Allow-Origin: *`); another site open in a browser could install, uninstall or reconfigure. Requests are now accepted only from the dashboard's own origin, with DNS-rebinding and path-traversal checks on hosts and package names.
+- **Cross-site scripting:** catalog names and titles are escaped before they are inserted into the page.
+- **Installed Library crash** after the update check returned, and an **endless request loop** for a missing fallback image in the Storage tab.
+- **F-Droid:** wrong icon URLs, the newest release offered instead of the suggested one, 32-bit-only apps listed, the catalog re-read from disk on every HTTP request, and completed downloads left in the cache.
+- **Settings dialog** stopped filling in after a JavaScript error (`msaVal`).
+- **Config defaults** were shared and mutated between instances.
+- **Uninstalling a game** could leave files owned by Lepton's container behind and still report success.
+- **Uninstalling FrameLoad** deleted the signing keys of ported games; they are now saved to `~/Documents/FrameLoad-signing-keys` and restored by the next porting setup.
+- **`frameload://install` links** ignored their address and never reached the running server.
+- **Cover lookups** retried three slow addresses on every page load for apps without artwork.
+- **Clearing the download cache** could delete a download or port in progress.
+- **Moving a game to another drive** replaced Windows and Linux launchers with an Android one and dropped a game's settings.
+- **Mod injection and deletion** accepted names and target folders that pointed outside the game's data folder.
+- **`run.sh`** passed only some commands through to the command line; `install.sh` now also installs a `frameload` command in `~/.local/bin`.
+- **Uninstalling FrameLoad with "delete games"** never cleaned games on a microSD card (it called a function that does not exist).
+- **Self-test notice:** the dashboard runs the self-test by itself and shows a notice only when something is wrong.
+
+---
+
 ## [v1.3.1] - 2026-10-08
 
 ### Added

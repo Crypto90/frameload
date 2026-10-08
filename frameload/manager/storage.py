@@ -154,6 +154,9 @@ class StorageManager:
         except Exception:
             pass
 
+        from ..system import fsutil
+        mounts = fsutil.mount_filesystems()
+
         # Deduplicate candidate mounts
         for c in candidate_mounts:
             p = c["path"]
@@ -188,7 +191,9 @@ class StorageManager:
                     "is_external": True,
                     "is_sd_card": is_sd,
                     "device_type": dev_type,
-                    "filesystem": c.get("fs_type", "ext4"),
+                    "filesystem": c.get("fs_type") or fsutil.filesystem_of(p, mounts),
+                    # FAT, exFAT and NTFS cannot hold Lepton data (no Unix owners, permissions, symlinks)
+                    "supports_lepton": fsutil.supports_lepton(c.get("fs_type") or fsutil.filesystem_of(p, mounts)),
                     "is_steam_library": has_steam_lib,
                     "has_quest_anchor": has_quest,
                     "total_bytes": usage.total,
@@ -208,26 +213,28 @@ class StorageManager:
 
     @staticmethod
     def resolve_anchor(device_id: Optional[str] = None) -> str:
-        """Resolves the quest-frame anchor directory for a target device ID."""
+        """The quest-frame folder on a drive. A drive that is missing or unusable is an error,
+        never a silent switch to internal storage."""
         if not device_id or device_id == "internal":
             os.makedirs(ANCHOR_DIR, exist_ok=True)
             return ANCHOR_DIR
 
-        devices = StorageManager.get_devices()
-        dev = next((d for d in devices if d["id"] == device_id), None)
+        dev = next((d for d in StorageManager.get_devices() if d["id"] == device_id), None)
         if dev and dev.get("is_external"):
+            if not dev.get("supports_lepton", True):
+                raise OSError(f"{dev['name']} is formatted as {dev.get('filesystem') or 'an unsupported type'}. "
+                              "Games need a Linux filesystem; format the card in SteamOS (ext4) to use it.")
             anchor = os.path.join(dev["path"], "quest-frame")
             os.makedirs(anchor, exist_ok=True)
             return anchor
 
-        # Check if device_id is a direct directory path
+        # A folder given directly (custom storage path)
         if os.path.isdir(device_id):
             anchor = os.path.join(device_id, "quest-frame") if not device_id.endswith("quest-frame") else device_id
             os.makedirs(anchor, exist_ok=True)
             return anchor
 
-        os.makedirs(ANCHOR_DIR, exist_ok=True)
-        return ANCHOR_DIR
+        raise FileNotFoundError(f"Storage drive '{device_id}' is not connected.")
 
     @staticmethod
     def get_storage_overview(device_id: Optional[str] = None) -> Dict[str, Any]:
@@ -426,10 +433,22 @@ class StorageManager:
         reclaimed_bytes = 0
         cleaned_files = 0
 
-        # 1. Clean downloads / cache directory
+        # 1. Clean downloads / cache directory, except what a running download or port is using
+        busy = set()
+        try:
+            from ..catalog.downloader import Downloader
+            busy = {t["id"] for t in Downloader.get().get_all_tasks()
+                    if t["status"] in ("queued", "downloading", "decompressing", "installing", "paused")}
+            from ..installer import porting
+            if porting.PortingJobs.active():
+                busy |= {"port-source", "ported"}
+        except Exception:
+            pass
         if clear_downloads and os.path.isdir(CACHE_DIR):
             try:
                 for entry in os.scandir(CACHE_DIR):
+                    if entry.name in busy:
+                        continue
                     try:
                         if entry.is_file(follow_symlinks=False):
                             sz = entry.stat().st_size
@@ -452,7 +471,8 @@ class StorageManager:
                 if os.path.isdir(shader_dir):
                     sz = get_dir_size(shader_dir)
                     try:
-                        shutil.rmtree(shader_dir, ignore_errors=True)
+                        from ..system import fsutil
+                        fsutil.remove_tree(shader_dir)
                         os.makedirs(shader_dir, exist_ok=True)
                         reclaimed_bytes += sz
                         cleaned_files += 1
@@ -471,8 +491,6 @@ class StorageManager:
         """Moves an installed game between internal storage and MicroSD/external storage."""
         from .installed import InstalledManager
         from ..system.shortcuts import register_game_in_steam
-        from ..installer.lepton_quest import LAUNCH_SCRIPT_TEMPLATE
-        from ..system.steamos import lepton_status
         import shlex
         import subprocess
 
@@ -519,10 +537,13 @@ class StorageManager:
             except OSError:
                 pass
 
-        # 2. Move files to new anchor
+        # 2. Move files to new anchor (never over something that is already there)
+        from ..system import fsutil
         if os.path.exists(new_anchor):
-            shutil.rmtree(new_anchor, ignore_errors=True)
-        shutil.move(current_anchor, new_anchor)
+            if os.listdir(new_anchor):
+                raise FileExistsError(f"{new_anchor} already holds files. Remove or rename that folder first.")
+            os.rmdir(new_anchor)
+        fsutil.move_tree(current_anchor, new_anchor)
 
         # 3. Update deployment.json
         dep_path = os.path.join(new_anchor, "deployment.json")
@@ -532,22 +553,20 @@ class StorageManager:
         with open(dep_path, "w", encoding="utf-8") as f:
             json.dump(dep, f, indent=2)
 
-        # 4. Regenerate launch.sh with new paths
+        # 4. Point the launcher at the new folder
         title = dep.get("title", package_name)
-        lep = lepton_status()
-        lepton_bin = lep["path"] or "/usr/bin/lepton"
         launch_script = os.path.join(new_anchor, "launch.sh")
-        script_content = LAUNCH_SCRIPT_TEMPLATE.format(
-            title=title.replace("\n", " "),
-            pkg=package_name,
-            base_q=shlex.quote(new_anchor),
-            appid=appid,
-            lepton_q=shlex.quote(lepton_bin),
-            extra_env=""
-        )
-        with open(launch_script, "w", encoding="utf-8") as f:
-            f.write(script_content)
-        os.chmod(launch_script, 0o755)
+        if dep.get("kind", "quest") in ("quest", "flat"):
+            from .tuning import TuningManager
+            TuningManager.apply_tuning_to_game(package_name, dep=dep)  # keeps the game's settings
+        elif os.path.isfile(launch_script):
+            # Windows and Linux apps have their own launchers: only the folder inside them changes.
+            with open(launch_script, "r", encoding="utf-8") as f:
+                text = f.read()
+            text = text.replace(shlex.quote(current_anchor), shlex.quote(new_anchor))
+            with open(launch_script, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            os.chmod(launch_script, 0o755)
 
         # 5. Update Steam shortcut with new launch script path
         art_dir = os.path.join(new_anchor, "artwork")

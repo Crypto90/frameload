@@ -35,10 +35,11 @@ def create_standalone_tarball() -> str:
     with tarfile.open(archive_path, "w:gz") as tar:
         # Include frameload package directory
         frameload_pkg = os.path.join(ROOT_DIR, "frameload")
-        tar.add(frameload_pkg, arcname="frameload")
+        tar.add(frameload_pkg, arcname="frameload",
+                filter=lambda info: None if "__pycache__" in info.name or info.name.endswith(".pyc") else info)
 
         # Include root runner, installer scripts, and documentation
-        for item in ["install.sh", "run.sh", "setup.py", "README.md", "CHANGELOG.md"]:
+        for item in ["install.sh", "run.sh", "setup.py", "README.md", "CHANGELOG.md", "LICENSE"]:
             p = os.path.join(ROOT_DIR, item)
             if os.path.isfile(p):
                 tar.add(p, arcname=item)

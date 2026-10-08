@@ -68,9 +68,10 @@ start_daemon_if_needed() {
 }
 
 # 1. Direct CLI commands pass-through
-if [[ "${1:-}" == "serve" || "${1:-}" == "info" || "${1:-}" == "install" || "${1:-}" == "sync" || "${1:-}" == "list" || "${1:-}" == "storage" || "${1:-}" == "move" || "${1:-}" == "uninstall" || "${1:-}" == "uninstall-app" || "${1:-}" == "inject-mod" || "${1:-}" == "window" || "${1:-}" == "tune" ]]; then
-    exec /usr/bin/python3 -m frameload.cli "$@"
-fi
+case "${1:-}" in
+    serve|info|list|storage|move|sync|search|install|inject-mod|handle-url|launch|uninstall|uninstall-app|window|tune|doctor|allow-host|port|sync-shortcuts)
+        exec /usr/bin/python3 -m frameload.cli "$@" ;;
+esac
 
 if [[ "${1:-}" == "--daemon" ]]; then
     start_daemon_if_needed
@@ -105,6 +106,10 @@ fi
 
 # 2. Steam & Interactive Launch: Ensure server is running, then open standalone app window
 start_daemon_if_needed
+
+if [[ "${1:-}" == frameload://* ]]; then
+    /usr/bin/python3 -m frameload.cli handle-url "$1" || true
+fi
 
 # Launch UI window (SteamOS Gaming Mode & Standalone VR compatible)
 # In Gaming Mode, gamescope requires a graphic window to be attached to the shortcut PID

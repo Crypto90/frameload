@@ -89,9 +89,6 @@ class InstalledManager:
 
                     # Artwork
                     art_dir = os.path.join(game_anchor, "artwork")
-                    thumb_path = os.path.join(art_dir, "poster.png")
-                    if not os.path.isfile(thumb_path):
-                        thumb_path = os.path.join(art_dir, "icon.png")
 
                     # Running status
                     is_running = f"lepton-steamlaunch-{appid}" in running_containers if appid else False
@@ -116,6 +113,10 @@ class InstalledManager:
                         "apk_size": apk_size,
                         "installed_time": dep.get("time", 0),
                         "settings": dep.get("settings", {}) if isinstance(dep.get("settings"), dict) else {},
+                        "xr_runtime": dep.get("xr_runtime", ""),
+                        "framebridge": bool(dep.get("framebridge", False)),
+                        "hand_tracking": dep.get("hand_tracking", "none"),
+                        "compat": dep.get("compat", {}) if isinstance(dep.get("compat"), dict) else {},
                         "is_running": is_running,
                         "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
                     })

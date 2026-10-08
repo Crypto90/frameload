@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect to FrameLoad</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" type="image/png" href="/static/assets/icon.png">
+  <style>
+    .pair-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .pair-card { width: 100%; max-width: 420px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 28px; }
+    .pair-card h1 { font-size: 1.3rem; margin-bottom: 8px; }
+    .pair-card p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; margin-bottom: 14px; }
+    .pair-card ol { color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; margin: 0 0 18px 18px; }
+    #pairing-code { width: 100%; font-size: 1.9rem; letter-spacing: 0.4em; text-align: center; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: rgba(0, 0, 0, 0.4); color: #fff; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    #pairing-code:focus { outline: 2px solid var(--accent-cyan); }
+    #pair-error { color: var(--accent-danger); font-size: 0.85rem; min-height: 1.3em; margin: 10px 0; }
+    .pair-card button { width: 100%; justify-content: center; padding: 12px; }
+  </style>
+</head>
+<body>
+  <main class="pair-wrap">
+    <form class="pair-card" id="pair-form" autocomplete="off">
+      <h1>Connect this device to FrameLoad</h1>
+      <p>For safety, another device has to be approved once from the headset.</p>
+      <ol>
+        <li>In the headset, open FrameLoad &rarr; <strong>System &amp; Diagnostics</strong>.</li>
+        <li>Under <strong>Phone &amp; PC Access</strong>, press <strong>Show Pairing Code</strong>.</li>
+        <li>Enter the six digits here.</li>
+      </ol>
+      <label for="pairing-code" style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:8px;">Pairing code</label>
+      <input id="pairing-code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus>
+      <div id="pair-error" role="alert"></div>
+      <button type="submit" class="btn-primary" id="pair-submit">Connect</button>
+    </form>
+  </main>
+  <script>
+    document.getElementById("pair-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const error = document.getElementById("pair-error");
+      const button = document.getElementById("pair-submit");
+      error.textContent = "";
+      button.disabled = true;
+      try {
+        const res = await fetch("/api/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: document.getElementById("pairing-code").value.trim(), label: navigator.platform || "Device" })
+        });
+        if (res.ok) {
+          location.replace("/");
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        error.textContent = data.error || "Could not connect.";
+      } catch (e) {
+        error.textContent = "Could not reach the headset.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

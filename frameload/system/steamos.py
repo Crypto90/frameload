@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -37,9 +38,8 @@ def is_steamos() -> bool:
 
 
 def is_steam_frame() -> bool:
-    # Steam Frame running Linux on ARM64 or SteamOS with Lepton
-    uname_m = os.uname().machine.lower()
-    return uname_m in ("aarch64", "arm64") or is_steamos()
+    """SteamOS on 64-bit ARM. The Frame is the only such device; a Steam Deck is x86_64."""
+    return platform.machine().lower() in ("aarch64", "arm64") and is_steamos()
 
 
 def steam_libraries() -> List[str]:
@@ -80,7 +80,8 @@ def find_app(name_regex: str) -> Optional[Dict[str, str]]:
 
 
 def lepton_status() -> Dict[str, Any]:
-    app = find_app(r"Lepton")
+    """Locates Lepton, which ships with the Steam Frame as a Steam app in one of its libraries."""
+    app = find_app(r"^Lepton$") or find_app(r"Lepton")
     candidates = []
     if app:
         candidates.append(os.path.join(app["dir"], "lepton"))
@@ -107,6 +108,7 @@ def lepton_status() -> Dict[str, Any]:
 
 
 def install_lepton_request() -> bool:
+    """Asks Steam to (re)install Lepton: a repair for a system whose copy has gone missing."""
     try:
         subprocess.Popen(
             ["steam", "-ifrunning", f"steam://install/{LEPTON_APPID}"],
@@ -204,9 +206,8 @@ def battery_state() -> Optional[Dict[str, Any]]:
 
 
 def storage_info() -> Dict[str, Any]:
-    home_stat = os.statvfs(HOME)
-    free_bytes = home_stat.f_bavail * home_stat.f_frsize
-    total_bytes = home_stat.f_blocks * home_stat.f_frsize
+    usage = shutil.disk_usage(HOME)
+    free_bytes, total_bytes = usage.free, usage.total
     used_bytes = total_bytes - free_bytes
 
     return {
@@ -219,21 +220,26 @@ def storage_info() -> Dict[str, Any]:
     }
 
 
+def _process_running(name: str) -> bool:
+    try:
+        return subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=3).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def is_steam_running() -> bool:
-    res = subprocess.run(["pgrep", "-x", "steam"], capture_output=True, text=True)
-    return res.returncode == 0
+    return _process_running("steam")
 
 
 def is_desktop_mode() -> bool:
-    res = subprocess.run(["pgrep", "-x", "plasmashell"], capture_output=True, text=True)
-    return res.returncode == 0
+    return _process_running("plasmashell")
 
 
 def get_system_summary() -> Dict[str, Any]:
     osr = get_os_release()
-    uname = os.uname()
+    uname = platform.uname()
     return {
-        "hostname": uname.nodename,
+        "hostname": uname.node,
         "arch": uname.machine,
         "os_name": osr.get("NAME", "Linux"),
         "os_version": osr.get("VERSION_ID", ""),
@@ -246,7 +252,8 @@ def get_system_summary() -> Dict[str, Any]:
         "proton": proton_status(),
         "battery": battery_state(),
         "storage": storage_info(),
-        "host_fixes": ensure_host_podman_fixes(),
+        # Lepton's containers run under rootless podman; nothing to fix on a machine without it.
+        "host_fixes": ensure_host_podman_fixes() if shutil.which("podman") else [],
     }
 
 

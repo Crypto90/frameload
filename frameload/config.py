@@ -1,6 +1,7 @@
 """Configuration management for FrameLoad."""
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -38,6 +39,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "host": "0.0.0.0",
         "port": 5050,
         "auto_open_browser": False,
+        "allowed_hosts": [],
     },
     "mirrors": {
         "catalog_url": "",
@@ -54,20 +56,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "delete_cache_after_install": True,
         "bandwidth_limit_mbps": 0,
     },
-    "game_defaults": {
-        "refresh_rate": 90,
-        "resolution_scale": 1.0,
-        "controller_models": True,
-        "passthrough": True,
-        "msaa": 2,
-    },
+    "game_defaults": {},
     "steam": {
-        "auto_restart_steam": True,
         "add_grid_artwork": True,
     },
     "storage": {
         "default_device_id": "internal",
         "custom_paths": [],
+    },
+    "porting": {
+        "frameport_cli": "",
+        "auto": True,
     },
     "keyboard": {
         "auto_trigger": True,
@@ -93,7 +92,7 @@ class Config:
     _instance: Config | None = None
 
     def __init__(self) -> None:
-        self._config: Dict[str, Any] = DEFAULT_CONFIG.copy()
+        self._config: Dict[str, Any] = copy.deepcopy(DEFAULT_CONFIG)
         self.ensure_dirs()
         self.load()
 

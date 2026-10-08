@@ -39,7 +39,7 @@ Agents working on this repository **MUST** strictly follow this release versioni
      - `dist/SHA256SUMS` (checksums)
      - `dist/RELEASE_NOTES.md` (release changelog)
 4. **Publishing Releases:**
-   - **GitHub Actions:** Pushing a git tag `v*` (e.g., `git push origin v1.0.2`) automatically triggers `.github/workflows/release.yml`, builds distribution archives, and publishes the release on GitHub.
+   - **GitHub Actions:** Pushing a git tag `v*` (e.g., `git push origin v1.0.2`) automatically triggers `.github/workflows/release.yml`, builds distribution archives, and publishes the release on GitHub. Pushes to `main` run the tests only; they do not publish.
    - **Direct Script:** `GITHUB_TOKEN="$TOKEN" python3 scripts/github_release.py <tag>` can be used to publish releases and upload assets directly via the GitHub REST API.
 5. **Latest Version Grep in Installation Commands:**
    - Never hardcode a static release version in general install instructions. Always dynamically query the latest release from the GitHub API or use GitHub's native redirect:
@@ -68,15 +68,23 @@ FrameLoad/
 │   │   ├── models.py         # CatalogGame and DownloadTask models
 │   │   └── vrp_mirror.py     # VRP JSON mirror fetcher & local caching
 │   ├── installer/            # Sideloading, patching, and container runners
-│   │   ├── apk_patcher.py    # Manifest parsing, engine analysis (Unity/Unreal/Godot), FrameBridge shims
+│   │   ├── axml.py           # Binary AndroidManifest.xml + resources.arsc reader (pure Python)
+│   │   ├── apk_analysis.py   # APK inspection + Steam Frame compatibility verdict
+│   │   ├── apk_patcher.py    # Compatibility alias for apk_analysis (nothing is patched)
+│   │   ├── hand_tracking.py  # Hand input modes -> FrameBridge controller_fix, status report
+│   │   ├── porting.py        # Drives FramePort's CLI on the headset to port Quest games (background jobs)
 │   │   ├── artwork.py        # Steam Grid artwork scrapers and local generator
-│   │   ├── lepton_quest.py   # Lepton Android container setup, OBB pairing, permissions auto-repair
+│   │   ├── lepton_quest.py   # Lepton install layout, launch.sh generator, OBB pairing
 │   │   ├── linux_native.py   # Linux native ARM64 & AppImage launcher via Monado / SteamVR
 │   │   ├── package_loader.py # Universal loader (APK, XAPK, APKS, ZIP, Windows EXE, loose folders)
 │   │   └── windows_proton.py # Windows PCVR/flat EXEs via Proton ARM64, FEX-Emu, WineOpenXR
 │   ├── manager/              # High-level management systems
 │   │   ├── backup.py         # Save games backup and restore (~/.local/share/frameload/backups)
-│   │   ├── installed.py      # Installed titles catalog, per-game settings, FrameBridge config
+│   │   ├── installed.py      # Installed titles catalog
+│   │   ├── tuning.py         # Per-game settings schema -> launch env + FrameBridge conf keys
+│   │   ├── migrate.py        # One-time upgrade of installs made by older versions (layout_version)
+│   │   ├── files.py          # File browser roots and uploads from paired devices
+│   │   ├── launchlog.py      # Reads launch.log and names known failures
 │   │   ├── launcher.py       # Game launcher (VR vs. Flat)
 │   │   ├── mods.py           # Beat Saber custom songs & mod manager, auto-folder & permissions
 │   │   ├── settings.py       # System settings, refresh rate (72/80/90/120Hz), resolution scale
@@ -87,6 +95,10 @@ FrameLoad/
 │   │   ├── protocol.py       # Deep linking handler (frameload://)
 │   │   ├── shortcuts.py      # Steam shortcuts.vdf reader/writer, multi-path detection, grid artwork
 │   │   ├── steam_vdf.py      # Pure Python binary VDF encoder and decoder
+│   │   ├── access.py         # Pairing codes and sessions for devices other than the headset
+│   │   ├── doctor.py         # Self-test of every assumption about the headset (`frameload doctor`)
+│   │   ├── fsutil.py         # Delete/move/inspect Lepton data (podman unshare, filesystem support)
+│   │   ├── steam_session.py  # Which shortcuts the running Steam has loaded; safe Steam restart
 │   │   └── steamos.py        # Hardware telemetry (battery, storage, Lepton container, Proton status)
 │   ├── web/                  # Web Dashboard UI & REST API
 │   │   ├── static/           # CSS (style.css), JS (app.js, gamepad.js), and Steam artwork assets
@@ -98,11 +110,30 @@ FrameLoad/
 │   ├── build_release.py      # Builds tarballs, self-extracting installer, SHA256SUMS, and release notes
 │   ├── capture_screenshots.py# Headless Chrome script for automated 1080p README screenshots
 │   └── github_release.py     # Pure Python GitHub REST API release publisher and asset uploader
-├── tests/                    # Comprehensive unit tests (27+ test cases, 100% pass)
+├── tests/                    # Unit tests (140+ cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
 ├── install.sh                # 1-Click on-device installer script
 ├── run.sh                    # Smart runner for Steam and command-line execution
 └── uninstall.sh              # 1-Click clean uninstaller
 ```
+
+---
+
+## 🧭 4a. Lepton & FrameBridge Ground Truth (read before touching installer or settings code)
+
+Verified against Valve's Lepton source (`compat_tool/liblepton/*.sh`) and FramePort's `docs/FRAME_RUNTIME.md`. Do not add a setting unless one of these mechanisms carries it.
+
+1. **Lepton ships with the Steam Frame.** Locate it (`lepton_status()`); never make installing it part of a normal flow.
+2. **What `lepton start` reads:** `SteamAppId`, `STEAM_COMPAT_INSTALL_PATH` (folder with exactly one `*.apk` plus `obb/`), `STEAM_COMPAT_DATA_PATH`, `STEAM_COMPAT_SHADER_PATH`, `STEAM_COMPAT_LIBRARY_PATHS`, `LEPTON_ENV_<NAME>` (passed into the app as `<NAME>`), `FDM_DEBUG`, `FOVE_LEVEL`, `VK_INSTANCE_LAYERS`, and the marker file `lepton-show-flatscreen`.
+3. **No per-game Android properties.** Lepton writes its own `lepton.prop` (`ro.product.model=Lepton`). Device spoofing, `local.prop`, `debug.oculus.*`, MSAA/AF and CPU/GPU levels cannot be set from a launcher. The only exception in use is the navigation-bar property injected through `LEPTON_GFXRECON_*`.
+4. **Launching:** Lepton starts the first real `<activity>` with `MAIN` + `LAUNCHER`. `<activity-alias>` and the Quest store's `INFO` category are ignored ("APP_ACTIVITY is empty"). Lepton is 64-bit only and installs a single APK (no splits).
+5. **FrameBridge** is FramePort's OpenXR adapter inside a ported APK (`libframe_settings.so`, `libopenxr_loader_original.so`). It reads `settings.conf` (via `LEPTON_ENV_FRAMEBRIDGE_CONFIG`) and `Android/data/<pkg>/files/framebridge.conf`. FrameLoad ships no native code; an APK without the adapter ignores those files.
+6. **Hand tracking:** the Frame has no camera hand tracking. SteamVR's Android runtime exposes `XR_EXT_hand_tracking` synthesized from the controllers' finger sensors. FrameBridge `controller_fix=1` hides it and reports Touch controllers; `0` passes it through.
+7. **Dashboard input** is the controller laser (pointer events) and the Gamepad API. A flat web page receives no hand joints.
+8. **Porting is FramePort's job.** Converting a Meta-runtime game needs OVRPort (Java), FramePort's native adapter and apksigner. `installer/porting.py` calls FramePort's CLI (`tools install`, `scan <folder>`, `build <pkg> --outdir`, result line `<pkg>: OK -> <apk>`) with `FRAMEPORT_HOME` inside FrameLoad's folder. Do not reimplement the conversion here; `tests/fake_frameport.py` stands in for the CLI in tests.
+10. **Steam reads shortcuts.vdf only at start** and writes its own copy back on exit. Never assume a freshly written shortcut is launchable through `steam://rungameid`; ask `steam_session.is_pending()` and start the launcher directly (with `FRAMELOAD_DETACHED=1`) when it is.
+11. **Lepton data is owned by subordinate user ids.** Plain `shutil.rmtree`/`copytree`/`tarfile` can silently miss files; use `system/fsutil.py` (`podman unshare`). App-private saves live in `lepton-data/internal/<pkg>`, shared files in `lepton-data/external`.
+12. **Only loopback is trusted.** Any other client must hold a paired session (`system/access.py`). New API routes inherit this from `do_GET`/`do_POST`; do not add routes that bypass `authorized()`.
+9. **Camera hand tracking does not exist on the Frame yet.** It needs a tracker inside SteamVR; nothing in this repo can provide it. Do not add UI or files that claim otherwise.
 
 ---
 

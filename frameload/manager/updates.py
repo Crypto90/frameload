@@ -4,11 +4,13 @@ and automated update checks for installed VR titles via the VRP mirror.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import tarfile
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -16,13 +18,49 @@ from typing import Any, Dict, List, Optional
 from .. import __version__
 from ..catalog.downloader import Downloader
 from ..catalog.vrp_mirror import VrpMirror
-from ..config import HOME
+from ..config import CACHE_DIR, HOME
 from .installed import InstalledManager
 
 GITHUB_API_BASE = "https://api.github.com"
 REPO_OWNER = "Crypto90"
 REPO_NAME = "frameload"
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# GitHub allows 60 anonymous API requests an hour per address; the dashboard asks far more often.
+CHECK_INTERVAL = 6 * 3600
+_check_cache: Dict[str, Any] = {"time": 0.0, "data": None}
+
+
+def _fetch(url: str, timeout: int = 60) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": f"FrameLoad-Updater/{__version__}"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def expected_sha256(sums_text: str, filename: str) -> str:
+    """The checksum SHA256SUMS lists for filename, '' if it is not listed."""
+    for line in sums_text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[-1].lstrip("*").split("/")[-1] == filename:
+            return parts[0].lower()
+    return ""
+
+
+def safe_extract(archive: str, dest: str) -> None:
+    """Extracts a release tarball, refusing entries that would land outside dest."""
+    dest_real = os.path.realpath(dest)
+    with tarfile.open(archive, "r:gz") as tar:
+        for member in tar.getmembers():
+            target = os.path.realpath(os.path.join(dest_real, member.name))
+            if target != dest_real and not target.startswith(dest_real + os.sep):
+                raise ValueError(f"Update archive contains an unsafe path: {member.name}")
+            if member.issym() or member.islnk() or member.isdev():
+                raise ValueError(f"Update archive contains an unexpected entry: {member.name}")
+        try:
+            tar.extractall(dest_real, filter="data")
+        except TypeError:  # Python without extraction filters; entries were checked above
+            tar.extractall(dest_real)
 
 
 def parse_version(v_str: str) -> tuple[int, ...]:
@@ -41,8 +79,18 @@ def parse_version(v_str: str) -> tuple[int, ...]:
 
 class UpdateManager:
     @staticmethod
-    def check_app_update() -> Dict[str, Any]:
-        """Checks GitHub releases and git remote for FrameLoad application updates."""
+    def check_app_update(force: bool = False) -> Dict[str, Any]:
+        """Checks GitHub releases and git remote for FrameLoad application updates.
+
+        The answer is reused for six hours unless force is set (the user pressed Check)."""
+        if not force and _check_cache["data"] and time.time() - _check_cache["time"] < CHECK_INTERVAL:
+            return dict(_check_cache["data"])
+        result = UpdateManager._check_app_update_now()
+        _check_cache.update(time=time.time(), data=result)
+        return dict(result)
+
+    @staticmethod
+    def _check_app_update_now() -> Dict[str, Any]:
         current_version = __version__
         cur_tuple = parse_version(current_version)
 
@@ -53,6 +101,7 @@ class UpdateManager:
         release_notes = ""
         published_at = ""
         download_url = ""
+        checksums_url = ""
         commits_behind = 0
 
         # 1. Query GitHub Releases API
@@ -77,11 +126,11 @@ class UpdateManager:
                     if latest_tuple > cur_tuple:
                         has_update = True
 
-                    # Find standalone tarball asset if available
                     for asset in data.get("assets", []):
-                        if asset.get("name", "").endswith(".tar.gz"):
+                        if asset.get("name", "").endswith(".tar.gz") and not download_url:
                             download_url = asset.get("browser_download_url", "")
-                            break
+                        elif asset.get("name", "") == "SHA256SUMS":
+                            checksums_url = asset.get("browser_download_url", "")
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 print(f"[FrameLoad] Could not check GitHub releases: {e}")
@@ -121,6 +170,7 @@ class UpdateManager:
             "release_notes": release_notes,
             "published_at": published_at,
             "download_url": download_url,
+            "checksums_url": checksums_url,
             "is_git": is_git,
             "commits_behind": commits_behind,
         }
@@ -220,47 +270,37 @@ class UpdateManager:
             except Exception as e:
                 return {"success": False, "error": f"Git update failed: {e}"}
         else:
-            # 2. Standalone update via release tarball
-            status = UpdateManager.check_app_update()
-            tag = status.get("latest_tag", "v1.0.0")
+            # 2. Standalone update via the release tarball, checked against the release's SHA256SUMS
+            status = UpdateManager.check_app_update(force=True)
+            tag = status.get("latest_tag", "")
             tarball_url = status.get("download_url")
-            if not tarball_url:
-                tarball_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{tag}/frameload-{tag}-standalone.tar.gz"
+            sums_url = status.get("checksums_url")
+            if not tarball_url or not sums_url:
+                return {"success": False, "error": "The latest release has no update package with checksums; nothing was changed."}
 
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            tmp_archive = os.path.join(CACHE_DIR, "frameload_update.tar.gz")
             try:
-                tmp_archive = os.path.join(ROOT_DIR, "frameload_update_temp.tar.gz")
+                filename = tarball_url.rsplit("/", 1)[-1]
+                wanted = expected_sha256(_fetch(sums_url, 30).decode("utf-8", errors="replace"), filename)
+                if not wanted:
+                    return {"success": False, "error": f"SHA256SUMS does not list {filename}; nothing was changed."}
                 req = urllib.request.Request(tarball_url, headers={"User-Agent": f"FrameLoad-Updater/{__version__}"})
-                try:
-                    with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_archive, "wb") as f:
-                        shutil.copyfileobj(resp, f)
-                except urllib.error.HTTPError as he:
-                    if he.code == 404:
-                        # Fallback to direct github archive tarball
-                        fallback_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/archive/refs/tags/{tag}.tar.gz"
-                        req2 = urllib.request.Request(fallback_url, headers={"User-Agent": f"FrameLoad-Updater/{__version__}"})
-                        with urllib.request.urlopen(req2, timeout=60) as resp2, open(tmp_archive, "wb") as f2:
-                            shutil.copyfileobj(resp2, f2)
-                    else:
-                        raise
-
-                with tarfile.open(tmp_archive, "r:gz") as tar:
-                    members = tar.getmembers()
-                    first_parts = [m.name.split("/")[0] for m in members if "/" in m.name]
-                    common_root = first_parts[0] if (first_parts and all(p == first_parts[0] for p in first_parts)) else None
-                    if common_root and not any(m.name == "install.sh" for m in members):
-                        for m in members:
-                            if m.name.startswith(common_root + "/"):
-                                m.name = m.name[len(common_root) + 1:]
-                                if m.name:
-                                    tar.extract(m, ROOT_DIR)
-                    else:
-                        tar.extractall(ROOT_DIR)
-
+                digest = hashlib.sha256()
+                with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_archive, "wb") as f:
+                    for block in iter(lambda: resp.read(1024 * 1024), b""):
+                        digest.update(block)
+                        f.write(block)
+                if digest.hexdigest() != wanted:
+                    return {"success": False, "error": "The downloaded update does not match its checksum; nothing was changed."}
+                safe_extract(tmp_archive, ROOT_DIR)
+                update_log = f"Installed {tag} (checksum verified)."
+            except Exception as e:
+                return {"success": False, "error": f"Update failed: {e}"}
+            finally:
                 if os.path.isfile(tmp_archive):
                     os.remove(tmp_archive)
-                update_log = f"Successfully extracted {tag} release bundle."
-            except Exception as e:
-                return {"success": False, "error": f"Tarball update failed: {e}"}
+        _check_cache.update(time=0.0, data=None)
 
         # 3. Execute install.sh with --no-restart to refresh shortcuts, systemd services, and container settings
         install_script = os.path.join(ROOT_DIR, "install.sh")
@@ -273,15 +313,21 @@ class UpdateManager:
 
         # 4. Trigger systemd service restart in background after response is sent (2s delay)
         try:
+            run_sh = os.path.join(ROOT_DIR, "run.sh")
+            # With the systemd service: restart it. Started by run.sh instead: stop and start that way.
             restart_cmd = (
-                "export XDG_RUNTIME_DIR=\"/run/user/$(id -u)\" && "
-                "export DBUS_SESSION_BUS_ADDRESS=\"unix:path=$XDG_RUNTIME_DIR/bus\" && "
-                "sleep 2 && systemctl --user restart frameload.service"
+                "export XDG_RUNTIME_DIR=\"/run/user/$(id -u)\"; "
+                "export DBUS_SESSION_BUS_ADDRESS=\"unix:path=$XDG_RUNTIME_DIR/bus\"; "
+                "sleep 2; "
+                "if systemctl --user is-active --quiet frameload.service; then "
+                "systemctl --user restart frameload.service; "
+                f"else bash '{run_sh}' --kill; bash '{run_sh}' --daemon; fi"
             )
             subprocess.Popen(
                 ["bash", "-c", restart_cmd],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
             )
         except Exception:
             pass

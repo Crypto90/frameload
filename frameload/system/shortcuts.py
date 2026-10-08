@@ -282,6 +282,9 @@ def register_game_in_steam(
             art = install_grid_artwork(user, appid, artwork_dir)
         results[user] = {"appid": appid, "artwork": art}
 
+    from . import steam_session
+    steam_session.note_written(launch_script_path, title)
+
     return {
         "success": True,
         "appid": appid,
@@ -307,6 +310,8 @@ def unregister_game_from_steam(launch_script_path: str, appid: Optional[int] = N
                     os.remove(art)
                 except OSError:
                     pass
+    from . import steam_session
+    steam_session.forget(launch_script_path)
     return any_removed
 
 

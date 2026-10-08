@@ -33,12 +33,20 @@ const state = {
 };
 
 // --- API Helpers ---
+async function apiError(res) {
+  const text = await res.text();
+  if (res.status === 401) { location.reload(); }
+  if (res.status === 403 && /refused/i.test(text)) showHostRefused();
+  try {
+    return new Error(JSON.parse(text).error || text || `HTTP ${res.status}`);
+  } catch (_) {
+    return new Error(text || `HTTP ${res.status}`);
+  }
+}
+
 async function apiGet(url) {
   const res = await fetch(url);
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText || "API Error");
-  }
+  if (!res.ok) throw await apiError(res);
   return res.json();
 }
 
@@ -48,11 +56,27 @@ async function apiPost(url, data = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
   });
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText || "API Error");
-  }
+  if (!res.ok) throw await apiError(res);
   return res.json();
+}
+
+// The server answers 403 when the dashboard was opened under a host name it does not trust.
+function showHostRefused() {
+  const banner = document.getElementById("host-refused-banner");
+  const command = document.getElementById("host-refused-command");
+  if (command) command.textContent = `frameload allow-host ${location.hostname}`;
+  if (banner) banner.style.display = "block";
+}
+
+// Catalog names, app titles and paths are third-party text: never put them into HTML unescaped.
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+// A value as a JavaScript string literal that is safe inside an inline event-handler attribute.
+function jsArg(value) {
+  return escapeHtml(JSON.stringify(String(value ?? "")));
 }
 
 // --- Steam Frame On-Screen Keyboard Integration ---
@@ -182,9 +206,11 @@ document.addEventListener("DOMContentLoaded", () => {
   loadStorageOverview();
   loadSystemTelemetry();
   checkForUpdates(false);
+  checkHealthOnce();
   startPollingDownloads();
   setInterval(loadSystemTelemetry, 8000);
-  setInterval(() => checkForUpdates(false), 60000);
+  setInterval(() => checkForUpdates(false), 6 * 3600 * 1000);
+  loadSteamStatus();
 });
 
 // --- Tab Switching ---
@@ -203,9 +229,9 @@ function setupTabs() {
       if (targetPanel) targetPanel.classList.add("active");
 
       if (targetId === "catalog") loadCatalog();
-      else if (targetId === "library") loadInstalled();
+      else if (targetId === "library") { loadInstalled(); loadSteamStatus(); }
       else if (targetId === "storage") loadStorageOverview();
-      else if (targetId === "system") loadSystemTelemetry();
+      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); }
 
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
     });
@@ -216,29 +242,6 @@ function setupTabs() {
   if (hash) {
     const tabEl = document.querySelector(`.tab-btn[data-tab="${hash}"]`);
     if (tabEl) tabEl.click();
-    if (hash === "modal") {
-      setTimeout(() => {
-        const bs = (state.installed && state.installed.find(g => g.package === "com.beatgames.beatsaber")) || (state.installed && state.installed[0]) || (state.catalog && state.catalog.items[0]);
-        if (bs) openGameModal(bs.package || bs.id, state.installed && state.installed.length ? "installed" : "catalog");
-      }, 500);
-    }
-    if (hash === "modal-catalog") {
-      setTimeout(() => {
-        const catGame = (state.catalog && state.catalog.items.find(g => g.notes)) || (state.catalog && state.catalog.items[0]);
-        if (catGame) openGameModal(catGame.id, "catalog");
-      }, 700);
-    }
-    if (hash === "sideload") {
-      setTimeout(() => {
-        const flatCheck = document.getElementById("sideload-flat");
-        if (flatCheck) {
-          flatCheck.checked = true;
-          toggleFlatWindowPreset(true);
-        }
-        const pathInput = document.getElementById("sideload-apk-path");
-        if (pathInput) pathInput.value = "/run/media/deck/SD_CARD/GorillaTag_v1.2.xapk";
-      }, 200);
-    }
   }
 }
 
@@ -280,9 +283,20 @@ function setupSearch() {
     kindSelect.addEventListener("change", (e) => {
       state.catalog.kind = e.target.value;
       state.catalog.page = 1;
+      applyCatalogKind();
       loadCatalog();
     });
   }
+
+  const categorySelect = document.getElementById("catalog-category-select");
+  if (categorySelect) {
+    categorySelect.addEventListener("change", (e) => {
+      state.catalog.category = e.target.value;
+      state.catalog.page = 1;
+      loadCatalog();
+    });
+  }
+  applyCatalogKind();
 
   const syncBtn = document.getElementById("sync-catalog-btn");
   if (syncBtn) {
@@ -292,32 +306,103 @@ function setupSearch() {
   initCatalogInfiniteScroll();
 }
 
+// The two catalogs differ: F-Droid has categories but no download counts or ratings.
+function applyCatalogKind() {
+  const isFlat = state.catalog.kind === "flat";
+  const categorySelect = document.getElementById("catalog-category-select");
+  const sortSelect = document.getElementById("sort-select");
+  const hint = document.getElementById("catalog-source-hint");
+  const search = document.getElementById("search-input");
+  if (categorySelect) categorySelect.style.display = isFlat ? "" : "none";
+  if (hint) hint.textContent = isFlat ? "Free and open-source Android apps from F-Droid, shown as 2D windows" : "Browse public VR mirror";
+  if (search) search.placeholder = isFlat ? "Search apps... (Y to focus)" : "Search VR games, packages, or releases... (Y to focus)";
+  if (sortSelect) {
+    Array.from(sortSelect.options).forEach(opt => {
+      const unsupported = isFlat && /^(downloads|rating)_/.test(opt.value);
+      opt.hidden = unsupported;
+      opt.disabled = unsupported;
+    });
+    if (isFlat && /^(downloads|rating)_/.test(sortSelect.value)) {
+      sortSelect.value = "date_desc";
+      state.catalog.sortBy = "date";
+      state.catalog.sortOrder = "desc";
+    }
+  }
+  if (isFlat) { loadCatalogCategories(); loadAppUpdates(); }
+  else { const btn = document.getElementById("fdroid-updates-btn"); if (btn) btn.style.display = "none"; }
+}
+
+async function loadAppUpdates() {
+  const btn = document.getElementById("fdroid-updates-btn");
+  if (!btn) return;
+  try {
+    const data = await apiGet("/api/catalog/updates");
+    const count = (data.updates || []).length;
+    btn.style.display = count && state.catalog.kind === "flat" ? "" : "none";
+    btn.textContent = count === 1 ? "Update 1 App" : `Update ${count} Apps`;
+    btn.title = (data.updates || []).map(u => `${u.title}: ${u.installed_version} -> ${u.new_version}`).join("\n");
+  } catch (e) {
+    btn.style.display = "none";
+  }
+}
+
+async function updateAllApps() {
+  try {
+    const res = await apiPost("/api/catalog/update-all", {});
+    showToast(res.queued ? `Updating ${res.queued} app(s)...` : "Everything is up to date.", "info");
+    loadAppUpdates();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.updateAllApps = updateAllApps;
+
+async function loadCatalogCategories() {
+  const select = document.getElementById("catalog-category-select");
+  if (!select) return;
+  try {
+    const data = await apiGet("/api/catalog/categories");
+    const current = state.catalog.category || "";
+    select.innerHTML = '<option value="">All categories</option>' + (data.categories || []).map(c =>
+      `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)} (${c.count})</option>`).join("");
+    select.value = current;
+  } catch (e) {
+    console.error("Error loading categories:", e);
+  }
+}
+
 // --- Progressive Infinite Catalog Loading ---
 function buildGameCardHTML(game, installedPkgs) {
-  const isInstalled = installedPkgs.has(game.package_name);
-  const thumbUrl = game.thumbnail_url || `/api/thumbnail/${game.package_name}`;
+  const isFlat = game.kind === "flat";
+  const isInstalled = game.is_installed || installedPkgs.has(game.package_name);
+  const thumbUrl = game.thumbnail_url || `/api/thumbnail/${encodeURIComponent(game.package_name)}`;
+  const version = game.version_name || (game.version_code ? "v" + game.version_code : "");
+  const meta = game.downloads ? "📥 " + Number(game.downloads).toLocaleString() : version;
+
+  let action = `<button class="card-btn download" onclick="event.stopPropagation(); queueDownload(${jsArg(game.id)})">${isFlat ? "Install" : "Download"}</button>`;
+  if (isInstalled && game.update_available) {
+    action = `<button class="card-btn update" onclick="event.stopPropagation(); queueDownload(${jsArg(game.id)})">Update</button>`;
+  } else if (isInstalled) {
+    action = `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${jsArg(game.package_name)})">${isFlat ? "Open" : "Play"}</button>`;
+  }
 
   return `
-    <div class="game-card" data-id="${game.id}" draggable="false" onclick="openGameModal('${game.id}', 'catalog')">
+    <div class="game-card${isFlat ? " app-card" : ""}" data-id="${escapeHtml(game.id)}" draggable="false" onclick="openGameModal(${jsArg(game.id)}, 'catalog')">
       <div class="card-poster">
-        <img src="${thumbUrl}" alt="${game.name}" draggable="false" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <img src="${escapeHtml(thumbUrl)}" alt="" draggable="false" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
         <div class="badge-overlay">
-          <span class="badge ${game.kind === 'flat' ? 'flat' : 'vr'}">${game.kind === 'flat' ? '2D' : 'VR'}</span>
-          ${isInstalled ? '<span class="badge installed">Installed</span>' : ''}
+          <span class="badge ${isFlat ? "flat" : "vr"}">${isFlat ? "2D" : "VR"}</span>
+          ${isInstalled ? '<span class="badge installed">Installed</span>' : ""}
         </div>
       </div>
       <div class="card-body">
-        <div class="card-title" title="${game.name}">${game.name}</div>
+        <div class="card-title" title="${escapeHtml(game.name)}">${escapeHtml(game.name)}</div>
+        ${isFlat && game.summary ? `<div class="card-summary">${escapeHtml(game.summary)}</div>` : ""}
         <div class="card-meta">
-          <span>${game.size_formatted}</span>
-          <span>${game.downloads ? '📥 ' + game.downloads.toLocaleString() : (game.version_code ? 'v' + game.version_code : '')}</span>
+          <span>${escapeHtml(game.size_formatted)}</span>
+          <span>${escapeHtml(meta)}</span>
         </div>
-        <div class="card-actions">
-          ${isInstalled 
-            ? `<button class="card-btn play" onclick="event.stopPropagation(); launchGame('${game.package_name}')">Play</button>`
-            : `<button class="card-btn download" onclick="event.stopPropagation(); queueDownload('${game.id}')">Download</button>`
-          }
-        </div>
+        <div class="card-actions">${action}</div>
       </div>
     </div>
   `;
@@ -332,7 +417,7 @@ async function loadCatalog(page = 1, append = false) {
     state.catalog.page = 1;
     state.catalog.items = [];
     state.catalog.hasMore = true;
-    container.innerHTML = `<div class="loading-state">Scanning VR mirror catalog...</div>`;
+    container.innerHTML = `<div class="loading-state">${state.catalog.kind === "flat" ? "Loading apps..." : "Scanning VR mirror catalog..."}</div>`;
   }
 
   try {
@@ -344,6 +429,9 @@ async function loadCatalog(page = 1, append = false) {
       sort_order: state.catalog.sortOrder,
       kind: state.catalog.kind
     });
+    if (state.catalog.kind === "flat" && state.catalog.category) {
+      params.set("category", state.catalog.category);
+    }
 
     const res = await fetch(`/api/catalog?${params}`);
     const data = await res.json();
@@ -365,7 +453,7 @@ async function loadCatalog(page = 1, append = false) {
     } else {
       state.catalog.items = newItems;
       if (newItems.length === 0) {
-        container.innerHTML = `<div class="empty-state">No VR titles match your query. Click "Sync Catalog" to refresh mirror metadata.</div>`;
+        container.innerHTML = `<div class="empty-state">${catalogEmptyMessage(data)}</div>`;
       } else {
         container.innerHTML = newItems.map(game => buildGameCardHTML(game, installedPkgs)).join("");
       }
@@ -374,13 +462,23 @@ async function loadCatalog(page = 1, append = false) {
     if (window.gamepadNav) window.gamepadNav.updateFocusables();
   } catch (err) {
     if (!append) {
-      container.innerHTML = `<div class="error-state">Failed to load catalog. Ensure the mirror is reachable.</div>`;
+      container.innerHTML = `<div class="error-state">Could not load the catalog. Check that FrameLoad is still running.</div>`;
     }
     console.error("Error loading catalog:", err);
   } finally {
     state.catalog.loadingMore = false;
     if (loader) loader.style.display = "none";
   }
+}
+
+function catalogEmptyMessage(data) {
+  if (state.catalog.kind !== "flat") {
+    return 'No VR titles match your query. Click "Sync Catalog" to refresh mirror metadata.';
+  }
+  if (!data.last_sync) {
+    return 'The F-Droid app catalog has not been downloaded yet. Press "Sync Catalog" to fetch it (about 10 MB).';
+  }
+  return "No apps match your search.";
 }
 
 async function loadMoreCatalog() {
@@ -435,22 +533,23 @@ function renderCatalogGrid() {
 
 async function syncCatalog() {
   const btn = document.getElementById("sync-catalog-btn");
-  if (btn) btn.classList.add("spinning");
-  showToast("🔄 Syncing VR catalog metadata from mirror...", "info");
+  const isFlat = state.catalog.kind === "flat";
+  if (btn) { btn.classList.add("spinning"); btn.disabled = true; }
+  showToast(isFlat ? "Downloading the F-Droid app catalog..." : "🔄 Syncing VR catalog metadata from mirror...", "info");
 
   try {
-    const res = await fetch("/api/catalog/sync", { method: "POST" });
-    const data = await res.json();
+    const data = await apiPost("/api/catalog/sync", { kind: state.catalog.kind });
     if (data.success) {
-      showToast(`✅ Catalog synced! ${data.total_games} games available.`, "success");
+      showToast(isFlat ? (data.message || `${data.total_games} apps available.`) : `✅ Catalog synced! ${data.total_games} games available.`, "success");
+      if (isFlat) loadCatalogCategories();
       loadCatalog(1, false);
     } else {
-      showToast("⚠️ Could not download metadata. Check network connection.", "error");
+      showToast(data.message || "Could not download the catalog. Check the network connection.", "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
   } finally {
-    if (btn) btn.classList.remove("spinning");
+    if (btn) { btn.classList.remove("spinning"); btn.disabled = false; }
   }
 }
 
@@ -564,13 +663,16 @@ async function pollDownloadsOnce() {
     state.downloads = data.tasks || [];
     renderDownloadsDrawer();
     renderDownloadsTab();
+    offerPendingLink(data.pending_links || []);
 
     // Check for newly completed tasks to alert user and refresh installed library
     state.downloads.forEach(t => {
       if (t.status === "completed" && !knownCompletedTaskIds.has(t.id)) {
         knownCompletedTaskIds.add(t.id);
-        showToast(`🎉 ${t.game.name} is installed and ready to play!`, "success");
+        showToast(`${t.game.name} is installed.`, "success");
         loadInstalled();
+        loadSteamStatus();
+        if (state.catalog.kind === "flat") loadAppUpdates();
       }
     });
   } catch (err) {
@@ -695,7 +797,7 @@ function renderDownloadsTab() {
     return `
       <div class="download-item-card" data-id="${t.id}">
         <div class="download-info">
-          <h3>${t.game.name}</h3>
+          <h3>${escapeHtml(t.game.name)}</h3>
           <p>${statusText}</p>
         </div>
         <div class="progress-track" style="margin: 12px 0;">
@@ -749,7 +851,7 @@ function renderInstalledGrid() {
   if (!container) return;
 
   if (state.installed.length === 0) {
-    container.innerHTML = `<div class="empty-state">No games installed on Steam Frame yet. Explore the Catalog to download games!</div>`;
+    container.innerHTML = `<div class="empty-state">Nothing installed yet. Browse the catalog or sideload an APK.</div>`;
     return;
   }
 
@@ -757,29 +859,33 @@ function renderInstalledGrid() {
     const updateInfo = (state.updates && state.updates.games)
       ? state.updates.games.find(u => u.package === game.package)
       : null;
+    const pkg = jsArg(game.package);
+    const level = (game.compat && game.compat.level) || "";
+    const needsAttention = level === "needs_port" || level === "blocked";
 
     return `
-      <div class="game-card" data-package="${game.package}" draggable="false" onclick="openGameModal('${game.package}', 'installed')">
+      <div class="game-card" data-package="${escapeHtml(game.package)}" draggable="false" onclick="openGameModal(${pkg}, 'installed')">
         <div class="card-poster">
-          <img src="${game.thumbnail_url || '/static/assets/fallback_cover.svg'}" alt="${game.title}" draggable="false" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+          <img src="${escapeHtml(game.thumbnail_url || '/static/assets/fallback_cover.svg')}" alt="" draggable="false" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
           <div class="badge-overlay">
             <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
             ${game.is_external ? '<span class="badge" style="background:#27ae60; color:#fff;" title="Installed on MicroSD Card">MicroSD</span>' : ''}
             ${game.is_running ? '<span class="badge installed" style="background:#00f2fe;">Running</span>' : ''}
             ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
+            ${needsAttention ? `<span class="badge compat-${escapeHtml(level)}" title="${escapeHtml(game.compat.label)}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ''}
           </div>
         </div>
         <div class="card-body">
-          <div class="card-title">${game.title}</div>
+          <div class="card-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
           <div class="card-meta">
             <span>${game.is_external ? '💾 MicroSD' : '💿 Internal'}</span>
-            <span>Engine: ${game.engine}</span>
+            <span>${escapeHtml(game.engine || "")}</span>
           </div>
           <div class="card-actions">
-            ${updateInfo 
-              ? `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame('${game.package}')">⚡ Update</button>`
-              : `<button class="card-btn play" onclick="event.stopPropagation(); launchGame('${game.package}')">Launch</button>`}
-            <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal('${game.package}')">Config</button>
+            ${updateInfo
+              ? `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame(${pkg})">⚡ Update</button>`
+              : `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${pkg})">Launch</button>`}
+            <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
           </div>
         </div>
       </div>
@@ -799,7 +905,9 @@ async function launchGame(pkg) {
     });
     const data = await res.json();
     if (data.success) {
-      showToast("Game started in SteamVR!", "success");
+      showToast(data.launched_via_steam ? "Starting through Steam..."
+        : data.in_steam_library === false ? "Starting directly: Steam has not loaded this game yet."
+        : "Starting...", "success");
       loadInstalled();
     } else {
       showToast(data.error || "Failed to launch game", "error");
@@ -836,6 +944,7 @@ async function uninstallGame(pkg, keepSaves = true) {
 async function loadSystemTelemetry() {
   try {
     const res = await fetch("/api/system");
+    if (res.status === 403) showHostRefused();
     const data = await res.json();
     state.system = data;
 
@@ -854,7 +963,8 @@ async function loadSystemTelemetry() {
     if (lepChip) {
       const isReady = data.lepton && data.lepton.installed;
       lepChip.className = `telemetry-chip lepton ${isReady ? 'active' : 'missing'}`;
-      lepChip.textContent = isReady ? 'Lepton Ready' : 'Lepton Missing';
+      lepChip.textContent = isReady ? 'Lepton Ready' : 'Lepton Not Found';
+      lepChip.title = isReady ? data.lepton.path : "Lepton ships with the Steam Frame. It was not found in any Steam library on this machine.";
     }
 
     renderSystemTab(data);
@@ -867,19 +977,46 @@ function renderSystemTab(sys) {
   const panel = document.getElementById("tab-system");
   if (!panel || !sys) return;
 
-  const leptonHtml = sys.lepton.installed 
-    ? `<span style="color:var(--accent-emerald);">Installed (${sys.lepton.path})</span>`
-    : `<button class="btn-primary" onclick="installLepton()">Install Lepton via Steam</button>`;
+  // Lepton ships with the Steam Frame; offering a reinstall only makes sense if it has gone missing.
+  const leptonHtml = sys.lepton.installed
+    ? `<span style="color:var(--accent-emerald);">Ready</span> <code style="font-size:0.75rem; word-break:break-all;">${escapeHtml(sys.lepton.path)}</code>`
+    : `<span style="color:var(--accent-amber);">Not found on this system.</span> ${sys.is_steam_frame ? '<button class="btn-secondary compact" onclick="installLepton()">Ask Steam to reinstall it</button>' : ''}`;
 
   const protonHtml = sys.proton.has_proton
-    ? `<span style="color:var(--accent-emerald);">${sys.proton.installed_tools.join(', ')}</span>`
+    ? `<span style="color:var(--accent-emerald);">${escapeHtml(sys.proton.installed_tools.join(', '))}</span>`
     : `<span style="color:var(--accent-amber);">No Proton ARM64 tool detected</span>`;
 
   document.getElementById("sys-os").textContent = `${sys.os_name} ${sys.os_version} (${sys.arch})`;
   document.getElementById("sys-lepton").innerHTML = leptonHtml;
   document.getElementById("sys-proton").innerHTML = protonHtml;
   document.getElementById("sys-storage").textContent = `${sys.storage.free_gb} GB free / ${sys.storage.total_gb} GB (${sys.storage.percent_used}% used)`;
+  const notFrame = document.getElementById("sys-not-frame-note");
+  if (notFrame) notFrame.style.display = sys.is_steam_frame ? "none" : "block";
 }
+
+async function loadHandStatus() {
+  const summary = document.getElementById("hand-status-summary");
+  const list = document.getElementById("hand-status-games");
+  if (!summary || !list) return;
+  try {
+    const data = await apiGet("/api/tuning/hand-tracking");
+    summary.textContent = data.summary;
+    const labels = { hands: "Hands", controllers: "Controllers", game: "Game default" };
+    const games = (data.games || []).filter(g => g.requirement !== "none" || g.mode !== "auto");
+    list.innerHTML = games.length
+      ? games.map(g => `
+          <button type="button" class="hand-game-row" onclick="openTuningModal(${jsArg(g.package)})">
+            <span class="hand-game-title">${escapeHtml(g.title || g.package)}</span>
+            <span class="hand-game-meta">${g.requirement === "required" ? "requires hands" : g.requirement === "optional" ? "supports hands" : "no hand tracking"}</span>
+            <span class="badge ${g.effective === "hands" ? "installed" : ""}">${labels[g.effective] || g.effective}${g.framebridge ? "" : " *"}</span>
+          </button>`).join("") + (games.some(g => !g.framebridge)
+            ? `<p class="tuning-micro-note" style="margin-top:8px;">* Not a FramePort-ported build: the Frame's runtime decides, FrameLoad's switch has no effect.</p>` : "")
+      : `<p class="tuning-micro-note">None of your installed games ask for hand tracking.</p>`;
+  } catch (e) {
+    summary.textContent = "Could not load hand tracking status.";
+  }
+}
+window.loadHandStatus = loadHandStatus;
 
 async function installLepton() {
   showToast("Requesting Lepton runtime installation via Steam...", "info");
@@ -946,7 +1083,7 @@ function openGameModal(id, mode = "catalog") {
   const kindBadge = document.getElementById("modal-badge-kind");
   if (kindBadge) {
     kindBadge.className = `badge ${game.kind === 'flat' ? 'flat' : 'vr'}`;
-    kindBadge.textContent = game.kind === 'flat' ? '2D Flat' : 'VR Quest';
+    kindBadge.textContent = game.kind === 'flat' ? '2D App' : 'VR';
   }
   const instBadge = document.getElementById("modal-badge-installed");
   if (instBadge) {
@@ -966,7 +1103,7 @@ function openGameModal(id, mode = "catalog") {
   // Version and Last Updated
   const versionEl = document.getElementById("modal-game-version");
   if (versionEl) {
-    versionEl.textContent = game.version_code ? `v${game.version_code}` : (game.version || "1.0");
+    versionEl.textContent = game.version_name || (game.version_code ? `v${game.version_code}` : (game.version || "1.0"));
   }
   const updatedEl = document.getElementById("modal-game-updated");
   if (updatedEl) {
@@ -988,7 +1125,24 @@ function openGameModal(id, mode = "catalog") {
   const notesSection = document.getElementById("modal-notes-section");
   const notesText = document.getElementById("modal-game-notes");
   if (notesSection && notesText) {
-    if (game.notes && game.notes.trim()) {
+    const notesHeading = notesSection.querySelector("span");
+    if (notesHeading) notesHeading.textContent = game.source === "fdroid" ? "About this app" : "💡 Release Notes & Headset Instructions";
+    if (game.source === "fdroid") {
+      const about = [game.summary, (game.categories || []).join(", "), game.license ? `License: ${game.license}` : "",
+        (game.anti_features || []).length ? `F-Droid notes: ${game.anti_features.join(", ")}` : ""].filter(Boolean).join("\n");
+      notesText.textContent = about;
+      notesSection.style.display = about ? "block" : "none";
+      fetch(`/api/catalog/game/${encodeURIComponent(game.id)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (state.selectedGame !== game || !data.game || !data.game.description) return;
+          // F-Droid descriptions contain simple HTML; show them as plain text.
+          const plain = new DOMParser().parseFromString(data.game.description, "text/html").body.textContent || "";
+          notesText.textContent = [about, plain.trim()].filter(Boolean).join("\n\n");
+          notesSection.style.display = "block";
+        })
+        .catch(() => {});
+    } else if (game.notes && game.notes.trim()) {
       notesText.textContent = game.notes.trim();
       notesSection.style.display = "block";
     } else {
@@ -1029,10 +1183,10 @@ function openGameModal(id, mode = "catalog") {
       platformEl.textContent = "Steam Frame (Proton ARM64 via FEX-Emu)";
     } else if (game.install_type === "linux_native") {
       platformEl.textContent = "Steam Frame (Linux Native ARM64)";
-    } else if (game.force_flat) {
-      platformEl.textContent = `Steam Frame (Lepton 2D Window: ${game.window_preset || "tablet"})`;
+    } else if (game.kind === "flat") {
+      platformEl.textContent = "Lepton (Android), shown as a 2D window";
     } else {
-      platformEl.textContent = "Steam Frame (Lepton Container VR)";
+      platformEl.textContent = "Lepton (Android VR)";
     }
   }
   if (openxrEl) {
@@ -1040,8 +1194,14 @@ function openGameModal(id, mode = "catalog") {
       openxrEl.textContent = game.is_vr ? "WineOpenXR -> SteamVR" : "Disabled (Flat Desktop App)";
     } else if (game.install_type === "linux_native") {
       openxrEl.textContent = game.is_vr ? "Monado / SteamVR Native OpenXR" : "Disabled (Flat Native App)";
+    } else if (game.kind === "flat") {
+      openxrEl.textContent = "Not used (2D app)";
+    } else if (mode === "installed") {
+      const runtimes = { framebridge: "SteamVR via FrameBridge (FramePort port)", openxr: "SteamVR (native OpenXR)",
+        meta: "Built for Meta's runtime - not ported", vrapi: "Legacy VrApi - not ported" };
+      openxrEl.textContent = runtimes[game.xr_runtime] || "SteamVR";
     } else {
-      openxrEl.textContent = "FrameBridge Adapter & Controller Models";
+      openxrEl.textContent = "Checked when installed";
     }
   }
 
@@ -1056,17 +1216,25 @@ function openGameModal(id, mode = "catalog") {
     }
   }
 
+  renderCompatNotice(document.getElementById("modal-compat"), mode === "installed" ? game.compat : null);
+
   const actionContainer = document.getElementById("modal-actions");
   if (mode === "catalog") {
+    const verb = isInstalled ? (game.update_available ? "Update" : "Reinstall") : (game.kind === "flat" ? "Install" : "Download to Steam Frame");
     actionContainer.innerHTML = `
-      <button class="btn-primary" onclick="queueDownload('${game.id}'); closeModal();">Download to Steam Frame</button>
+      <button class="btn-primary" onclick="queueDownload(${jsArg(game.id)}); closeModal();">${verb}</button>
+      ${isInstalled ? `<button class="btn-secondary" onclick="launchGame(${jsArg(pkg)}); closeModal();">Open</button>` : ""}
     `;
   } else {
+    const arg = jsArg(game.package);
+    const lepton = game.kind === "quest" || game.kind === "flat";
     actionContainer.innerHTML = `
-      <button class="btn-primary" onclick="launchGame('${game.package}'); closeModal();">Launch in VR</button>
-      <button class="btn-secondary" style="border-color:var(--accent-cyan); color:var(--accent-cyan); font-weight:700;" onclick="openTuningModal('${game.package}')">🥽 Steam Frame Optimizer</button>
-      <button class="btn-secondary" onclick="backupSaves('${game.package}')">Backup Saves</button>
-      <button class="btn-secondary" style="color:var(--accent-danger);" onclick="uninstallGame('${game.package}')">Uninstall</button>
+      <button class="btn-primary" onclick="launchGame(${arg}); closeModal();">${game.is_vr ? "Launch in VR" : "Open"}</button>
+      ${lepton ? `<button class="btn-secondary" onclick="openTuningModal(${arg})">Settings</button>` : ""}
+      ${game.kind === "quest" && game.compat && game.compat.level === "needs_port" ? `<button class="btn-secondary" style="border-color:var(--accent-amber); color:var(--accent-amber);" onclick="closeModal(); portGame(${arg})">Port for Steam Frame</button>` : ""}
+      ${lepton ? `<button class="btn-secondary" onclick="openLogModal(${arg})">Launch Log</button>` : ""}
+      <button class="btn-secondary" onclick="backupSaves(${arg})">Backup Saves</button>
+      <button class="btn-secondary" style="color:var(--accent-danger);" onclick="uninstallGame(${arg})">Uninstall</button>
     `;
   }
 
@@ -1132,6 +1300,21 @@ async function backupSaves(pkg) {
   }
 }
 
+// Shows an APK's Steam Frame verdict (from /api/local/inspect or an installed game's record).
+function renderCompatNotice(el, compat) {
+  if (!el) return;
+  if (!compat || !compat.level) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+  const issues = (compat.issues || []).map(i =>
+    `<li class="compat-issue ${escapeHtml(i.severity)}">${escapeHtml(i.message)}</li>`).join("");
+  el.className = `compat-notice compat-${compat.level}`;
+  el.innerHTML = `<div class="compat-title">${escapeHtml(compat.label)}</div>${issues ? `<ul>${issues}</ul>` : ""}`;
+  el.style.display = "block";
+}
+
 // --- Sideload Form ---
 async function inspectSideloadPath() {
   const input = document.getElementById("sideload-apk-path");
@@ -1170,7 +1353,7 @@ async function inspectSideloadPath() {
           badgeEl.textContent = insp.is_vr ? "Linux VR" : "Linux Native";
           badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "#2ec4b6";
         } else {
-          badgeEl.textContent = insp.is_vr ? "Quest VR" : "2D Flat";
+          badgeEl.textContent = insp.is_vr === null ? "Android" : (insp.is_vr ? "Android VR" : "2D App");
           badgeEl.style.background = insp.is_vr ? "var(--accent-cyan)" : "var(--accent-amber)";
         }
         badgeEl.style.color = "#000";
@@ -1178,7 +1361,11 @@ async function inspectSideloadPath() {
       if (titleInput && !titleInput.value) {
         titleInput.value = insp.title || "";
       }
-      showToast("Package inspected successfully!", "success");
+      renderCompatNotice(document.getElementById("inspect-compat"), insp.compat);
+      const flatCheck = document.getElementById("sideload-flat");
+      if (flatCheck && insp.is_vr === false && (insp.source_type === "apk" || insp.source_type === "directory")) {
+        flatCheck.checked = true;
+      }
     } else {
       showToast(data.error || "Could not inspect source path", "error");
     }
@@ -1188,12 +1375,7 @@ async function inspectSideloadPath() {
 }
 window.inspectSideloadPath = inspectSideloadPath;
 
-function toggleFlatWindowPreset(isFlat) {
-  const group = document.getElementById("sideload-window-preset-group");
-  if (group) {
-    group.style.display = isFlat ? "block" : "none";
-  }
-}
+function toggleFlatWindowPreset() {}
 window.toggleFlatWindowPreset = toggleFlatWindowPreset;
 
 function setupSideloadForm() {
@@ -1205,8 +1387,6 @@ function setupSideloadForm() {
     const sourcePath = document.getElementById("sideload-apk-path").value.trim();
     const title = document.getElementById("sideload-title").value.trim();
     const forceFlat = document.getElementById("sideload-flat").checked;
-    const windowPresetSelect = document.getElementById("sideload-window-preset");
-    const windowPreset = windowPresetSelect ? windowPresetSelect.value : "tablet";
     const targetDriveSelect = document.getElementById("sideload-target-drive");
     const deviceId = targetDriveSelect ? targetDriveSelect.value : "internal";
 
@@ -1225,18 +1405,29 @@ function setupSideloadForm() {
           source_path: sourcePath,
           title: title,
           force_flat: forceFlat,
-          window_preset: windowPreset,
           device_id: deviceId
         })
       });
       const data = await res.json();
       if (data.success) {
-        showToast("Installation complete! Added to Steam Library.", "success");
+        const level = data.compat && data.compat.level;
+        const port = data.porting || {};
+        if (port.started) {
+          // Built for Meta's runtime: the port starts on its own, and its progress is shown.
+          state.porting.jobId = port.job.id;
+          openPortingModal();
+          showToast("Installed. Porting it for the Steam Frame now...", "info");
+        } else if (port.needed && port.reason === "not_set_up") {
+          showToast("Installed. It needs porting before it starts: press Set Up Porting under System & Diagnostics once, and it is ported automatically.", "warning");
+        } else if (level === "needs_port" || level === "blocked") {
+          showToast(`Installed, but: ${data.compat.label}. Open it in the library for details.`, "warning");
+        } else {
+          showToast("Installed and added to your Steam library. Restart Steam to see the new shortcut.", "success");
+        }
         form.reset();
+        loadSteamStatus();
         const preview = document.getElementById("sideload-inspect-preview");
         if (preview) preview.style.display = "none";
-        const group = document.getElementById("sideload-window-preset-group");
-        if (group) group.style.display = "none";
         loadInstalled();
         loadStorageOverview();
       } else {
@@ -1275,7 +1466,7 @@ async function loadModalMods(pkg) {
     container.innerHTML = mods.map(m => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.05);">
         <div>
-          <span style="font-weight:600; color:#fff;">${m.name}</span>
+          <span style="font-weight:600; color:#fff;">${escapeHtml(m.name)}</span>
           <span style="font-size:0.75rem; color:var(--text-muted); margin-left:6px;">(${m.type === 'custom_song' ? '🎵 Song' : '📦 Mod'} • ${m.size_formatted})</span>
         </div>
         <button class="btn-secondary compact" style="color:var(--accent-danger); font-size:0.75rem; padding:2px 8px;" onclick="deleteModalMod('${pkg}', '${m.id}')">Delete</button>
@@ -1494,7 +1685,7 @@ function renderStorageDrives(devices, activeDev) {
     const currentVal = sideloadSelect.value;
     sideloadSelect.innerHTML = devices.map(dev => `
       <option value="${dev.id}" ${dev.id === currentVal ? 'selected' : (dev.is_default ? 'selected' : '')}>
-        ${dev.is_sd_card ? '💾 [MicroSD] ' : '💿 [SSD] '} ${dev.name} (${dev.free_formatted} free)
+        ${dev.is_sd_card ? '💾 [MicroSD] ' : '💿 [SSD] '} ${escapeHtml(dev.name)} (${dev.free_formatted} free)
       </option>
     `).join("");
   }
@@ -1591,7 +1782,7 @@ function renderStorageGames() {
     const isSelected = state.storage.selectedPackages.has(game.package);
     const thumbUrl = game.thumbnail_url || "";
     const thumbHtml = thumbUrl
-      ? `<img src="${thumbUrl}" class="storage-game-thumb" alt="${game.title}" onerror="this.src='/static/icons/default-game.svg'">`
+      ? `<img src="${thumbUrl}" class="storage-game-thumb" alt="" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">`
       : `<div class="storage-game-thumb" style="display:flex; align-items:center; justify-content:center; color:var(--accent-cyan);">
            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
@@ -1610,7 +1801,7 @@ function renderStorageGames() {
         <div class="storage-game-left">
           ${thumbHtml}
           <div class="storage-game-info">
-            <div class="storage-game-title">${game.title}</div>
+            <div class="storage-game-title">${escapeHtml(game.title)}</div>
             <div class="storage-game-meta">
               <span class="storage-game-badge ${game.is_vr ? 'vr' : ''}">${game.is_vr ? 'Quest VR' : 'Flat'}</span>
               <span>•</span>
@@ -1792,7 +1983,7 @@ function openBatchUninstallModal() {
   if (preview) {
     preview.innerHTML = selectedGames.map(g => `
       <div class="batch-preview-row">
-        <span class="batch-preview-row-title">${g.title}</span>
+        <span class="batch-preview-row-title">${escapeHtml(g.title)}</span>
         <span class="batch-preview-row-size">${g.total_formatted}</span>
       </div>
     `).join("");
@@ -1931,8 +2122,11 @@ async function checkForUpdates(userTriggered = false) {
   }
 
   try {
-    const res = await fetch("/api/updates");
+    const res = await fetch(userTriggered ? "/api/updates?force=1" : "/api/updates");
     const data = await res.json();
+    // The server sends games as {updates_count, games: [...]}; everything here works with the list.
+    const gameUpdates = Array.isArray(data.games) ? data.games : ((data.games && data.games.games) || []);
+    data.games = gameUpdates;
     state.updates = data;
 
     // 1. App Update Banner & Telemetry Chip
@@ -1980,7 +2174,6 @@ async function checkForUpdates(userTriggered = false) {
     }
 
     // 2. Installed Game Updates Banner
-    const gameUpdates = (data.games && data.games.games) ? data.games.games : [];
     const updatesBanner = document.getElementById("library-updates-banner");
     const updatesCountEl = document.getElementById("library-updates-count");
 
@@ -2449,101 +2642,139 @@ window.testMirrorConnection = testMirrorConnection;
 window.installRclone = installRclone;
 window.clearMirrorConfig = clearMirrorConfig;
 
-// === Steam Frame VR Optimizer & Hardware Tuning ===
+// === Per-game settings (Lepton + FrameBridge) ===
+// The dialog is built from the server's schema, so every control maps to a setting the headset reads.
 state.tuningTarget = null;
+state.tuningSchema = null;
 state.tuningPresets = null;
+state.tuningInfo = null;
 
-async function loadTuningPresets() {
-  if (state.tuningPresets) return state.tuningPresets;
-  try {
-    const data = await apiGet("/api/tuning/presets");
-    state.tuningPresets = data.presets || {};
-    return state.tuningPresets;
-  } catch (e) {
-    console.error("Error loading tuning presets:", e);
-    return {};
+async function loadTuningSchema() {
+  if (state.tuningSchema) return;
+  const data = await apiGet("/api/tuning/presets");
+  state.tuningSchema = data.schema || [];
+  state.tuningPresets = data.presets || {};
+}
+
+function tuningInputId(key) {
+  return `tune-${key}`;
+}
+
+function formatTuningValue(spec, value) {
+  if (spec.type === "range") return `${Number(value).toFixed(2)}${spec.unit || ""}`;
+  if (spec.type === "bool") return value ? "On" : "Off";
+  const choice = (spec.choices || []).find(c => String(c.value) === String(value));
+  return choice ? choice.label : String(value);
+}
+
+function renderTuningControl(spec, value, inactive) {
+  const id = tuningInputId(spec.key);
+  let control = "";
+  if (spec.type === "choice") {
+    control = `<select id="${id}" class="select-styled" onchange="onTuningInput('${spec.key}')">` +
+      spec.choices.map(c => `<option value="${escapeHtml(c.value)}" ${String(c.value) === String(value) ? "selected" : ""}>${escapeHtml(c.label)}</option>`).join("") +
+      `</select>`;
+  } else if (spec.type === "range") {
+    control = `<input type="range" id="${id}" class="tuning-range-slider" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${escapeHtml(value)}" oninput="onTuningInput('${spec.key}')">`;
+  } else {
+    control = `<label class="tuning-toggle"><input type="checkbox" id="${id}" ${value ? "checked" : ""} onchange="onTuningInput('${spec.key}')"><span>Enabled</span></label>`;
   }
+  return `
+    <div class="tuning-card${inactive ? " inactive" : ""}" data-key="${spec.key}">
+      <div class="tuning-card-header">
+        <span class="tuning-card-title">${escapeHtml(spec.title)}</span>
+        ${spec.type === "range" ? `<span id="${id}-val" class="tuning-card-val">${escapeHtml(formatTuningValue(spec, value))}</span>` : ""}
+      </div>
+      ${control}
+      <p class="tuning-micro-note">${escapeHtml(spec.description)}</p>
+    </div>`;
+}
+
+function readTuningValue(spec) {
+  const el = document.getElementById(tuningInputId(spec.key));
+  if (!el) return undefined;
+  if (spec.type === "bool") return el.checked;
+  if (spec.type === "range") return parseFloat(el.value);
+  return typeof spec.default === "number" ? Number(el.value) : el.value;
+}
+
+function onTuningInput(key) {
+  const spec = (state.tuningSchema || []).find(s => s.key === key);
+  const label = document.getElementById(`${tuningInputId(key)}-val`);
+  if (spec && label) label.textContent = formatTuningValue(spec, readTuningValue(spec));
+  document.querySelectorAll(".tuning-preset-chip").forEach(chip => chip.classList.remove("active"));
+}
+
+function visibleTuningSpecs(info, isGlobal) {
+  return (state.tuningSchema || []).filter(spec => isGlobal || spec.scope === (info.is_vr ? "vr" : "flat"));
 }
 
 async function openTuningModal(pkg) {
-  state.tuningTarget = pkg;
   const modal = document.getElementById("tuning-modal");
-  if (!modal) return;
+  const body = document.getElementById("tuning-body");
+  if (!modal || !body) return;
+  state.tuningTarget = pkg;
+  const isGlobal = pkg === "__global__";
 
-  const game = (state.installed && state.installed.find(g => g.package === pkg)) || state.selectedGame;
-  const titleEl = document.getElementById("tuning-modal-title");
-  const subEl = document.getElementById("tuning-modal-subtitle");
-  const engBadge = document.getElementById("tuning-modal-engine-badge");
-
-  if (pkg === "__global__") {
-    if (titleEl) titleEl.textContent = "Global Steam Frame Optimization Defaults";
-    if (subEl) subEl.textContent = "Applied to all sideloaded Quest games";
-    if (engBadge) { engBadge.textContent = "Global Defaults"; engBadge.className = "badge"; }
-  } else {
-    if (titleEl) titleEl.textContent = (game && game.title) ? `🥽 ${game.title} — VR Optimizer` : "Steam Frame VR Optimizer";
-    if (subEl) subEl.textContent = pkg;
-    if (engBadge) {
-      const eng = (game && game.engine) || "Unity";
-      engBadge.textContent = `${eng} Engine`;
-      engBadge.className = "badge";
-    }
-  }
-
-  // Load current tuning data
+  let info;
   try {
-    const url = (pkg === "__global__") ? "/api/tuning/global" : `/api/installed/tuning/${pkg}`;
-    const data = await apiGet(url);
-
-    // Populate inputs
-    const spoofSel = document.getElementById("tune-spoof-profile");
-    if (spoofSel) spoofSel.value = data.spoof_profile || "quest3";
-
-    const scaleSlider = document.getElementById("tune-scale-slider");
-    const scale = parseFloat(data.resolution_scale || 1.25);
-    if (scaleSlider) scaleSlider.value = scale;
-    onScaleSliderInput(scale);
-
-    const refreshSel = document.getElementById("tune-refresh-select");
-    if (refreshSel) refreshSel.value = String(data.refresh_rate || 90);
-    const refreshVal = document.getElementById("tune-refresh-val");
-    if (refreshVal) refreshVal.textContent = `${data.refresh_rate || 90} Hz`;
-
-    const fovSel = document.getElementById("tune-foveation-select");
-    if (fovSel) fovSel.value = data.foveated_rendering || "dynamic";
-
-    const msaaSel = document.getElementById("tune-msaa-select");
-    if (msaaSel) msaaSel.value = String(data.msaa !== undefined ? data.msaa : 4);
-    const msaaVal = document.getElementById("tune-msaa-val");
-    if (msaVal) msaaVal.textContent = `${data.msaa !== undefined ? data.msaa : 4}x`;
-
-    const afSel = document.getElementById("tune-af-select");
-    if (afSel) afSel.value = String(data.anisotropic_filtering !== undefined ? data.anisotropic_filtering : 8);
-    const afVal = document.getElementById("tune-af-val");
-    if (afVal) afVal.textContent = `${data.anisotropic_filtering !== undefined ? data.anisotropic_filtering : 8}x`;
-
-    const cpuSel = document.getElementById("tune-cpu-select");
-    if (cpuSel) cpuSel.value = String(data.cpu_level || 4);
-
-    const gpuSel = document.getElementById("tune-gpu-select");
-    if (gpuSel) gpuSel.value = String(data.gpu_level || 4);
-
-    const ctrlSel = document.getElementById("tune-ctrl-select");
-    if (ctrlSel) ctrlSel.value = data.controller_models || "steam_frame_roy";
-
-    const hapticSel = document.getElementById("tune-haptic-select");
-    if (hapticSel) hapticSel.value = String(data.haptic_multiplier || 1.2);
-
-    const handSel = document.getElementById("tune-hand-select");
-    if (handSel) handSel.value = data.hand_tracking || "synthetic";
-    const handVal = document.getElementById("tune-hand-val");
-    if (handVal) {
-      const labels = { synthetic: "Synthetic (Roy)", optical: "Optical (Monado)", disabled: "Disabled" };
-      handVal.textContent = labels[data.hand_tracking || "synthetic"] || "Synthetic";
-    }
-
-    updatePresetChipHighlight();
+    await loadTuningSchema();
+    info = await apiGet(isGlobal ? "/api/tuning/global" : `/api/installed/tuning/${encodeURIComponent(pkg)}`);
   } catch (err) {
-    console.error("Failed to load tuning for", pkg, err);
+    showToast(`Could not load settings: ${err.message}`, "error");
+    return;
+  }
+  state.tuningInfo = info;
+
+  document.getElementById("tuning-modal-title").textContent = isGlobal ? "Default settings for all games" : `${info.title} - Settings`;
+  document.getElementById("tuning-modal-subtitle").textContent = isGlobal ? "Used by every game that has no setting of its own" : pkg;
+  const badge = document.getElementById("tuning-modal-engine-badge");
+  if (badge) badge.textContent = isGlobal ? "Defaults" : (info.is_vr ? `${info.engine || "VR"}` : "2D app");
+
+  if (!isGlobal && !info.configurable) {
+    body.innerHTML = `<p class="tuning-micro-note">These settings apply to Android apps running in Lepton. Windows and Linux apps have none.</p>`;
+    document.getElementById("tuning-presets").style.display = "none";
+    document.getElementById("btn-save-tuning").style.display = "none";
+    modal.classList.add("open");
+    return;
+  }
+  document.getElementById("btn-save-tuning").style.display = "";
+
+  const specs = visibleTuningSpecs(info, isGlobal);
+  const bridgeSpecs = specs.filter(s => s.needs_framebridge);
+  const leptonSpecs = specs.filter(s => !s.needs_framebridge);
+  const bridgeInactive = !isGlobal && !info.framebridge;
+  const requirement = info.hand_tracking_requirement || "none";
+
+  let html = "";
+  if (!isGlobal) {
+    html += `<div id="tuning-compat"></div>`;
+  }
+  if (leptonSpecs.length) {
+    html += `<h3 class="tuning-section-title">${isGlobal || info.is_vr ? "Lepton" : "Window"}</h3>
+      <div class="tuning-grid">${leptonSpecs.map(s => renderTuningControl(s, info[s.key], false)).join("")}</div>`;
+  }
+  if (bridgeSpecs.length) {
+    const note = isGlobal
+      ? "Read by games ported with FramePort (they contain the FrameBridge adapter). Other games ignore them."
+      : bridgeInactive
+        ? "This build has no FrameBridge adapter, so nothing reads these settings. They take effect once you install a FramePort-ported build of the game."
+        : requirement === "required"
+          ? "This game requires hand tracking. On the Frame the hand skeleton comes from the controllers' finger sensors, so keep holding them."
+          : "Read by the FrameBridge adapter inside this game.";
+    html += `<h3 class="tuning-section-title">Game (FrameBridge)</h3>
+      <p class="tuning-section-note${bridgeInactive ? " warn" : ""}">${escapeHtml(note)}</p>
+      <div class="tuning-grid">${bridgeSpecs.map(s => renderTuningControl(s, info[s.key], bridgeInactive)).join("")}</div>`;
+  }
+  body.innerHTML = html;
+  if (!isGlobal) renderCompatNotice(document.getElementById("tuning-compat"), info.compat);
+
+  const presets = document.getElementById("tuning-presets");
+  if (presets) {
+    const show = bridgeSpecs.length > 0 && !bridgeInactive;
+    presets.style.display = show ? "" : "none";
+    presets.innerHTML = show ? Object.values(state.tuningPresets || {}).map(p =>
+      `<button type="button" class="tuning-preset-chip" title="${escapeHtml(p.description)}" onclick="selectTuningPreset('${p.id}')">${escapeHtml(p.name)}</button>`).join("") : "";
   }
 
   modal.classList.add("open");
@@ -2560,249 +2791,46 @@ function openGlobalTuningModal() {
   openTuningModal("__global__");
 }
 
-function onScaleSliderInput(val) {
-  const num = parseFloat(val);
-  const disp = document.getElementById("tune-scale-display");
-  if (disp) disp.textContent = `${num.toFixed(2)}x`;
-
-  const pix = document.getElementById("tune-scale-pixels");
-  if (pix) {
-    const w = Math.round(2064 * num);
-    const h = Math.round(2208 * num);
-    pix.textContent = `~${w} x ${h} px/eye`;
-  }
-
-  // Update selected chip
-  document.querySelectorAll(".tuning-select-chip").forEach(chip => {
-    const chipVal = parseFloat(chip.textContent);
-    if (Math.abs(chipVal - num) < 0.02) {
-      chip.classList.add("selected");
-    } else {
-      chip.classList.remove("selected");
-    }
+function selectTuningPreset(presetId) {
+  const preset = (state.tuningPresets || {})[presetId];
+  if (!preset) return;
+  Object.entries(preset.settings).forEach(([key, value]) => {
+    const spec = state.tuningSchema.find(s => s.key === key);
+    const el = document.getElementById(tuningInputId(key));
+    if (!spec || !el) return;
+    if (spec.type === "bool") el.checked = !!value; else el.value = value;
+    onTuningInput(key);
   });
-
-  updatePresetChipHighlight();
-}
-
-function setScaleValue(val) {
-  const slider = document.getElementById("tune-scale-slider");
-  if (slider) {
-    slider.value = val;
-    onScaleSliderInput(val);
-  }
-}
-
-function onRefreshSelect(val) {
-  const disp = document.getElementById("tune-refresh-val");
-  if (disp) disp.textContent = `${val} Hz`;
-  updatePresetChipHighlight();
-}
-
-function updateTuningPreview() {
-  const msaaSel = document.getElementById("tune-msaa-select");
-  const msaaVal = document.getElementById("tune-msaa-val");
-  if (msaaSel && msaaVal) msaaVal.textContent = `${msaaSel.value}x`;
-
-  const afSel = document.getElementById("tune-af-select");
-  const afVal = document.getElementById("tune-af-val");
-  if (afSel && afVal) afVal.textContent = `${afSel.value}x`;
-
-  const handSel = document.getElementById("tune-hand-select");
-  const handVal = document.getElementById("tune-hand-val");
-  if (handSel && handVal) {
-    const labels = { synthetic: "Synthetic (Roy)", optical: "Optical (Monado)", disabled: "Disabled" };
-    handVal.textContent = labels[handSel.value] || handSel.value;
-  }
-
-  updatePresetChipHighlight();
-}
-
-function selectTuningPreset(presetName) {
-  const presets = {
-    steam_frame_turbo: {
-      spoof_profile: "quest3",
-      resolution_scale: 1.25,
-      refresh_rate: 90,
-      foveated_rendering: "dynamic",
-      msaa: 4,
-      anisotropic_filtering: 8,
-      cpu_level: 4,
-      gpu_level: 4,
-      controller_models: "steam_frame_roy",
-      haptic_multiplier: 1.2
-    },
-    max_visuals: {
-      spoof_profile: "quest3",
-      resolution_scale: 1.45,
-      refresh_rate: 90,
-      foveated_rendering: "dynamic",
-      msaa: 4,
-      anisotropic_filtering: 16,
-      cpu_level: 4,
-      gpu_level: 5,
-      controller_models: "steam_frame_roy",
-      haptic_multiplier: 1.4
-    },
-    high_fps_120: {
-      spoof_profile: "quest3",
-      resolution_scale: 1.00,
-      refresh_rate: 120,
-      foveated_rendering: "dynamic",
-      msaa: 2,
-      anisotropic_filtering: 4,
-      cpu_level: 4,
-      gpu_level: 4,
-      controller_models: "steam_frame_roy",
-      haptic_multiplier: 1.0
-    },
-    battery_saver: {
-      spoof_profile: "quest2",
-      resolution_scale: 0.85,
-      refresh_rate: 72,
-      foveated_rendering: "high",
-      msaa: 2,
-      anisotropic_filtering: 1,
-      cpu_level: 2,
-      gpu_level: 2,
-      controller_models: "quest_touch",
-      haptic_multiplier: 0.8
-    },
-    stock_default: {
-      spoof_profile: "quest3",
-      resolution_scale: 1.00,
-      refresh_rate: 90,
-      foveated_rendering: "off",
-      msaa: 2,
-      anisotropic_filtering: 1,
-      cpu_level: 3,
-      gpu_level: 3,
-      controller_models: "quest_touch",
-      haptic_multiplier: 1.0
-    }
-  };
-
-  const p = presets[presetName];
-  if (!p) return;
-
-  const spoofSel = document.getElementById("tune-spoof-profile");
-  if (spoofSel) spoofSel.value = p.spoof_profile;
-
-  setScaleValue(p.resolution_scale);
-
-  const refreshSel = document.getElementById("tune-refresh-select");
-  if (refreshSel) {
-    refreshSel.value = String(p.refresh_rate);
-    onRefreshSelect(p.refresh_rate);
-  }
-
-  const fovSel = document.getElementById("tune-foveation-select");
-  if (fovSel) fovSel.value = p.foveated_rendering;
-
-  const msaaSel = document.getElementById("tune-msaa-select");
-  if (msaaSel) msaaSel.value = String(p.msaa);
-
-  const afSel = document.getElementById("tune-af-select");
-  if (afSel) afSel.value = String(p.anisotropic_filtering);
-
-  const cpuSel = document.getElementById("tune-cpu-select");
-  if (cpuSel) cpuSel.value = String(p.cpu_level);
-
-  const gpuSel = document.getElementById("tune-gpu-select");
-  if (gpuSel) gpuSel.value = String(p.gpu_level);
-
-  const ctrlSel = document.getElementById("tune-ctrl-select");
-  if (ctrlSel) ctrlSel.value = p.controller_models;
-
-  const hapticSel = document.getElementById("tune-haptic-select");
-  if (hapticSel) hapticSel.value = String(p.haptic_multiplier);
-
-  const handSel = document.getElementById("tune-hand-select");
-  if (handSel && p.hand_tracking) handSel.value = p.hand_tracking;
-
-  updateTuningPreview();
-
-  // Highlight active chip
-  document.querySelectorAll(".tuning-preset-chip").forEach(chip => chip.classList.remove("active"));
-  const chipMap = {
-    steam_frame_turbo: "preset-chip-turbo",
-    max_visuals: "preset-chip-visuals",
-    high_fps_120: "preset-chip-fps",
-    battery_saver: "preset-chip-battery",
-    stock_default: "preset-chip-stock"
-  };
-  const activeEl = document.getElementById(chipMap[presetName]);
-  if (activeEl) activeEl.classList.add("active");
-
-  showToast(`Preset loaded: ${activeEl ? activeEl.textContent.trim() : presetName}`, "info");
-}
-
-function updatePresetChipHighlight() {
-  // Reset active classes unless exactly matches
+  document.querySelectorAll(".tuning-preset-chip").forEach(chip =>
+    chip.classList.toggle("active", chip.getAttribute("onclick").includes(`'${presetId}'`)));
 }
 
 async function saveGameTuningFromModal() {
   const btn = document.getElementById("btn-save-tuning");
-  if (btn) { btn.disabled = true; btn.textContent = "Applying..."; }
+  const isGlobal = state.tuningTarget === "__global__";
+  const settings = {};
+  visibleTuningSpecs(state.tuningInfo || {}, isGlobal).forEach(spec => {
+    const value = readTuningValue(spec);
+    if (value !== undefined) settings[spec.key] = value;
+  });
 
-  const settings = {
-    spoof_profile: document.getElementById("tune-spoof-profile")?.value || "quest3",
-    resolution_scale: parseFloat(document.getElementById("tune-scale-slider")?.value || 1.25),
-    refresh_rate: parseInt(document.getElementById("tune-refresh-select")?.value || 90),
-    foveated_rendering: document.getElementById("tune-foveation-select")?.value || "dynamic",
-    msaa: parseInt(document.getElementById("tune-msaa-select")?.value || 4),
-    anisotropic_filtering: parseInt(document.getElementById("tune-af-select")?.value || 8),
-    cpu_level: parseInt(document.getElementById("tune-cpu-select")?.value || 4),
-    gpu_level: parseInt(document.getElementById("tune-gpu-select")?.value || 4),
-    controller_models: document.getElementById("tune-ctrl-select")?.value || "steam_frame_roy",
-    haptic_multiplier: parseFloat(document.getElementById("tune-haptic-select")?.value || 1.2),
-    hand_tracking: document.getElementById("tune-hand-select")?.value || "synthetic"
-  };
-
+  if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
   try {
-    if (state.tuningTarget === "__global__") {
-      const res = await apiPost("/api/tuning/global", { settings });
-      if (res.success) {
-        showToast("Global Steam Frame optimization defaults updated!", "success");
-        closeTuningModal();
-      } else {
-        showToast(res.error || "Failed to update global tuning", "error");
-      }
+    const res = isGlobal
+      ? await apiPost("/api/tuning/global", { settings })
+      : await apiPost("/api/installed/tuning", { package: state.tuningTarget, settings });
+    if (res.success) {
+      showToast(isGlobal ? "Default settings saved." : "Settings saved. They apply the next time the game starts.", "success");
+      closeTuningModal();
+      loadInstalled();
+      loadHandStatus();
     } else {
-      const res = await apiPost("/api/installed/tuning", {
-        package: state.tuningTarget,
-        settings
-      });
-      if (res.success) {
-        showToast("✨ Steam Frame optimizations applied! Quest 3 profile & launch script updated.", "success");
-        closeTuningModal();
-        loadInstalled();
-      } else {
-        showToast(res.error || "Failed to apply tuning", "error");
-      }
+      showToast(res.error || "Could not save settings", "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "💾 Apply & Save Tuning"; }
-  }
-}
-
-async function batchApplyTurboToAll() {
-  if (!confirm("Apply Steam Frame Turbo (Quest 3 Spoof + 1.25x Supersampling + Eye-Tracked DFR + 4x MSAA) to ALL installed games?")) {
-    return;
-  }
-  showToast("Applying Steam Frame Turbo across all games...", "info");
-  try {
-    const res = await apiPost("/api/tuning/batch-apply", { preset: "steam_frame_turbo" });
-    if (res.success && res.result) {
-      showToast(`⚡ Steam Frame Turbo successfully applied to ${res.result.applied_count} games!`, "success");
-      loadInstalled();
-    } else {
-      showToast(res.error || "Batch optimization failed", "error");
-    }
-  } catch (err) {
-    showToast(`Error: ${err.message}`, "error");
+    if (btn) { btn.disabled = false; btn.textContent = "Save"; }
   }
 }
 
@@ -2811,10 +2839,426 @@ window.closeTuningModal = closeTuningModal;
 window.openSettingsModal = openTuningModal;
 window.openGlobalTuningModal = openGlobalTuningModal;
 window.selectTuningPreset = selectTuningPreset;
-window.onScaleSliderInput = onScaleSliderInput;
-window.setScaleValue = setScaleValue;
-window.onRefreshSelect = onRefreshSelect;
-window.updateTuningPreview = updateTuningPreview;
+window.onTuningInput = onTuningInput;
 window.saveGameTuningFromModal = saveGameTuningFromModal;
-window.batchApplyTurboToAll = batchApplyTurboToAll;
 
+// === Quest game porting (FramePort on this headset) and self-test ===
+state.porting = { status: null, jobId: null, timer: null };
+
+async function loadPortingStatus() {
+  const badge = document.getElementById("porting-badge");
+  const detail = document.getElementById("porting-detail");
+  const setupBtn = document.getElementById("btn-porting-setup");
+  const logBtn = document.getElementById("btn-porting-log");
+  if (!badge) return null;
+  try {
+    const st = await apiGet("/api/porting/status");
+    state.porting.status = st;
+    const ready = st.installed && st.tools_ready;
+    badge.textContent = st.job ? "Working..." : ready ? "Ready" : st.installed ? "Tools missing" : "Not set up";
+    badge.style.color = ready ? "var(--accent-emerald)" : "var(--text-muted)";
+    const waiting = (st.pending || []).map(g => g.title);
+    const parts = [];
+    if (st.installed) parts.push(`FramePort ${st.version}${ready ? " with Java, OVRPort and apksigner." : "; its tools still need to be downloaded."}`);
+    if (st.limited) parts.push(st.limited);
+    if (waiting.length) parts.push(`Waiting to be ported after setup: ${waiting.join(", ")}.`);
+    if (detail) detail.textContent = parts.join(" ");
+    const autoCheck = document.getElementById("porting-auto-check");
+    if (autoCheck) autoCheck.checked = st.auto !== false;
+    if (setupBtn) {
+      setupBtn.style.display = ready ? "none" : "";
+      setupBtn.disabled = !!st.job;
+    }
+    if (st.job) {
+      state.porting.jobId = st.job.id;
+      if (logBtn) logBtn.style.display = "";
+    }
+    return st;
+  } catch (e) {
+    badge.textContent = "Unavailable";
+    return null;
+  }
+}
+
+function openPortingModal() {
+  const modal = document.getElementById("porting-modal");
+  if (modal) modal.classList.add("open");
+  pollPortingJob();
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function closePortingModal() {
+  const modal = document.getElementById("porting-modal");
+  if (modal) modal.classList.remove("open");
+  clearTimeout(state.porting.timer);
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+async function pollPortingJob() {
+  clearTimeout(state.porting.timer);
+  const id = state.porting.jobId;
+  const title = document.getElementById("porting-modal-title");
+  const status = document.getElementById("porting-modal-status");
+  const log = document.getElementById("porting-modal-log");
+  if (!id || !log) return;
+  try {
+    const job = await apiGet(`/api/porting/jobs/${encodeURIComponent(id)}`);
+    if (title) title.textContent = job.kind === "setup" ? "Setting up porting" : `Porting ${job.package}`;
+    const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+    log.textContent = job.log.join("\n");
+    if (atEnd) log.scrollTop = log.scrollHeight;
+    if (job.status === "running" || job.status === "queued") {
+      if (status) status.textContent = job.status === "queued"
+        ? "Waiting for another porting job to finish."
+        : "Working. This can take several minutes; you can close this window, it keeps going.";
+      state.porting.timer = setTimeout(pollPortingJob, 1500);
+      return;
+    }
+    if (status) {
+      status.textContent = job.status === "done"
+        ? (job.kind === "setup" ? "Porting is set up." : `Finished: ${(job.result && job.result.compat && job.result.compat.label) || "installed"}. Start it from your library.`)
+        : `Failed: ${job.error}`;
+    }
+    showToast(job.status === "done" ? "Finished." : `Failed: ${job.error}`, job.status === "done" ? "success" : "error");
+    loadPortingStatus();
+    loadInstalled();
+  } catch (e) {
+    if (status) status.textContent = `Could not read progress: ${e.message}`;
+  }
+}
+
+async function startPortingJob(url, body) {
+  try {
+    const res = await apiPost(url, body);
+    state.porting.jobId = res.job.id;
+    const logBtn = document.getElementById("btn-porting-log");
+    if (logBtn) logBtn.style.display = "";
+    openPortingModal();
+    loadPortingStatus();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+async function setPortingAuto(enabled) {
+  try {
+    await apiPost("/api/porting/settings", { auto: !!enabled });
+    showToast(enabled ? "Quest games are ported automatically after installing." : "Automatic porting is off. Use Port for Steam Frame on a game.", "info");
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.setPortingAuto = setPortingAuto;
+
+function startPortingSetup() {
+  return startPortingJob("/api/porting/setup", {});
+}
+
+async function portGame(pkg) {
+  const st = state.porting.status || await loadPortingStatus();
+  if (!st || !st.installed || !st.tools_ready) {
+    showToast("Porting is not set up yet. Open System & Diagnostics and press Set Up Porting first.", "warning");
+    return;
+  }
+  return startPortingJob("/api/porting/port", { package: pkg });
+}
+
+// Nobody has to run the self-test by hand: it runs once when the dashboard opens, and the banner
+// appears only for failures on a real Steam Frame.
+function renderHealthBanner(report) {
+  const banner = document.getElementById("health-banner");
+  const list = document.getElementById("health-banner-list");
+  if (!banner || !list) return;
+  const failures = (report && report.on_frame) ? report.checks.filter(c => c.state === "fail") : [];
+  list.innerHTML = failures.map(c => `<li class="compat-issue error">${escapeHtml(c.name)}: ${escapeHtml(c.detail)}</li>`).join("");
+  banner.style.display = failures.length ? "block" : "none";
+}
+
+async function checkHealthOnce() {
+  try {
+    renderHealthBanner(await apiGet("/api/system/doctor"));
+  } catch (e) {
+    console.error("Self-test failed to run:", e);
+  }
+}
+window.renderHealthBanner = renderHealthBanner;
+
+async function runDoctor() {
+  const badge = document.getElementById("doctor-badge");
+  const results = document.getElementById("doctor-results");
+  if (!results) return;
+  if (badge) badge.textContent = "Running...";
+  try {
+    const report = await apiGet("/api/system/doctor");
+    renderHealthBanner(report);
+    const labels = { ok: "All good", warn: "Needs attention", fail: "Problems found" };
+    if (badge) {
+      badge.textContent = labels[report.state] || report.state;
+      badge.style.color = report.state === "ok" ? "var(--accent-emerald)" : report.state === "warn" ? "var(--accent-amber)" : "var(--accent-danger)";
+    }
+    results.innerHTML = report.checks.map(c => `
+      <div class="doctor-row">
+        <span class="doctor-state ${escapeHtml(c.state)}">${escapeHtml(c.state)}</span>
+        <span><span class="doctor-name">${escapeHtml(c.name)}</span><br><span class="doctor-detail">${escapeHtml(c.detail)}</span></span>
+      </div>`).join("");
+  } catch (e) {
+    if (badge) badge.textContent = "Failed";
+    results.textContent = e.message;
+  }
+}
+
+window.loadPortingStatus = loadPortingStatus;
+window.openPortingModal = openPortingModal;
+window.closePortingModal = closePortingModal;
+window.startPortingSetup = startPortingSetup;
+window.portGame = portGame;
+window.runDoctor = runDoctor;
+
+// === Steam library state ===
+async function loadSteamStatus() {
+  const banner = document.getElementById("steam-banner");
+  if (!banner) return;
+  try {
+    const st = await apiGet("/api/steam/status");
+    const names = st.pending || [];
+    banner.style.display = st.restart_needed ? "block" : "none";
+    if (!st.restart_needed) return;
+    document.getElementById("steam-banner-title").textContent =
+      names.length === 1 ? "1 new game is not in your Steam library yet" : `${names.length} new games are not in your Steam library yet`;
+    document.getElementById("steam-banner-text").textContent =
+      `${names.join(", ")}. Steam loads new entries when it starts. You can already start them from FrameLoad's library with Launch.`;
+    const btn = document.getElementById("steam-restart-btn");
+    if (btn) btn.style.display = st.can_restart ? "" : "none";
+  } catch (e) {
+    banner.style.display = "none";
+  }
+}
+
+async function restartSteam() {
+  if (!confirm("Restart Steam now? This closes FrameLoad's window and any running game. Steam comes back by itself with the new games in your library.")) return;
+  try {
+    const res = await apiPost("/api/steam/restart", {});
+    showToast(res.success ? res.message : res.error, res.success ? "success" : "error");
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.restartSteam = restartSteam;
+
+// === Phone & PC access ===
+async function loadAccess() {
+  const list = document.getElementById("access-devices");
+  const button = document.getElementById("btn-access-code");
+  const address = document.getElementById("access-address");
+  if (!list) return;
+  try {
+    const data = await apiGet("/api/access/devices");
+    if (button) button.style.display = data.local ? "" : "none";
+    if (address) {
+      address.textContent = data.local
+        ? `On the other device, open http://<this headset's IP address>:${location.port || 80}. The IP address is shown in the headset's network settings.`
+        : "You are connected from another device. New devices are approved on the headset.";
+    }
+    list.innerHTML = (data.devices || []).length
+      ? data.devices.map(d => `
+          <div class="doctor-row" style="grid-template-columns:1fr auto;">
+            <span><span class="doctor-name">${escapeHtml(d.label)}</span><br><span class="doctor-detail">paired ${new Date(d.created * 1000).toLocaleDateString()}</span></span>
+            ${data.local ? `<button class="btn-secondary compact" onclick="removePairedDevice(${jsArg(d.id)})">Remove</button>` : ""}
+          </div>`).join("")
+      : `<p class="tuning-micro-note">No other device is paired.</p>`;
+  } catch (e) {
+    list.textContent = "";
+  }
+}
+
+async function showPairingCode() {
+  try {
+    const res = await apiPost("/api/access/code", {});
+    document.getElementById("access-code").textContent = res.code;
+    document.getElementById("access-code-box").style.display = "block";
+    setTimeout(() => {
+      const box = document.getElementById("access-code-box");
+      if (box) box.style.display = "none";
+      loadAccess();
+    }, res.expires_in * 1000);
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+async function removePairedDevice(id) {
+  try {
+    await apiPost("/api/access/revoke", { id });
+    loadAccess();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.loadAccess = loadAccess;
+window.showPairingCode = showPairingCode;
+window.removePairedDevice = removePairedDevice;
+
+// === File browser and upload ===
+state.files = { path: "" };
+
+async function openFileBrowser(path = "") {
+  const modal = document.getElementById("files-modal");
+  const list = document.getElementById("files-list");
+  if (!modal || !list) return;
+  try {
+    const data = await apiGet(`/api/files?path=${encodeURIComponent(path)}`);
+    state.files.path = data.path;
+    document.getElementById("files-path").textContent = data.path || "Places";
+    document.getElementById("files-use-folder").style.display = data.path ? "" : "none";
+    const rows = [];
+    if (data.path) {
+      rows.push(`<button type="button" class="file-row is-dir" onclick="openFileBrowser(${jsArg(data.parent || "")})"><span class="file-kind">Up</span><span class="file-name">..</span></button>`);
+    }
+    data.entries.forEach(e => {
+      rows.push(e.is_dir
+        ? `<button type="button" class="file-row is-dir" onclick="openFileBrowser(${jsArg(e.path)})"><span class="file-kind">Folder</span><span class="file-name">${escapeHtml(e.name)}</span></button>`
+        : `<button type="button" class="file-row" onclick="chooseBrowsedFile(${jsArg(e.path)})"><span class="file-kind">${escapeHtml(e.name.split(".").pop())}</span><span class="file-name">${escapeHtml(e.name)}</span><span class="file-size">${formatBytes(e.size)}</span></button>`);
+    });
+    list.innerHTML = rows.join("") || `<p class="tuning-micro-note" style="padding:14px;">Nothing installable here.</p>`;
+    if (data.truncated) list.insertAdjacentHTML("beforeend", `<p class="tuning-micro-note" style="padding:10px 14px;">Only the first 500 entries are shown.</p>`);
+    modal.classList.add("open");
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+function closeFileBrowser() {
+  const modal = document.getElementById("files-modal");
+  if (modal) modal.classList.remove("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function chooseBrowsedFile(path) {
+  document.getElementById("sideload-apk-path").value = path;
+  closeFileBrowser();
+  inspectSideloadPath();
+}
+
+function chooseBrowsedFolder() {
+  if (state.files.path) chooseBrowsedFile(state.files.path);
+}
+
+function uploadOneFile(session, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/upload?session=${session}&name=${encodeURIComponent(file.name)}`);
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(event.loaded); };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (_) { /* not JSON */ }
+      if (xhr.status === 200) resolve(data); else reject(new Error(data.error || `Upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("The connection to the headset was lost."));
+    xhr.send(file);
+  });
+}
+
+async function uploadSelectedFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const status = document.getElementById("upload-status");
+  const track = document.getElementById("upload-progress");
+  const fill = document.getElementById("upload-progress-fill");
+  const total = files.reduce((sum, f) => sum + f.size, 0);
+  const session = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join("");
+  let done = 0;
+  let last = null;
+  if (track) track.style.display = "block";
+  try {
+    for (const file of files) {
+      last = await uploadOneFile(session, file, (loaded) => {
+        const pct = Math.round(((done + loaded) / Math.max(total, 1)) * 100);
+        if (fill) fill.style.width = `${pct}%`;
+        if (status) status.textContent = `Uploading ${file.name}... ${pct}%`;
+      });
+      done += file.size;
+    }
+    if (status) status.textContent = `Received ${files.length} file(s), ${formatBytes(total)}.`;
+    // One file: install that file. Several (an APK with its OBB): install the folder they landed in.
+    document.getElementById("sideload-apk-path").value = files.length === 1 ? last.path : last.folder;
+    inspectSideloadPath();
+  } catch (e) {
+    if (status) status.textContent = "";
+    showToast(e.message, "error");
+  } finally {
+    if (track) track.style.display = "none";
+    if (fill) fill.style.width = "0%";
+    const input = document.getElementById("sideload-upload-input");
+    if (input) input.value = "";
+  }
+}
+window.openFileBrowser = openFileBrowser;
+window.closeFileBrowser = closeFileBrowser;
+window.chooseBrowsedFile = chooseBrowsedFile;
+window.chooseBrowsedFolder = chooseBrowsedFolder;
+window.uploadSelectedFiles = uploadSelectedFiles;
+
+// === Launch log ===
+async function openLogModal(pkg) {
+  const modal = document.getElementById("log-modal");
+  if (!modal) return;
+  try {
+    const log = await apiGet(`/api/installed/log/${encodeURIComponent(pkg)}`);
+    const game = (state.installed || []).find(g => g.package === pkg);
+    document.getElementById("log-modal-title").textContent = `${game ? game.title : pkg} - Launch Log`;
+    document.getElementById("log-findings").innerHTML = (log.findings || []).map(f =>
+      `<div class="log-finding ${escapeHtml(f.severity)}"><strong>${escapeHtml(f.title)}</strong><span>${escapeHtml(f.advice)}</span></div>`).join("");
+    const lines = document.getElementById("log-lines");
+    lines.style.display = log.exists ? "" : "none";
+    lines.textContent = (log.truncated ? "(earlier lines not shown)\n" : "") + (log.lines || []).join("\n");
+    modal.classList.add("open");
+    lines.scrollTop = lines.scrollHeight;
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+function closeLogModal() {
+  const modal = document.getElementById("log-modal");
+  if (modal) modal.classList.remove("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+window.openLogModal = openLogModal;
+window.closeLogModal = closeLogModal;
+
+// === Installs requested by a frameload:// link ===
+state.link = { current: null, answered: new Set() };
+
+function offerPendingLink(links) {
+  const modal = document.getElementById("link-modal");
+  if (!modal || state.link.current) return;
+  const next = links.find(l => !state.link.answered.has(l.id));
+  if (!next) return;
+  state.link.current = next;
+  document.getElementById("link-title").textContent = next.title;
+  document.getElementById("link-source").textContent = next.kind === "download" ? `From ${next.host}: ${next.url}` : `File on this headset: ${next.path}`;
+  modal.classList.add("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+async function answerLink(install) {
+  const link = state.link.current;
+  const modal = document.getElementById("link-modal");
+  if (!link) return;
+  state.link.answered.add(link.id);
+  state.link.current = null;
+  if (modal) modal.classList.remove("open");
+  try {
+    const res = await apiPost(install ? "/api/links/confirm" : "/api/links/dismiss", { id: link.id });
+    if (install) {
+      showToast(res.action === "sideload" ? "Installed." : "Download started.", "success");
+      loadInstalled();
+    }
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+window.answerLink = answerLink;

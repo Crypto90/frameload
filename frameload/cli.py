@@ -62,12 +62,25 @@ from .system.protocol import ProtocolHandler
 from .system.steamos import get_system_summary
 
 
+def send_link_to_server(url: str) -> dict:
+    """Hands a frameload:// link to the running dashboard server, which asks the user to confirm it."""
+    import urllib.request
+    from .config import Config
+
+    port = Config.get()["server"].get("port", 5050)
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/system/protocol", data=json.dumps({"url": url}).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        return {"success": False, "error": f"FrameLoad is not running ({exc}). Start it and open the link again."}
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1].startswith("frameload://"):
-        url = sys.argv[1]
-        print(f"Handling deep link URL: {url}")
-        res = ProtocolHandler.handle_url(url)
-        print(json.dumps(res, indent=2))
+        print(json.dumps(send_link_to_server(sys.argv[1]), indent=2))
         return
 
     parser = ColorArgumentParser(
@@ -109,7 +122,6 @@ def main() -> None:
     install_parser.add_argument("--obb", default=None, help="Path to OBB file or folder")
     install_parser.add_argument("--device", default=None, help="Target storage device (e.g. internal or ext_microsd)")
     install_parser.add_argument("--flat", action="store_true", help="Force flat 2D window mode")
-    install_parser.add_argument("--window-preset", choices=["tablet", "phone", "desktop", "ultrawide"], default=None, help="Window preset for flat apps")
 
     # Inject Mod
     mod_parser = subparsers.add_parser("inject-mod", help="Inject custom songs, mods, or DLC packs into an installed game")
@@ -140,18 +152,28 @@ def main() -> None:
     win_parser.add_argument("--url", default="http://127.0.0.1:5050", help="Dashboard URL")
     win_parser.add_argument("--fullscreen", action="store_true", help="Launch in fullscreen mode")
 
-    # Steam Frame Hardware Tuning & Quest Spoofing
-    tune_parser = subparsers.add_parser("tune", help="Steam Frame VR hardware tuning, Quest 3 spoofing, and supersampling")
+    subparsers.add_parser("doctor", help="Check that this Steam Frame has everything FrameLoad needs")
+    subparsers.add_parser("sync-shortcuts", help="Write the Steam shortcut of every installed game again")
+
+    host_parser = subparsers.add_parser("allow-host", help="Let the dashboard be opened under an extra host name")
+    host_parser.add_argument("name", help="Host name, e.g. frame.home.arpa")
+    host_parser.add_argument("--remove", action="store_true", help="Remove the name again")
+
+    port_parser = subparsers.add_parser("port", help="Port an installed Quest game for the Steam Frame with FramePort")
+    port_parser.add_argument("package", nargs="?", default="", help="Package name of the installed game")
+    port_parser.add_argument("--setup", action="store_true", help="Install FramePort's command line and its tools")
+    port_parser.add_argument("--status", action="store_true", help="Show whether porting is set up")
+
+    # Per-game Lepton / FrameBridge settings
+    tune_parser = subparsers.add_parser("tune", help="Per-game settings: hand input, resolution scale, refresh rate, foveation")
     tune_parser.add_argument("package", nargs="?", default="", help="Package name of the game")
-    tune_parser.add_argument("--preset", help="Apply a named preset (steam_frame_turbo, max_visuals, high_fps_120, battery_saver, stock_default)")
-    tune_parser.add_argument("--spoof", choices=["quest3", "quest_pro", "quest3s", "quest2", "steam_frame"], help="Hardware spoof profile")
-    tune_parser.add_argument("--scale", type=float, help="Resolution supersampling scale multiplier (e.g. 1.25, 1.45)")
-    tune_parser.add_argument("--refresh", type=int, choices=[72, 80, 90, 120, 144], help="Display refresh rate in Hz")
-    tune_parser.add_argument("--fov", choices=["dynamic", "off", "low", "medium", "high"], help="Foveated rendering mode")
-    tune_parser.add_argument("--msaa", type=int, choices=[0, 2, 4], help="MSAA sample count")
-    tune_parser.add_argument("--af", type=int, choices=[1, 4, 8, 16], help="Anisotropic filtering level")
-    tune_parser.add_argument("--batch", help="Batch apply a named preset across all installed games")
-    tune_parser.add_argument("--list", action="store_true", help="List available tuning presets and spoof profiles")
+    tune_parser.add_argument("--preset", help="Apply a named preset (default, sharp, smooth, battery)")
+    tune_parser.add_argument("--set", action="append", metavar="KEY=VALUE", help="Set one setting (repeatable); see --list")
+    tune_parser.add_argument("--scale", type=float, help="Resolution scale, 0.5-2.0 (FramePort-ported games)")
+    tune_parser.add_argument("--refresh", type=int, choices=[0, 72, 80, 90, 96, 108, 120, 144], help="Refresh rate in Hz, 0 = game's choice")
+    tune_parser.add_argument("--hands", choices=["auto", "controllers", "hands"], help="Hand input mode")
+    tune_parser.add_argument("--batch", help="Apply a named preset to all installed Quest games")
+    tune_parser.add_argument("--list", action="store_true", help="List presets and settings")
 
     args = parser.parse_args()
 
@@ -202,14 +224,24 @@ def main() -> None:
                 title=args.title,
                 obb_path=args.obb,
                 device_id=args.device,
-                force_flat=args.flat,
-                window_preset=args.window_preset
+                force_flat=args.flat or None,
             )
             if res.get("success"):
                 print_ok("Installation complete!")
             else:
                 print_err(f"Installation failed: {res.get('error', 'Unknown error')}")
             print(json.dumps(res, indent=2))
+            if res.get("success"):
+                from .installer import porting
+                if porting.needs_port(res) and porting.is_auto():
+                    ready = porting.status()
+                    if ready["installed"] and ready["tools_ready"]:
+                        print_info("This game was built for Meta's runtime. Porting it for the Steam Frame...")
+                        ported = porting.port_installed_game(res["package"], print)
+                        print_ok(f"{ported['title']}: {ported['compat'].get('label', '')}")
+                    else:
+                        porting.auto_port(res)
+                        print_info("This game needs porting before it starts. Run: frameload port --setup")
         elif args.command == "inject-mod":
             print_info(f"Injecting mod/content into {args.package}...")
             res = ModManager.inject_mod(
@@ -225,7 +257,7 @@ def main() -> None:
             print(json.dumps(res, indent=2))
         elif args.command == "handle-url":
             print_info(f"Processing deep link URL: {args.url}...")
-            res = ProtocolHandler.handle_url(args.url)
+            res = send_link_to_server(args.url)
             if res.get("success"):
                 print_ok("Deep link handled successfully.")
             else:
@@ -257,17 +289,47 @@ def main() -> None:
             res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
             print("Uninstallation summary:", json.dumps(res, indent=2))
             print_ok("FrameLoad successfully removed from the system.")
+        elif args.command == "sync-shortcuts":
+            from .system.steam_session import resync_shortcuts
+            print_ok(f"Wrote {resync_shortcuts()} Steam shortcut(s).")
+        elif args.command == "doctor":
+            from .system.doctor import format_report, run_checks
+            report = run_checks()
+            print(format_report(report))
+            sys.exit(1 if report["state"] == "fail" else 0)
+        elif args.command == "allow-host":
+            from .config import Config
+            cfg = Config.get()
+            server_cfg = dict(cfg["server"])
+            hosts = [h for h in server_cfg.get("allowed_hosts", []) if h != args.name.lower()]
+            if not args.remove:
+                hosts.append(args.name.lower())
+            server_cfg["allowed_hosts"] = hosts
+            cfg["server"] = server_cfg
+            print_ok("Allowed host names: " + (", ".join(hosts) or "(none besides this machine's own)"))
+        elif args.command == "port":
+            from .installer import porting
+            if args.status or not (args.setup or args.package):
+                print(json.dumps(porting.status(), indent=2))
+                return
+            if args.setup:
+                porting.setup_and_port_pending(print)
+                print_ok("FramePort is ready.")
+            if args.package:
+                res = porting.port_installed_game(args.package, print)
+                print_ok(f"{res['title']}: {res['compat'].get('label', '')}")
         elif args.command == "window":
             from .web.window import main as window_main
             window_main()
         elif args.command == "tune":
             if args.list:
-                print_ok("Available Steam Frame VR Tuning Presets:")
+                print_ok("Presets:")
                 for pid, p in TuningManager.get_presets().items():
-                    print(f"  {p['icon']} {p['name']} ({pid}) [{p['badge']}]: {p['description']}")
-                print_ok("\nHardware Spoofing Profiles:")
-                for sid, s in TuningManager.get_spoof_profiles().items():
-                    print(f"  • {s['name']} ({sid}): {s['description']}")
+                    print(f"  {pid}: {p['name']} - {p['description']}")
+                print_ok("Settings (frameload tune <package> --set key=value):")
+                for spec in TuningManager.get_schema():
+                    note = " [FramePort-ported games only]" if spec["needs_framebridge"] else ""
+                    print(f"  {spec['key']} (default {spec['default']}){note}: {spec['description']}")
                 return
 
             if args.batch:
@@ -289,12 +351,15 @@ def main() -> None:
                 return
 
             overrides = {}
-            if args.spoof: overrides["spoof_profile"] = args.spoof
-            if args.scale is not None: overrides["resolution_scale"] = args.scale
+            for pair in args.set or []:
+                key, sep, value = pair.partition("=")
+                if not sep:
+                    print_err(f"Expected key=value, got: {pair}")
+                    sys.exit(1)
+                overrides[key.strip()] = value.strip()
+            if args.scale is not None: overrides["scale"] = args.scale
             if args.refresh is not None: overrides["refresh_rate"] = args.refresh
-            if args.fov: overrides["foveated_rendering"] = args.fov
-            if args.msaa is not None: overrides["msaa"] = args.msaa
-            if args.af is not None: overrides["anisotropic_filtering"] = args.af
+            if args.hands: overrides["hand_input"] = args.hands
 
             if overrides:
                 print_info(f"Applying custom tuning overrides to {args.package}...")
@@ -303,7 +368,7 @@ def main() -> None:
                 print(json.dumps(res, indent=2))
             else:
                 res = TuningManager.get_game_tuning(args.package)
-                print_ok(f"Current Steam Frame tuning profile for {args.package}:")
+                print_ok(f"Current settings for {args.package}:")
                 print(json.dumps(res, indent=2))
     except Exception as exc:
         print_err(f"Operation failed with error: {exc}")

@@ -3,9 +3,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import unittest
 import zipfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from axml_builder import build_axml, manifest  # noqa: E402
+from axml_builder import manifest as manifest_node  # noqa: E402
 
 from frameload.installer.package_loader import PackageLoader
 
@@ -20,7 +25,7 @@ class TestPackageLoader(unittest.TestCase):
             # Create dummy APK with a dummy zip structure
             apk_path = os.path.join(game_folder, "base.apk")
             with zipfile.ZipFile(apk_path, "w") as zf:
-                zf.writestr("AndroidManifest.xml", b"\x00" * 20 + b"package\x00com.beatgames.beatsaber" + b"\x00" * 20)
+                zf.writestr("AndroidManifest.xml", build_axml(manifest("com.beatgames.beatsaber")))
                 zf.writestr("lib/arm64-v8a/libunity.so", b"dummy")
 
             # Create matching OBB folder
@@ -69,13 +74,12 @@ class TestPackageLoader(unittest.TestCase):
                 }
                 zf.writestr("manifest.json", json.dumps(manifest))
                 # Create mini APK inside zip
-                apk_bytes_io = tempfile.NamedTemporaryFile(suffix=".apk", delete=False)
-                with zipfile.ZipFile(apk_bytes_io.name, "w") as apk_zf:
-                    apk_zf.writestr("AndroidManifest.xml", b"\x00" * 20 + b"package\x00com.test.xapkgame" + b"\x00" * 20)
+                inner_apk = os.path.join(tmp_dir, "inner.apk")
+                with zipfile.ZipFile(inner_apk, "w") as apk_zf:
+                    apk_zf.writestr("AndroidManifest.xml", build_axml(manifest_node("com.test.xapkgame")))
                     apk_zf.writestr("lib/arm64-v8a/libopenxr_loader.so", b"dummy")
-                with open(apk_bytes_io.name, "rb") as f:
+                with open(inner_apk, "rb") as f:
                     zf.writestr("base.apk", f.read())
-                os.remove(apk_bytes_io.name)
                 zf.writestr("Android/obb/com.test.xapkgame/main.1.com.test.xapkgame.obb", b"OBBBYTES" * 20)
 
             with patch("frameload.system.shortcuts.register_game_in_steam", return_value={"success": True}):
@@ -89,6 +93,9 @@ class TestPackageLoader(unittest.TestCase):
                 self.assertTrue(os.path.isdir(res["anchor"]))
                 self.assertTrue(os.path.isfile(os.path.join(res["anchor"], "lepton-app/game.apk")))
                 self.assertTrue(os.path.isfile(os.path.join(res["anchor"], "deployment.json")))
+                # OBB files sit directly in lepton-app/obb, where Lepton looks for them.
+                self.assertTrue(os.path.isfile(os.path.join(
+                    res["anchor"], "lepton-app", "obb", "main.1.com.test.xapkgame.obb")))
 
 
 if __name__ == "__main__":

@@ -136,6 +136,15 @@ if which xdg-mime >/dev/null 2>&1; then
 fi
 ok "Created and registered $APPLICATIONS_DIR/frameload.desktop"
 
+# 3.5 `frameload` command for the terminal (frameload doctor, frameload port, ...)
+mkdir -p "$HOME/.local/bin"
+cat > "$HOME/.local/bin/frameload" <<EOF
+#!/usr/bin/env bash
+exec "$SCRIPT_DIR/run.sh" "\$@"
+EOF
+chmod +x "$HOME/.local/bin/frameload"
+ok "Installed the frameload command in ~/.local/bin"
+
 # 4. Create systemd user service (for background operation)
 say "Setting up background systemd user service..."
 cat > "$SYSTEMD_USER_DIR/frameload.service" <<EOF

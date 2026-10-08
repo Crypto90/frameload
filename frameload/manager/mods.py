@@ -19,6 +19,23 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} TB"
 
 
+def _safe_name(name: str) -> str:
+    """A single path component: mod names come from the API and become folder names."""
+    name = os.path.basename(str(name).replace("\\", "/").rstrip("/"))
+    if name in ("", ".", ".."):
+        raise ValueError("Invalid mod name")
+    return name
+
+
+def _inside(base: str, relative: str) -> str:
+    """base/relative, refusing anything that leaves base."""
+    base = os.path.abspath(base)
+    target = os.path.abspath(os.path.join(base, relative))
+    if target != base and not target.startswith(base + os.sep):
+        raise ValueError("Target folder is outside the game's data folder")
+    return target
+
+
 class ModManager:
     @staticmethod
     def get_game_data_dir(package_name: str) -> str:
@@ -67,9 +84,11 @@ class ModManager:
             except Exception:
                 pass
 
+        mod_name = _safe_name(mod_name)
+
         # Determine destination directory
         if target_subpath:
-            dest_dir = os.path.join(base_files_dir, target_subpath)
+            dest_dir = _inside(base_files_dir, target_subpath)
         elif is_beat_saber or is_custom_song:
             dest_dir = os.path.join(base_files_dir, "CustomSongs", mod_name)
         else:
@@ -167,6 +186,7 @@ class ModManager:
         else:
             m_type, m_name = "mod", mod_id
 
+        m_name = _safe_name(m_name)
         if m_type in ("song", "custom_song"):
             target = os.path.join(base_dir, "CustomSongs", m_name)
         else:

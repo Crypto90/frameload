@@ -22,6 +22,8 @@ exe_path="$app_dir/app/{rel_exe}"
 [[ -f "$exe_path" ]] || {{ echo "Executable missing: $exe_path" >&2; exit 1; }}
 
 export SteamAppId={appid}
+# Proton sets up its VR bridge only when SteamGameId is present.
+export SteamGameId="${{SteamGameId:-{appid}}}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$HOME/.local/share/Steam"
 export STEAM_COMPAT_DATA_PATH="$app_dir/pfx"
 export WINEPREFIX="$app_dir/pfx/pfx"
@@ -29,8 +31,13 @@ mkdir -p "$app_dir/pfx"
 
 # PCVR OpenXR / SteamVR configuration
 if [[ "{is_vr}" == "True" ]]; then
-    export XR_RUNTIME_JSON="${{XR_RUNTIME_JSON:-/usr/share/openxr/1/openxr_steamvr.json}}"
-    export PRESSURE_VESSEL_FILESYSTEMS_RO="/usr/share/openxr"
+    # The Frame's SteamVR is the system's active OpenXR runtime; only point at a file that exists.
+    if [[ -z "${{XR_RUNTIME_JSON:-}}" ]]; then
+        for runtime in /opt/steamvr/steamxr_linuxarm64.json /usr/share/openxr/1/openxr_steamvr.json; do
+            if [[ -f "$runtime" ]]; then export XR_RUNTIME_JSON="$runtime"; break; fi
+        done
+    fi
+    export PRESSURE_VESSEL_FILESYSTEMS_RO="/usr/share/openxr:/opt/steamvr"
     export WINE_VR_DISABLE_SURFACE=0
 fi
 

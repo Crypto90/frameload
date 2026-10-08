@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import base64
+import html
+import ipaddress
 import json
 import mimetypes
 import os
+import re
+import socket
 import subprocess
 import sys
 import threading
@@ -41,8 +45,11 @@ from .catalog.downloader import Downloader
 from .catalog.vrp_mirror import VrpMirror
 from .catalog.fdroid import FDroidCatalog
 from .config import ANCHOR_DIR, Config, DATA_DIR
+from .installer import hand_tracking, porting
 from .installer.lepton_quest import LeptonInstaller
 from .installer.package_loader import PackageLoader
+from .manager import files as file_manager
+from .manager import launchlog
 from .manager.backup import SaveBackupManager
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
@@ -52,7 +59,8 @@ from .manager.storage import StorageManager
 from .manager.tuning import TuningManager
 from .manager.uninstaller import Uninstaller
 from .manager.updates import UpdateManager
-from .system.protocol import ProtocolHandler
+from .system import access, steam_session
+from .system.protocol import PendingLinks, ProtocolHandler
 from .system.steamos import (
     ensure_host_podman_fixes,
     get_system_summary,
@@ -60,23 +68,101 @@ from .system.steamos import (
 )
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
+MAX_BODY_BYTES = 4 * 1024 * 1024
+PACKAGE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.\-]{0,254}")
+
+_mirror_lock = threading.Lock()
+_mirror_instance: Optional[VrpMirror] = None
+_local_names: Optional[frozenset] = None
+
+
+def is_valid_package(value: Any) -> bool:
+    """Package ids become folder names, so they must not be able to leave the library folder."""
+    return isinstance(value, str) and bool(PACKAGE_RE.fullmatch(value)) and ".." not in value
+
+
+def _host_name(value: str) -> str:
+    """'frame.local:5050' -> 'frame.local', '[::1]:5050' -> '::1'."""
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        return value[1:value.find("]")] if "]" in value else ""
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+def is_trusted_host(host_header: str) -> bool:
+    """True for an IP address or one of this machine's own names.
+
+    A web page elsewhere can point a hostname it controls at this server (DNS rebinding) and would
+    then be same-origin with the dashboard; such a request carries that foreign name as its Host."""
+    global _local_names
+    host = _host_name(host_header)
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    if _local_names is None:
+        node = socket.gethostname().lower()
+        _local_names = frozenset({"localhost", node, f"{node}.local", socket.getfqdn().lower()})
+    if host in _local_names:
+        return True
+    # Names the owner added with `frameload allow-host`. That command runs in another process, so the
+    # file is read again here (only for names that are not this machine's own).
+    cfg = Config.get()
+    cfg.load()
+    return host in {str(h).lower() for h in cfg["server"].get("allowed_hosts", [])}
 
 
 class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        self.mirror = VrpMirror()
-        self.fdroid = FDroidCatalog()
+        self.fdroid = FDroidCatalog.get()
         self.downloader = Downloader.get()
         super().__init__(*args, directory=WEB_DIR, **kwargs)
+
+    @property
+    def mirror(self) -> VrpMirror:
+        global _mirror_instance
+        with _mirror_lock:
+            if _mirror_instance is None:
+                _mirror_instance = VrpMirror()
+            return _mirror_instance
+
+    def request_allowed(self) -> bool:
+        """The dashboard is unauthenticated, so only its own pages may call the API: any other site
+        open in a browser on the headset or the LAN could otherwise install or uninstall things."""
+        host = self.headers.get("Host", "")
+        if not is_trusted_host(host):
+            return False
+        origin = self.headers.get("Origin")
+        if origin is not None:
+            if urllib.parse.urlparse(origin).netloc.lower() != host.strip().lower():
+                return False
+        if self.command == "POST" and self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
+            return False
+        return True
+
+    def client_is_local(self) -> bool:
+        return access.is_loopback(self.client_address[0])
+
+    def session_token(self) -> str:
+        for part in self.headers.get("Cookie", "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == access.COOKIE_NAME:
+                return value
+        return ""
+
+    def authorized(self) -> bool:
+        """The headset itself, or a device that was paired with a code shown on the headset."""
+        return self.client_is_local() or access.is_valid(self.session_token())
 
     def do_HEAD(self) -> None:
         self.do_GET()
 
     def do_OPTIONS(self) -> None:
+        # No CORS headers: cross-origin preflights fail, same-origin requests never send one.
         self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -84,6 +170,22 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         params = urllib.parse.parse_qs(parsed.query)
+
+        if path.startswith("/api/"):
+            if not self.request_allowed():
+                self.send_json({"error": "Request refused: open the dashboard by its IP address or hostname."},
+                               status=HTTPStatus.FORBIDDEN)
+                return
+            if not self.authorized():
+                self.send_json({"error": "pairing_required"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            for key in ("package", "pkg"):
+                if key in params and not is_valid_package(params[key][0]):
+                    self.send_json({"error": "Invalid package name"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+        elif path in ("/", "/index.html") and not self.authorized():
+            self.serve_file(os.path.join(WEB_DIR, "templates", "pair.html"), "text/html; charset=utf-8")
+            return
 
         # Route API calls
         if path == "/api/system":
@@ -104,11 +206,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             
             if kind == "flat":
                 res = self.fdroid.search(
-                    query=q, 
-                    sort_by=sort_by, 
-                    sort_order=sort_order, 
-                    page=page, 
-                    per_page=per_page
+                    query=q,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
+                    page=page,
+                    per_page=per_page,
+                    category=params.get("category", [""])[0],
                 )
             else:
                 res = self.mirror.search(
@@ -119,6 +222,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     per_page=per_page
                 )
             self.send_json(res)
+        elif path == "/api/catalog/categories":
+            self.send_json({"categories": self.fdroid.categories(), "last_sync": self.fdroid.last_sync})
         elif path.startswith("/api/catalog/notes/"):
             identifier = path.replace("/api/catalog/notes/", "").strip()
             identifier = os.path.basename(identifier)
@@ -127,6 +232,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path.startswith("/api/catalog/game/"):
             identifier = path.replace("/api/catalog/game/", "").strip()
             identifier = os.path.basename(identifier)
+            app = self.fdroid.get_game(identifier)
+            if app:
+                self.send_json({"success": True, "game": app.to_dict()})
+                return
             game = self.mirror.get_game(identifier) or self.mirror.games_by_pkg.get(identifier)
             if game:
                 g_dict = game.to_dict()
@@ -163,17 +272,19 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.serve_file(found_thumb, "image/jpeg")
                 return
 
-            # 3. Try online cover fetching & cache to disk
+            # 3. Try online cover fetching & cache to disk (misses are remembered for a week)
             from .installer.artwork import ArtworkManager
-            fetched = ArtworkManager._fetch_cover_art(pkg, pkg, meta_thumb_dir)
+            fetched = ArtworkManager._fetch_cover_art(pkg, pkg, meta_thumb_dir) if is_valid_package(pkg) else None
             if fetched and os.path.isfile(fetched):
-                self.serve_file(fetched, "image/jpeg")
+                cached = os.path.join(meta_thumb_dir, f"{pkg}.jpg")
+                os.replace(fetched, cached)  # found by step 1 next time
+                self.serve_file(cached, "image/jpeg")
                 return
 
             # 4. Fallback vector SVG placeholder
-            game = self.mirror.games_by_pkg.get(pkg)
+            game = self.fdroid.games_by_pkg.get(pkg) or self.mirror.games_by_pkg.get(pkg)
             title = game.name if game else pkg
-            safe_title = (title[:24] + "...") if len(title) > 24 else title
+            safe_title = html.escape((title[:24] + "...") if len(title) > 24 else title)
             svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -204,7 +315,27 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except BrokenPipeError:
                 pass
         elif path == "/api/downloads":
-            self.send_json({"tasks": self.downloader.get_all_tasks()})
+            self.send_json({"tasks": self.downloader.get_all_tasks(), "pending_links": PendingLinks.all()})
+        elif path == "/api/steam/status":
+            self.send_json(steam_session.status())
+        elif path == "/api/access/devices":
+            self.send_json({"devices": access.devices(), "local": self.client_is_local()})
+        elif path == "/api/files":
+            try:
+                self.send_json(file_manager.browse(params.get("path", [""])[0]))
+            except PermissionError as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.FORBIDDEN)
+        elif path == "/api/catalog/updates":
+            self.send_json({"updates": self.fdroid.available_updates()})
+        elif path.startswith("/api/installed/log/"):
+            pkg = urllib.parse.unquote(path.replace("/api/installed/log/", "").strip())
+            if not is_valid_package(pkg):
+                self.send_json({"error": "Invalid package name"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_json(launchlog.read_log(pkg))
+            except (FileNotFoundError, OSError) as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
         elif path == "/api/installed":
             try:
                 installed = InstalledManager.list_installed()
@@ -220,7 +351,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             dep = InstalledManager.get_game(pkg)
             anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, pkg)) if dep else os.path.join(ANCHOR_DIR, pkg)
             art_dir = os.path.join(anchor, "artwork")
-            for name in ("poster.png", "icon.png", "banner.png", "poster.svg"):
+            # 2D apps are recognised by their icon, games by their cover.
+            order = ("icon", "poster") if dep and dep.get("kind") == "flat" else ("poster", "icon")
+            for name in [f"{slot}{ext}" for slot in order for ext in (".png", ".jpg", ".webp")] + ["poster.svg"]:
                 f = os.path.join(art_dir, name)
                 if os.path.isfile(f):
                     mime, _ = mimetypes.guess_type(f)
@@ -244,21 +377,40 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/tuning/presets":
             self.send_json({
                 "presets": TuningManager.get_presets(),
-                "spoof_profiles": TuningManager.get_spoof_profiles()
+                "schema": TuningManager.get_schema(),
             })
         elif path == "/api/tuning/global":
             self.send_json(TuningManager.get_global_tuning())
         elif path.startswith("/api/installed/tuning/"):
-            pkg = path.replace("/api/installed/tuning/", "").strip()
-            if "?" in pkg:
-                pkg = pkg.split("?")[0]
+            pkg = urllib.parse.unquote(path.replace("/api/installed/tuning/", "").strip())
+            if not is_valid_package(pkg):
+                self.send_json({"error": "Invalid package name"}, status=HTTPStatus.BAD_REQUEST)
+                return
             try:
                 self.send_json(TuningManager.get_game_tuning(pkg))
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
         elif path == "/api/tuning/hand-tracking":
-            from .installer.hand_tracking import HandTrackingManager
-            self.send_json(HandTrackingManager.get_diagnostic_report())
+            try:
+                games = InstalledManager.list_installed()
+            except Exception:
+                games = []
+            self.send_json(hand_tracking.status_report(games))
+        elif path == "/api/system/doctor":
+            from .system.doctor import run_checks
+            self.send_json(run_checks())
+        elif path == "/api/porting/status":
+            info = porting.status()
+            info["job"] = porting.PortingJobs.active()
+            info["auto"] = porting.is_auto()
+            info["pending"] = porting.pending_games()
+            self.send_json(info)
+        elif path.startswith("/api/porting/jobs/"):
+            job = porting.PortingJobs.get(os.path.basename(path))
+            if job:
+                self.send_json(job)
+            else:
+                self.send_json({"error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
         elif path == "/api/mirrors":
             config = Config.get()
             custom_mirrors = config["mirrors"].get("custom_mirrors", [])
@@ -310,7 +462,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json(StorageManager.get_storage_overview(device_id))
         elif path == "/api/updates":
             try:
-                app_status = UpdateManager.check_app_update()
+                app_status = UpdateManager.check_app_update(force=params.get("force", [""])[0] == "1")
             except Exception as e:
                 app_status = {"has_update": False, "error": str(e)}
             try:
@@ -364,7 +516,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             clean_rel = os.path.normpath(rel).lstrip("/")
             static_dir = os.path.abspath(os.path.join(WEB_DIR, "static"))
             static_file = os.path.abspath(os.path.join(static_dir, clean_rel))
-            if not static_file.startswith(static_dir) or not os.path.isfile(static_file):
+            if not static_file.startswith(static_dir + os.sep) or not os.path.isfile(static_file):
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
             mime, _ = mimetypes.guess_type(static_file)
@@ -375,14 +527,80 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        body = self.read_json_body()
 
-        if path == "/api/catalog/sync":
+        if not self.request_allowed():
+            self.send_json({"error": "Request refused: it did not come from the FrameLoad dashboard."},
+                           status=HTTPStatus.FORBIDDEN)
+            return
+        if path == "/api/upload":
+            self.handle_upload(urllib.parse.parse_qs(parsed.query))
+            return
+        body = self.read_json_body()
+        if path == "/api/pair":
+            token = access.redeem(str(body.get("code", "")), str(body.get("label", "")))
+            if not token:
+                time.sleep(0.6)  # slows guessing; the code is withdrawn after a few wrong tries anyway
+                self.send_json({"error": "That code is wrong or has expired. Get a new one on the headset."},
+                               status=HTTPStatus.FORBIDDEN)
+                return
+            cookie = f"{access.COOKIE_NAME}={token}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict"
+            self.send_json({"success": True}, headers={"Set-Cookie": cookie})
+            return
+        if not self.authorized():
+            self.send_json({"error": "pairing_required"}, status=HTTPStatus.UNAUTHORIZED)
+            return
+        if "package" in body and not is_valid_package(body["package"]):
+            self.send_json({"error": "Invalid package name"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if body.get("packages") is not None:
+            if not isinstance(body["packages"], list) or not all(is_valid_package(p) for p in body["packages"]):
+                self.send_json({"error": "Invalid package list"}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+        if path in ("/api/access/code", "/api/access/revoke"):
+            # Only someone at the headset can let another device in or remove one.
+            if not self.client_is_local():
+                self.send_json({"error": "This can only be done on the headset."}, status=HTTPStatus.FORBIDDEN)
+            elif path == "/api/access/code":
+                self.send_json(access.new_code())
+            else:
+                self.send_json({"success": True, "removed": access.revoke(str(body.get("id", "")))})
+        elif path == "/api/steam/restart":
+            self.send_json(steam_session.restart_steam())
+        elif path == "/api/links/confirm":
+            try:
+                self.send_json(ProtocolHandler.confirm(str(body.get("id", ""))))
+            except KeyError as e:
+                self.send_json({"error": str(e.args[0])}, status=HTTPStatus.NOT_FOUND)
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/links/dismiss":
+            try:
+                PendingLinks.take(str(body.get("id", "")))
+            except KeyError:
+                pass
+            self.send_json({"success": True})
+        elif path == "/api/catalog/update-all":
+            queued = []
+            for update in self.fdroid.available_updates():
+                app = self.fdroid.get_game(update["id"])
+                if app:
+                    queued.append(self.downloader.add_to_queue(app).id)
+            self.send_json({"success": True, "queued": len(queued)})
+        elif path == "/api/catalog/sync":
+            kind = body.get("kind", "")
+            if kind == "flat":
+                messages: list = []
+                success = self.fdroid.sync(messages.append)
+                self.send_json({
+                    "success": success,
+                    "total_games": len(self.fdroid.games),
+                    "message": messages[-1] if messages else "",
+                })
+                return
             success = self.mirror.sync_catalog()
-            
-            # Sync fdroid async or sequentially (doing it sequentially is fine for now)
-            self.fdroid.sync()
-            
+            if not kind:
+                self.fdroid.sync()
             self.send_json({"success": success, "total_games": len(self.mirror.games) + len(self.fdroid.games)})
         elif path == "/api/mirrors/apply":
             # Accept a vrp-public.json dict with baseUri + password
@@ -457,7 +675,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/downloads/queue":
             game_id = body.get("game_id", "")
             device_id = body.get("device_id")
-            game = self.mirror.get_game(game_id) or self.fdroid.get_game(game_id)
+            game = self.fdroid.get_game(game_id) or self.mirror.get_game(game_id)
             if not game:
                 self.send_json({"error": "Game not found in catalog"}, status=HTTPStatus.NOT_FOUND)
                 return
@@ -508,7 +726,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/installed/tuning/preset":
             pkg = body.get("package", "")
-            preset = body.get("preset", "steam_frame_turbo")
+            preset = body.get("preset", "default")
             try:
                 updated = TuningManager.apply_preset(pkg, preset)
                 self.send_json({"success": True, "package": pkg, "preset": preset, "settings": updated})
@@ -522,7 +740,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/tuning/batch-apply":
-            preset = body.get("preset", "steam_frame_turbo")
+            preset = body.get("preset", "default")
             packages = body.get("packages")
             try:
                 res = TuningManager.batch_apply(preset, packages)
@@ -538,7 +756,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/installed/restore":
             pkg = body.get("package", "")
-            filename = body.get("filename", "")
+            filename = os.path.basename(str(body.get("filename", "")))
             try:
                 success = SaveBackupManager.restore_backup(pkg, filename)
                 self.send_json({"success": success})
@@ -611,8 +829,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             source_path = body.get("source_path") or body.get("apk_path", "")
             title = body.get("title", "")
             obb_path = body.get("obb_path")
-            force_flat = body.get("force_flat", False)
-            window_preset = body.get("window_preset")
+            # Unticked means "decide from the APK", not "force VR".
+            force_flat = True if body.get("force_flat") else None
             device_id = body.get("device_id")
             if not os.path.exists(source_path):
                 self.send_json({"error": f"Path not found: {source_path}"}, status=HTTPStatus.BAD_REQUEST)
@@ -624,8 +842,13 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     obb_path=obb_path,
                     device_id=device_id,
                     force_flat=force_flat,
-                    window_preset=window_preset
                 )
+                try:
+                    res["porting"] = porting.auto_port(res)
+                except Exception as e:  # the install itself succeeded
+                    res["porting"] = {"needed": True, "started": False, "reason": "error", "error": str(e)}
+                file_manager.discard_upload(source_path)  # a received upload has served its purpose
+                res["steam"] = steam_session.status()
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -653,6 +876,28 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"success": ok})
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/porting/setup":
+            try:
+                job = porting.PortingJobs.start("setup", porting.setup_and_port_pending)
+                self.send_json({"success": True, "job": job})
+            except porting.PortingError as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.CONFLICT)
+        elif path == "/api/porting/settings":
+            cfg = Config.get()
+            porting_cfg = dict(cfg.get("porting", {}) or {})
+            porting_cfg["auto"] = bool(body.get("auto", True))
+            cfg["porting"] = porting_cfg
+            self.send_json({"success": True, "auto": porting_cfg["auto"]})
+        elif path == "/api/porting/port":
+            pkg = body.get("package", "")
+            if not InstalledManager.get_game(pkg):
+                self.send_json({"error": "Game is not installed"}, status=HTTPStatus.NOT_FOUND)
+                return
+            try:
+                job = porting.PortingJobs.start("port", lambda log: porting.port_installed_game(pkg, log), package=pkg)
+                self.send_json({"success": True, "job": job})
+            except porting.PortingError as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.CONFLICT)
         elif path == "/api/system/protocol":
             url = body.get("url", "")
             res = ProtocolHandler.handle_url(url)
@@ -711,22 +956,40 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def read_json_body(self) -> Dict[str, Any]:
         try:
             content_length = int(self.headers.get("Content-Length", 0))
-            if content_length > 0:
-                raw = self.rfile.read(content_length).decode("utf-8")
-                return json.loads(raw)
+            if 0 < content_length <= MAX_BODY_BYTES:
+                data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+                if isinstance(data, dict):
+                    return data
         except Exception:
             pass
         return {}
 
-    def send_json(self, data: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
+    def handle_upload(self, params: Dict[str, Any]) -> None:
+        """Receives one file from a paired phone or PC (raw request body) into the uploads folder."""
+        if not self.authorized():
+            self.send_json({"error": "pairing_required"}, status=HTTPStatus.UNAUTHORIZED)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            result = file_manager.receive_upload(
+                params.get("session", [""])[0], params.get("name", [""])[0], length, self.rfile)
+            self.send_json(result)
+        except ValueError as e:
+            self.send_json({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
+        except OSError as e:
+            self.close_connection = True  # part of the body may still be unread
+            self.send_json({"error": str(e)}, status=HTTPStatus.INSUFFICIENT_STORAGE)
+
+    def send_json(self, data: Any, status: HTTPStatus = HTTPStatus.OK, headers: Optional[Dict[str, str]] = None) -> None:
         try:
             body = json.dumps(data).encode("utf-8")
             self.send_response(status)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
@@ -740,6 +1003,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(content)))
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(content)
         except (BrokenPipeError, ConnectionResetError):
@@ -757,6 +1021,13 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
 
 
 def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
+    # A log line with a character the console cannot encode must not take the server down.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     # Hook auto-installer into downloader
     downloader = Downloader.get()
 
@@ -792,7 +1063,8 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
                 title=task.game.name,
                 apk_path=task.target_apk,
                 obb_path=obb_dir,
-                force_flat=(task.game.kind == "flat"),
+                force_flat=True if task.game.kind == "flat" else None,
+                icon_url=task.game.thumbnail_url if task.game.source == "fdroid" else "",
                 device_id=target_device
             )
             task.status = "completed"
@@ -805,6 +1077,14 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
             sys.stderr.write(f"{RED}✖ [Auto-Install Failed]: {exc}{RESET}\n")
 
     downloader.set_complete_hook(on_download_complete)
+
+    def migrate() -> None:
+        from .manager.migrate import migrate_installs
+        for package, changes in migrate_installs().items():
+            print(f"[FrameLoad] Updated {package}: {'; '.join(changes) or 'nothing to change'}")
+
+    threading.Thread(target=migrate, daemon=True, name="migrate-installs").start()
+    file_manager.clean_stale_uploads()
 
     server = ThreadingHTTPServer((host, port), FrameLoadApiHandler)
     print(f"{CYAN}============================================================{RESET}")

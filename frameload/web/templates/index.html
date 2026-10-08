@@ -40,10 +40,6 @@
       <div id="header-battery" class="telemetry-chip battery">
         <span class="pulse-dot"></span> --%
       </div>
-      <div id="header-input-mode" class="telemetry-chip input-mode clickable" onclick="toggleVRInputMode()" title="VR Input: Auto / Controllers / Hands (Click to toggle)">
-        <span class="pulse-dot" style="background:var(--accent-cyan);"></span>
-        <span id="header-input-label">🎮 Knuckles</span>
-      </div>
       <div id="header-storage" class="telemetry-chip clickable" onclick="openStorageTab()" title="Open Steam Storage Manager">
         💾 -- GB Free
       </div>
@@ -127,6 +123,29 @@
   <!-- Main Panels Container -->
   <main class="main-content">
     
+    <!-- Shown when the server refuses API calls because of the address the dashboard was opened with -->
+    <div id="host-refused-banner" class="compat-notice compat-blocked" style="display:none; margin-bottom:16px;">
+      <div class="compat-title">FrameLoad refused this address</div>
+      <ul>
+        <li>For safety the dashboard only answers under an IP address, <code>localhost</code> or this headset's own name.</li>
+        <li>Open it by IP address, or allow this name once in a terminal on the Frame: <code id="host-refused-command">frameload allow-host &lt;name&gt;</code></li>
+      </ul>
+    </div>
+
+    <!-- The self-test runs by itself when the dashboard opens; this shows only if something is wrong -->
+    <div id="health-banner" class="compat-notice compat-blocked" style="display:none; margin-bottom:16px;">
+      <div class="compat-title">FrameLoad found a problem on this headset</div>
+      <ul id="health-banner-list"></ul>
+      <button class="btn-secondary compact" style="margin-top:10px;" onclick="document.querySelector('[data-tab=system]').click(); runDoctor();">Show Details</button>
+    </div>
+
+    <!-- New games Steam has not loaded yet -->
+    <div id="steam-banner" class="compat-notice compat-likely" style="display:none; margin-bottom:16px;">
+      <div class="compat-title" id="steam-banner-title">New games are waiting for Steam</div>
+      <ul><li id="steam-banner-text"></li></ul>
+      <button id="steam-restart-btn" class="btn-secondary compact" style="margin-top:10px;" onclick="restartSteam()">Restart Steam Now</button>
+    </div>
+
     <!-- Global In-Headset App Update Notification Banner -->
     <div id="app-update-top-banner" class="app-update-banner" style="display:none;">
       <div class="update-banner-icon-box">
@@ -164,13 +183,17 @@
             </svg>
             Sync Catalog
           </button>
-          <span style="color:var(--text-muted); font-size:0.85rem;">Browse public VR mirror</span>
+          <span id="catalog-source-hint" style="color:var(--text-muted); font-size:0.85rem;">Browse public VR mirror</span>
         </div>
         <div class="control-group">
           <label style="font-size:0.85rem; color:var(--text-muted);">Catalog:</label>
           <select id="catalog-kind-select" class="select-styled" style="margin-right:12px;">
             <option value="vr">VR Games</option>
             <option value="flat">2D Apps (F-Droid)</option>
+          </select>
+          <button id="fdroid-updates-btn" class="btn-secondary compact" style="display:none; margin-right:12px;" onclick="updateAllApps()"></button>
+          <select id="catalog-category-select" class="select-styled" style="display:none; margin-right:12px;" aria-label="Category">
+            <option value="">All categories</option>
           </select>
           <label style="font-size:0.85rem; color:var(--text-muted);">Sort by:</label>
           <select id="sort-select" class="select-styled">
@@ -256,11 +279,18 @@
           <div style="margin-bottom:18px;">
             <label style="display:block; margin-bottom:8px; font-weight:600;">Path on Steam Frame (File or Folder):</label>
             <div style="display:flex; gap:10px;">
-              <input type="text" id="sideload-apk-path" class="search-input" placeholder="/run/media/deck/.../game.xapk, .exe, .AppImage, or folder" required style="flex:1; border-radius:var(--radius-sm); padding-left:14px;">
+              <input type="text" id="sideload-apk-path" class="search-input" placeholder="Pick a file with Browse, or type a path" required style="flex:1; border-radius:var(--radius-sm); padding-left:14px;">
+              <button type="button" class="btn-secondary compact" onclick="openFileBrowser()">Browse</button>
               <button type="button" class="btn-secondary compact" onclick="inspectSideloadPath()" title="Inspect package metadata">Inspect</button>
             </div>
+            <div class="upload-row">
+              <label class="btn-secondary compact" for="sideload-upload-input" tabindex="0">Upload From This Device</label>
+              <input type="file" id="sideload-upload-input" multiple accept=".apk,.obb,.xapk,.apks,.zip,.exe,.AppImage" style="display:none;" onchange="uploadSelectedFiles(this.files)">
+              <span id="upload-status" class="tuning-micro-note"></span>
+            </div>
+            <div id="upload-progress" class="progress-track" style="display:none; margin-top:8px;"><div id="upload-progress-fill" class="progress-fill"></div></div>
             <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
-              Supports Quest <code>.apk</code> / <code>.xapk</code> / <code>.apks</code>, Windows PCVR / Flat <code>.exe</code> via Proton, and Linux <code>.AppImage</code> / ELF binaries.
+              Android <code>.apk</code> (or a folder / <code>.zip</code> / <code>.xapk</code> holding one APK and its OBB), Windows <code>.exe</code> via Proton, and Linux <code>.AppImage</code> / ELF binaries. Press Inspect to see whether a Quest game will run before installing it.
             </p>
           </div>
           <div id="sideload-inspect-preview" style="display:none; margin-bottom:18px; padding:12px 16px; background:rgba(0,245,212,0.06); border:1px solid rgba(0,245,212,0.25); border-radius:var(--radius-sm);">
@@ -270,23 +300,15 @@
             </div>
             <p id="inspect-pkg" style="font-size:0.8rem; color:var(--text-muted); font-family:monospace; margin-top:4px;">--</p>
             <p id="inspect-meta" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">--</p>
+            <div id="inspect-compat" style="display:none; margin-top:10px;"></div>
           </div>
           <div style="margin-bottom:18px;">
             <label style="display:block; margin-bottom:8px; font-weight:600;">Custom Title (Optional):</label>
             <input type="text" id="sideload-title" class="search-input" placeholder="e.g. Gorilla Tag" style="border-radius:var(--radius-sm); padding-left:14px;">
           </div>
-          <div style="margin-bottom:18px; display:flex; align-items:center; gap:12px;">
-            <input type="checkbox" id="sideload-flat" style="width:18px; height:18px;" onchange="toggleFlatWindowPreset(this.checked)">
-            <label for="sideload-flat" style="font-size:0.9rem;">Launch as 2D Flat Android Window (for non-VR Android apps)</label>
-          </div>
-          <div id="sideload-window-preset-group" style="display:none; margin-bottom:20px; background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); padding:12px 16px; border-radius:var(--radius-sm);">
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:6px; color:var(--accent-cyan);">Flat App Window Preset:</label>
-            <select id="sideload-window-preset" class="select-styled" style="width:100%; border-radius:var(--radius-sm); padding:8px 12px; background:rgba(0,0,0,0.4); color:#fff; border:1px solid var(--border-subtle);">
-              <option value="tablet">Tablet Mode (1600x1000 — 16:10 Landscape)</option>
-              <option value="phone">Mobile Phone (900x1600 — 9:16 Portrait)</option>
-              <option value="desktop">Desktop Cinema (1920x1080 — 16:9 Widescreen)</option>
-              <option value="ultrawide">Ultrawide Display (2560x1080 — 21:9)</option>
-            </select>
+          <div style="margin-bottom:20px; display:flex; align-items:center; gap:12px;">
+            <input type="checkbox" id="sideload-flat" style="width:18px; height:18px;">
+            <label for="sideload-flat" style="font-size:0.9rem;">Show as a 2D window (ticked automatically for non-VR Android apps)</label>
           </div>
           <button type="submit" id="sideload-submit-btn" class="btn-primary" style="width:100%; justify-content:center; padding:12px;">Install and Add to Steam Library</button>
         </form>
@@ -307,7 +329,8 @@
         <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
           <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Valve Lepton Runtime</h3>
           <p style="margin-bottom:12px;"><strong>Lepton Container:</strong> <span id="sys-lepton">--</span></p>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Lepton runs Android &amp; Quest VR titles on SteamOS with OpenXR translation.</p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Valve's Android container. It ships with the Steam Frame and runs every Android app FrameLoad installs.</p>
+          <p id="sys-not-frame-note" style="display:none; font-size:0.8rem; color:var(--accent-amber); margin-bottom:12px;">This machine is not a Steam Frame, so installed apps cannot be launched from here.</p>
           <button class="btn-secondary" onclick="fixKeyring()">Apply Podman Keyring Leak Fix</button>
         </div>
         <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
@@ -382,36 +405,15 @@
             <button class="btn-secondary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('hide')">Dismiss Keyboard</button>
           </div>
         </div>
-        <!-- VR Input & Hand Tracking Switcher Card -->
+        <!-- Hand tracking status -->
         <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
-              <span>🥽</span> VR Input &amp; Hand Tracking
-            </h3>
-            <span id="sys-input-badge" class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Auto-Switch</span>
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Hand Tracking in Games</h3>
+            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Controller-driven</span>
           </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
-            Switch seamlessly between Valve Knuckles motion controllers and Quest-style optical hand tracking. Automatically falls back to hand gestures when controllers are put down or powered off.
-          </p>
-          <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
-            <label style="display:flex; align-items:center; gap:10px; font-size:0.86rem; cursor:pointer;">
-              <input type="radio" name="vr-input-mode" value="auto" checked onchange="setVRInputMode('auto')">
-              <span><strong>🔄 Auto-Switch (Recommended)</strong> — Knuckles when active; auto-fallback to hands when off</span>
-            </label>
-            <label style="display:flex; align-items:center; gap:10px; font-size:0.86rem; cursor:pointer;">
-              <input type="radio" name="vr-input-mode" value="controllers" onchange="setVRInputMode('controllers')">
-              <span><strong>🎮 Motion Controllers Only</strong> — Force Valve Knuckles / Steam Frame Roy controllers</span>
-            </label>
-            <label style="display:flex; align-items:center; gap:10px; font-size:0.86rem; cursor:pointer;">
-              <input type="radio" name="vr-input-mode" value="hands" onchange="setVRInputMode('hands')">
-              <span><strong>🖐️ Optical Hand Tracking Only</strong> — Force bare-hand pinch &amp; laser reticle navigation</span>
-            </label>
-          </div>
-          <div style="display:flex; gap:10px;">
-            <button class="btn-secondary compact" onclick="toggleVRInputMode()">
-              ⚡ Cycle Mode Now
-            </button>
-          </div>
+          <p id="hand-status-summary" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">Loading...</p>
+          <div id="hand-status-games"></div>
+          <p class="tuning-micro-note" style="margin-top:10px;">Choose per game whether it sees controllers or hands: open the game in your library and press Settings.</p>
         </div>
 
         <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.2); padding:24px; border-radius:var(--radius-lg);">
@@ -439,21 +441,63 @@
           </div>
         </div>
 
-        <!-- Global Steam Frame Optimization & Spoofing Card -->
-        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.3); padding:24px; border-radius:var(--radius-lg); grid-column:span 2;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
-              <span>🥽</span> Steam Frame VR Global Optimizer &amp; Quest 3 Spoofing
-            </h3>
-            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Hardware Accelerator</span>
-          </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
-            Automatically unlocks high-res 4K textures, dynamic real-time shadows, Steam Frame eye-tracked foveated rendering (DFR), and supersampled resolution on Quest APKs running in the Lepton container.
+        <!-- Access from a phone or PC -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:12px;">Phone &amp; PC Access</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            Open FrameLoad from another device on your Wi-Fi to upload games from it. Each device is approved once with a code shown here.
           </p>
-          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-            <button class="btn-primary compact" onclick="batchApplyTurboToAll()">⚡ Apply Steam Frame Turbo to All Games</button>
-            <button class="btn-secondary compact" onclick="openGlobalTuningModal()">⚙️ Configure Default Tuning</button>
+          <p id="access-address" class="tuning-micro-note" style="margin-bottom:10px;"></p>
+          <div id="access-code-box" style="display:none; margin-bottom:12px;">
+            <div id="access-code" class="pairing-code"></div>
+            <p class="tuning-micro-note">Enter this code on the other device within five minutes. It works once.</p>
           </div>
+          <div id="access-devices" style="margin-bottom:12px;"></div>
+          <button id="btn-access-code" class="btn-primary compact" onclick="showPairingCode()">Show Pairing Code</button>
+        </div>
+
+        <!-- Quest game porting -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Quest Game Porting</h3>
+            <span id="porting-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Checking...</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
+            Games built for Meta's Quest runtime are converted on this headset with
+            <a href="https://github.com/spoopyghosty0/frameport" target="_blank" rel="noopener" style="color:var(--accent-cyan);">FramePort</a>
+            (OVRPort conversion, FrameBridge adapter, signing). Setup downloads FramePort, a Java runtime and its tools once (a few hundred MB).
+          </p>
+          <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.88rem; margin-bottom:10px;">
+            <input type="checkbox" id="porting-auto-check" checked onchange="setPortingAuto(this.checked)" style="width:18px; height:18px; accent-color:var(--accent-cyan);">
+            <span>Port Quest games automatically after installing them</span>
+          </label>
+          <p id="porting-detail" class="tuning-micro-note" style="margin-bottom:12px;"></p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="btn-porting-setup" class="btn-primary compact" onclick="startPortingSetup()">Set Up Porting</button>
+            <button id="btn-porting-log" class="btn-secondary compact" style="display:none;" onclick="openPortingModal()">Show Progress</button>
+          </div>
+        </div>
+
+        <!-- Self-test -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Self-Test</h3>
+            <span id="doctor-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Not run</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            Checks Lepton, podman, the launcher's tools, your Steam library and every installed game on this headset.
+          </p>
+          <div id="doctor-results"></div>
+          <button class="btn-secondary compact" onclick="runDoctor()">Run Self-Test</button>
+        </div>
+
+        <!-- Default game settings -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.3); padding:24px; border-radius:var(--radius-lg);">
+          <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:12px;">Default Game Settings</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+            Resolution scale, refresh rate, foveated rendering and hand input for games that have no setting of their own.
+          </p>
+          <button class="btn-secondary compact" onclick="openGlobalTuningModal()">Edit Defaults</button>
         </div>
       </div>
     </section>
@@ -654,7 +698,7 @@
           <button id="modal-game-move-btn" class="btn-secondary compact" style="display:none;" onclick="moveCurrentModalGame()">Move Drive</button>
         </div>
         <div style="grid-column:span 2;"><strong>Target Runtime:</strong> <span id="modal-game-platform" style="color:var(--accent-cyan);">Steam Frame (Lepton Container)</span></div>
-        <div style="grid-column:span 2;"><strong>OpenXR Layer:</strong> <span id="modal-game-openxr" style="color:var(--accent-purple);">FrameBridge Adapter &amp; Controller Models</span></div>
+        <div style="grid-column:span 2;"><strong>VR Runtime:</strong> <span id="modal-game-openxr" style="color:var(--accent-purple);">--</span></div>
       </div>
 
       <!-- Release Notes & Special Instructions Section -->
@@ -684,6 +728,8 @@
           Beat Saber maps (<code>.zip</code>) are automatically placed into <code>CustomSongs/</code> with permissions fixed.
         </p>
       </div>
+
+      <div id="modal-compat" style="display:none; margin-bottom:16px;"></div>
 
       <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
     </div>
@@ -877,240 +923,81 @@
     </div>
   </div>
 
-  <!-- Steam Frame VR Optimizer & Hardware Tuning Modal -->
+  <!-- Per-game settings dialog (controls are rendered from /api/tuning/presets) -->
   <div id="tuning-modal" class="modal-backdrop">
     <div class="modal-content" style="max-width:680px; max-height:90vh; overflow-y:auto;">
       <button class="modal-close" onclick="closeTuningModal()">&times;</button>
-      
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-        <div>
-          <h2 style="font-size:1.35rem; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-            <span style="color:var(--accent-cyan);">🥽</span> <span id="tuning-modal-title">Steam Frame VR Optimizer</span>
-          </h2>
-          <p id="tuning-modal-subtitle" style="font-size:0.83rem; color:var(--text-muted); font-family:var(--font-mono, monospace);">
-            package.name
-          </p>
+
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px;">
+        <div style="min-width:0;">
+          <h2 id="tuning-modal-title" style="font-size:1.35rem; font-weight:800; color:#fff; margin-bottom:4px;">Settings</h2>
+          <p id="tuning-modal-subtitle" style="font-size:0.83rem; color:var(--text-muted); font-family:var(--font-mono, monospace); overflow-wrap:anywhere;"></p>
         </div>
-        <span id="tuning-modal-engine-badge" class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan); font-size:0.78rem;">
-          Unity Engine
-        </span>
+        <span id="tuning-modal-engine-badge" class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan); font-size:0.78rem; margin-right:32px;"></span>
       </div>
 
-      <!-- Quick Preset Selector Strip -->
-      <label style="display:block; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:700; margin-bottom:6px;">
-        1-Click Optimization Presets:
-      </label>
-      <div class="tuning-presets-strip">
-        <button type="button" id="preset-chip-turbo" class="tuning-preset-chip active" onclick="selectTuningPreset('steam_frame_turbo')">
-          <span>⚡</span> Steam Frame Turbo
-        </button>
-        <button type="button" id="preset-chip-visuals" class="tuning-preset-chip" onclick="selectTuningPreset('max_visuals')">
-          <span>🌟</span> Max Visuals (PCVR)
-        </button>
-        <button type="button" id="preset-chip-fps" class="tuning-preset-chip" onclick="selectTuningPreset('high_fps_120')">
-          <span>🏎️</span> 120Hz Ultra Smooth
-        </button>
-        <button type="button" id="preset-chip-battery" class="tuning-preset-chip" onclick="selectTuningPreset('battery_saver')">
-          <span>🔋</span> Battery Saver
-        </button>
-        <button type="button" id="preset-chip-stock" class="tuning-preset-chip" onclick="selectTuningPreset('stock_default')">
-          <span>🔄</span> Stock Quest 3 (1.0x)
-        </button>
+      <div id="tuning-presets" class="tuning-presets-strip"></div>
+      <div id="tuning-body"></div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border-subtle); padding-top:16px; margin-top:16px;">
+        <button type="button" class="btn-secondary" onclick="closeTuningModal()">Cancel</button>
+        <button type="button" id="btn-save-tuning" class="btn-primary" onclick="saveGameTuningFromModal()">Save</button>
       </div>
+    </div>
+  </div>
 
-      <!-- Settings Cards Grid -->
-      <div class="tuning-grid">
-        <!-- 1. Hardware & Device Spoofing -->
-        <div class="tuning-card" style="grid-column:span 2;">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">🎭 Quest Hardware Spoofing Profile</span>
-            <span class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Graphics Unlock</span>
-          </div>
-          <select id="tune-spoof-profile" class="select-styled" style="width:100%; margin-bottom:6px;" onchange="updateTuningPreview()">
-            <option value="quest3" selected>Meta Quest 3 (eureka) — Unlocks 4K Textures, Dynamic Lighting &amp; Shadows [Recommended]</option>
-            <option value="quest_pro">Meta Quest Pro (seacliff) — Enables Eye &amp; Face Tracking API Surface</option>
-            <option value="quest3s">Meta Quest 3S (panther) — Modern Shaders with Balanced Fillrate</option>
-            <option value="quest2">Meta Quest 2 (hollywood) — Legacy Performance Profile</option>
-            <option value="steam_frame">Valve Steam Frame (galileo) — Native OpenXR Identifier</option>
-          </select>
-          <p class="tuning-micro-note">
-            💡 <strong>Why this matters:</strong> Many Quest titles check <code>Build.MODEL</code> or <code>OVRPlugin</code>. When spoofed as <strong>Quest 3</strong>, games activate full PC-grade shader cascades, dynamic shadows, and 4K textures instead of Quest 2 low-end assets.
-          </p>
-        </div>
-
-        <!-- 2. Resolution Scaling & Supersampling -->
-        <div class="tuning-card" style="grid-column:span 2;">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">🔍 Render Resolution Scale (Supersampling)</span>
-            <span id="tune-scale-display" class="tuning-card-val">1.25x</span>
-          </div>
-          <div class="tuning-slider-wrapper">
-            <input type="range" id="tune-scale-slider" class="tuning-range-slider" min="0.70" max="1.75" step="0.05" value="1.25" oninput="onScaleSliderInput(this.value)">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span id="tune-scale-pixels" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono, monospace);">~2580 x 2760 px/eye</span>
-              <div class="tuning-chips-group">
-                <button type="button" class="tuning-select-chip" onclick="setScaleValue(0.85)">0.85x</button>
-                <button type="button" class="tuning-select-chip" onclick="setScaleValue(1.00)">1.00x</button>
-                <button type="button" class="tuning-select-chip selected" onclick="setScaleValue(1.25)">1.25x</button>
-                <button type="button" class="tuning-select-chip" onclick="setScaleValue(1.35)">1.35x</button>
-                <button type="button" class="tuning-select-chip" onclick="setScaleValue(1.45)">1.45x</button>
-              </div>
-            </div>
-          </div>
-          <p class="tuning-micro-note">
-            Directly supersamples the eye buffer render targets. 1.25x provides razor-sharp distant clarity without aliasing.
-          </p>
-        </div>
-
-        <!-- 3. Refresh Rate -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">⚡ Display Refresh Rate</span>
-            <span id="tune-refresh-val" class="tuning-card-val">90 Hz</span>
-          </div>
-          <select id="tune-refresh-select" class="select-styled" onchange="onRefreshSelect(this.value)">
-            <option value="72">72 Hz (Power Saver)</option>
-            <option value="80">80 Hz (Balanced)</option>
-            <option value="90" selected>90 Hz (Smooth - Recommended)</option>
-            <option value="120">120 Hz (Ultra Smooth)</option>
-            <option value="144">144 Hz (Display Max)</option>
-          </select>
-          <p class="tuning-micro-note">
-            Synchronizes the OpenXR render swapchain to Steam Frame's high-refresh OLED panels.
-          </p>
-        </div>
-
-        <!-- 4. Foveated Rendering & DFR -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">👁️ Foveated Rendering (DFR)</span>
-            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Steam Frame DFR</span>
-          </div>
-          <select id="tune-foveation-select" class="select-styled" onchange="updateTuningPreview()">
-            <option value="dynamic" selected>Dynamic Eye-Tracked (Steam Frame DFR) [+40% GPU]</option>
-            <option value="low">Fixed Low (Subtle Outer VRS)</option>
-            <option value="medium">Fixed Medium (Balanced VRS)</option>
-            <option value="high">Fixed High (Aggressive Edge Compression)</option>
-            <option value="off">Disabled (Full Uniform Resolution)</option>
-          </select>
-          <p class="tuning-micro-note">
-            <strong>Dynamic Eye-Tracked:</strong> Steam Frame eye tracking shifts full shading to pupil center while compressing periphery, providing huge frame rate headroom.
-          </p>
-        </div>
-
-        <!-- 5. MSAA & Anti-Aliasing -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">✨ MSAA Anti-Aliasing</span>
-            <span id="tune-msaa-val" class="tuning-card-val">4x</span>
-          </div>
-          <select id="tune-msaa-select" class="select-styled" onchange="updateTuningPreview()">
-            <option value="0">0x (Disabled - Jagged)</option>
-            <option value="2">2x MSAA (Standard)</option>
-            <option value="4" selected>4x MSAA (Ultra Clean Edges - Recommended)</option>
-          </select>
-          <p class="tuning-micro-note">
-            Eliminates high-frequency specular shimmer on wireframes and metallic edges in VR.
-          </p>
-        </div>
-
-        <!-- 6. Anisotropic Filtering -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">📐 Anisotropic Filtering (AF)</span>
-            <span id="tune-af-val" class="tuning-card-val">8x</span>
-          </div>
-          <select id="tune-af-select" class="select-styled" onchange="updateTuningPreview()">
-            <option value="1">1x (Default Trilinear)</option>
-            <option value="4">4x (Crisp)</option>
-            <option value="8" selected>8x (High - Recommended)</option>
-            <option value="16">16x (Ultra Sharp Floors &amp; Geometry)</option>
-          </select>
-          <p class="tuning-micro-note">
-            Prevents distant ground tracks, floors, and textured walls from turning into blurred mud at oblique angles.
-          </p>
-        </div>
-
-        <!-- 7. Hardware Performance Clocks -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">🚀 Silicon Clocks (CPU / GPU)</span>
-            <span class="tuning-card-val">Turbo (L4/L4)</span>
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div>
-              <label style="font-size:0.75rem; color:var(--text-muted);">CPU Governor:</label>
-              <select id="tune-cpu-select" class="select-styled compact">
-                <option value="2">Eco (Level 2)</option>
-                <option value="3">Balanced (Level 3)</option>
-                <option value="4" selected>Turbo (Level 4)</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:0.75rem; color:var(--text-muted);">GPU Governor:</label>
-              <select id="tune-gpu-select" class="select-styled compact">
-                <option value="2">Eco (Level 2)</option>
-                <option value="3">Balanced (Level 3)</option>
-                <option value="4" selected>Turbo (Level 4)</option>
-                <option value="5">Boost Max (Level 5)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- 8. Controller Models & Haptics -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">🎮 Steam Frame Controllers &amp; Haptics</span>
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div>
-              <label style="font-size:0.75rem; color:var(--text-muted);">3D Controller:</label>
-              <select id="tune-ctrl-select" class="select-styled compact">
-                <option value="steam_frame_roy" selected>Steam Frame Roy</option>
-                <option value="quest_touch">Meta Quest Touch</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:0.75rem; color:var(--text-muted);">Haptic Scale:</label>
-              <select id="tune-haptic-select" class="select-styled compact">
-                <option value="0.8">0.8x (Soft)</option>
-                <option value="1.0">1.0x (Normal)</option>
-                <option value="1.2" selected>1.2x (Steam Frame HD)</option>
-                <option value="1.5">1.5x (Strong)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- 9. Hand Tracking & Skeletal Emulation -->
-        <div class="tuning-card">
-          <div class="tuning-card-header">
-            <span class="tuning-card-title">🖐️ Hand Tracking Bridge</span>
-            <span id="tune-hand-val" class="tuning-card-val">Synthetic (Roy)</span>
-          </div>
-          <select id="tune-hand-select" class="select-styled" onchange="updateTuningPreview()">
-            <option value="synthetic" selected>Synthetic (Steam Frame Roy Capacitive Touch)</option>
-            <option value="optical">Optical (Monado Mercury / Camera AI Pose)</option>
-            <option value="disabled">Disabled (Physical Controllers Only)</option>
-          </select>
-          <p class="tuning-micro-note">
-            Enables 26-joint Meta Quest skeletal hand tracking. In Synthetic mode, Roy controller capacitive touch sensors synthesize natural finger curls and pinch gestures with zero camera lag.
-          </p>
-        </div>
+  <!-- File browser -->
+  <div id="files-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:640px;">
+      <button class="modal-close" onclick="closeFileBrowser()">&times;</button>
+      <h2 style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:6px;">Choose a File or Folder</h2>
+      <p id="files-path" style="font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono, monospace); overflow-wrap:anywhere; margin-bottom:12px;"></p>
+      <div id="files-list" class="files-list"></div>
+      <div style="display:flex; justify-content:space-between; gap:10px; margin-top:14px;">
+        <button type="button" id="files-use-folder" class="btn-secondary" onclick="chooseBrowsedFolder()">Use This Folder</button>
+        <button type="button" class="btn-secondary" onclick="closeFileBrowser()">Cancel</button>
       </div>
+    </div>
+  </div>
 
-      <!-- Footer Buttons -->
-      <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-subtle); padding-top:16px;">
-        <button type="button" class="btn-secondary compact" onclick="selectTuningPreset('stock_default')">
-          ↺ Reset to Stock
-        </button>
-        <div style="display:flex; gap:10px;">
-          <button type="button" class="btn-secondary" onclick="closeTuningModal()">Cancel</button>
-          <button type="button" id="btn-save-tuning" class="btn-primary" onclick="saveGameTuningFromModal()">
-            💾 Apply &amp; Save Tuning
-          </button>
-        </div>
+  <!-- Launch log -->
+  <div id="log-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:720px;">
+      <button class="modal-close" onclick="closeLogModal()">&times;</button>
+      <h2 id="log-modal-title" style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:12px;">Launch Log</h2>
+      <div id="log-findings" style="margin-bottom:12px;"></div>
+      <pre id="log-lines" class="job-log" tabindex="0"></pre>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+        <button type="button" class="btn-secondary" onclick="closeLogModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation for installs requested by a link -->
+  <div id="link-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:520px;">
+      <h2 style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:8px;">Install This App?</h2>
+      <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">A link asked FrameLoad to install an app. Only continue if you trust where it comes from.</p>
+      <div class="compat-notice compat-needs_port" style="margin-bottom:16px;">
+        <div class="compat-title" id="link-title"></div>
+        <ul><li id="link-source" style="overflow-wrap:anywhere;"></li></ul>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="btn-secondary" onclick="answerLink(false)">Don't Install</button>
+        <button type="button" class="btn-primary" onclick="answerLink(true)">Install</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Porting / setup progress -->
+  <div id="porting-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:680px;">
+      <button class="modal-close" onclick="closePortingModal()">&times;</button>
+      <h2 id="porting-modal-title" style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:6px;">Porting</h2>
+      <p id="porting-modal-status" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;"></p>
+      <pre id="porting-modal-log" class="job-log" tabindex="0"></pre>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+        <button type="button" class="btn-secondary" onclick="closePortingModal()">Close</button>
       </div>
     </div>
   </div>

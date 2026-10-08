@@ -28,7 +28,12 @@ mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
 # OpenXR SteamVR configuration if VR game
 if [[ "{is_vr}" == "True" ]]; then
-    export XR_RUNTIME_JSON="${{XR_RUNTIME_JSON:-/usr/share/openxr/1/openxr_steamvr.json}}"
+    # The Frame's SteamVR is the system's active OpenXR runtime; only point at a file that exists.
+    if [[ -z "${{XR_RUNTIME_JSON:-}}" ]]; then
+        for runtime in /opt/steamvr/steamxr_linuxarm64.json /usr/share/openxr/1/openxr_steamvr.json; do
+            if [[ -f "$runtime" ]]; then export XR_RUNTIME_JSON="$runtime"; break; fi
+        done
+    fi
 fi
 
 cd "$(dirname "$bin_path")"
