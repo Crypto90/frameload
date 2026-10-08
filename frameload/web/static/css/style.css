@@ -464,7 +464,7 @@ body {
 .card-poster {
   position: relative;
   width: 100%;
-  aspect-ratio: 2 / 3;
+  aspect-ratio: 1 / 1;
   background: #111728;
   overflow: hidden;
   -webkit-user-drag: none !important;
