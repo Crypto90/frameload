@@ -41,7 +41,7 @@ class ProtocolHandler:
                 last_updated="",
                 size_bytes=0,
             )
-            task = downloader.enqueue(game)
+            task = downloader.add_to_queue(game)
             return {
                 "success": True,
                 "action": "install",

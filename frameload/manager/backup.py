@@ -72,5 +72,19 @@ class SaveBackupManager:
             raise FileNotFoundError(f"Backup file {backup_filename} not found")
 
         with tarfile.open(backup_path, "r:gz") as tar:
-            tar.extractall(dest_dir)
+            try:
+                tar.extractall(dest_dir, filter="data")
+            except TypeError:
+                tar.extractall(dest_dir)
+
+        # Restore permissions so Lepton Android container user can read & write saves
+        try:
+            for root, dirs, files in os.walk(dest_dir):
+                for d in dirs:
+                    os.chmod(os.path.join(root, d), 0o777)
+                for f in files:
+                    os.chmod(os.path.join(root, f), 0o666)
+        except OSError:
+            pass
+
         return True

@@ -423,11 +423,12 @@ class VrpMirror:
         results = list(self.games)
 
         if query:
-            q = query.lower().strip()
-            results = [
-                g for g in results
-                if q in g.name.lower() or q in g.package_name.lower() or q in g.release_name.lower()
-            ]
+            tokens = [t.strip().lower() for t in query.split() if t.strip()]
+            if tokens:
+                results = [
+                    g for g in results
+                    if all(t in g.name.lower() or t in g.package_name.lower() or t in g.release_name.lower() for t in tokens)
+                ]
 
         # Sorting
         if sort_by in ("downloads", "popularity"):

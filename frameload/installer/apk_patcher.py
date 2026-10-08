@@ -83,6 +83,14 @@ class ApkPatcher:
                 if pkg_match:
                     pkg_name = pkg_match.group(1)
 
+                # Extract version name and version code from manifest string pool
+                vname_match = re.search(r"versionName[\x00-\x1f]+([0-9]+(?:\.[0-9a-zA-Z_\-]+)+)", text_bytes)
+                if vname_match:
+                    version_name = vname_match.group(1)
+                vcode_match = re.search(r"versionCode[\x00-\x1f]+([0-9]{1,9})", text_bytes)
+                if vcode_match:
+                    version_code = vcode_match.group(1)
+
         # Fallback package name from filename if not found in manifest
         if not pkg_name:
             base = os.path.basename(apk_path).replace(".apk", "")

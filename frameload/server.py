@@ -321,6 +321,17 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 "app": app_status,
                 "games": game_status
             })
+        elif path == "/api/system/keyboard":
+            cfg = Config.get()
+            kb_cfg = cfg.get("keyboard", {})
+            from .system.steamos import is_steam_running, is_steamos
+            self.send_json({
+                "supported": is_steam_running() or is_steamos(),
+                "is_steam_running": is_steam_running(),
+                "is_steamos": is_steamos(),
+                "auto_trigger": kb_cfg.get("auto_trigger", True),
+                "mode": kb_cfg.get("mode", "auto"),
+            })
         elif path == "/api/diagnostics/mirror":
             base_url = "https://go.srcdl1.xyz"
             api_key = "a329d018062813601d60cc6936a4f75ffde4a1ef38349a9973eb9720f9e8a457"
@@ -649,6 +660,24 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/system/install_lepton":
             success = install_lepton_request()
             self.send_json({"success": success})
+        elif path == "/api/system/keyboard":
+            action = body.get("action", "show")
+            auto_trigger = body.get("auto_trigger")
+            mode = body.get("mode")
+
+            if auto_trigger is not None or mode is not None:
+                cfg = Config.get()
+                kb_cfg = cfg.get("keyboard", {})
+                if auto_trigger is not None:
+                    kb_cfg["auto_trigger"] = bool(auto_trigger)
+                if mode is not None:
+                    kb_cfg["mode"] = str(mode)
+                cfg["keyboard"] = kb_cfg
+                cfg.save()
+
+            from .system.steamos import trigger_steam_keyboard
+            res = trigger_steam_keyboard(action=action)
+            self.send_json(res)
         elif path == "/api/system/fix_keyring":
             fixes = ensure_host_podman_fixes()
             self.send_json({"success": True, "fixes": fixes})

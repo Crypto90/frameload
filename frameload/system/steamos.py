@@ -248,3 +248,63 @@ def get_system_summary() -> Dict[str, Any]:
         "storage": storage_info(),
         "host_fixes": ensure_host_podman_fixes(),
     }
+
+
+def trigger_steam_keyboard(action: str = "show") -> Dict[str, Any]:
+    """Triggers the Steam Frame / SteamOS on-screen virtual keyboard.
+
+    Supports:
+    1. Steam Client URL protocol (steam -ifrunning steam://open/keyboard)
+    2. KDE Plasma Virtual Keyboard DBus trigger (Desktop Mode)
+    3. Wayland / gamescope ydotool / xdotool input synthesis (Super + X chord)
+    """
+    url = "steam://open/keyboard" if action != "hide" else "steam://close/keyboard"
+    tried = []
+
+    # 1. Primary Steam URI trigger
+    try:
+        proc = subprocess.run(
+            ["steam", "-ifrunning", url],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        tried.append("steam -ifrunning")
+        if proc.returncode == 0:
+            return {"success": True, "method": "steam_uri", "action": action}
+    except Exception as e:
+        tried.append(f"steam error: {e}")
+
+    # 2. KDE Plasma Virtual Keyboard DBus trigger (Desktop Mode)
+    if is_desktop_mode():
+        try:
+            dbus_cmd = [
+                "qdbus", "org.kde.kded5", "/modules/keyboard",
+                "org.kde.kded5.keyboard.show" if action != "hide" else "org.kde.kded5.keyboard.hide"
+            ]
+            res = subprocess.run(dbus_cmd, capture_output=True, text=True, timeout=2)
+            tried.append("qdbus kded5")
+            if res.returncode == 0:
+                return {"success": True, "method": "kde_dbus", "action": action}
+        except Exception as e:
+            tried.append(f"dbus error: {e}")
+
+    # 3. Input chord simulation (Steam + X / Super + X)
+    try:
+        if shutil.which("ydotool"):
+            # KEY_LEFTMETA (125) + KEY_X (45)
+            subprocess.run(["ydotool", "key", "125:1", "45:1", "45:0", "125:0"], capture_output=True, timeout=2)
+            return {"success": True, "method": "ydotool_steam_x", "action": action}
+        elif shutil.which("xdotool"):
+            subprocess.run(["xdotool", "key", "super+x"], capture_output=True, timeout=2)
+            return {"success": True, "method": "xdotool_steam_x", "action": action}
+    except Exception as e:
+        tried.append(f"chord error: {e}")
+
+    return {
+        "success": False,
+        "action": action,
+        "tried": tried,
+        "error": "Could not invoke Steam OSK. Ensure Steam is running or press Steam + X."
+    }
+

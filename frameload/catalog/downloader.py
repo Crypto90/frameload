@@ -65,6 +65,10 @@ class Downloader:
             self._queue.put(game.id)
             return task
 
+    def enqueue(self, game: CatalogGame, device_id: Optional[str] = None) -> DownloadTask:
+        """Alias for add_to_queue."""
+        return self.add_to_queue(game, device_id=device_id)
+
     def cancel_task(self, task_id: str) -> bool:
         with self._lock:
             task = self.tasks.get(task_id)
@@ -357,60 +361,67 @@ class Downloader:
             task.status = "completed"
             task.status_detail = "Ready to Play"
 
-    def _download_file(self, url: str, dest_path: str, task: DownloadTask) -> bool:
-        """Downloads a single file with resume support and speed calculation."""
-        existing_size = os.path.getsize(dest_path) if os.path.isfile(dest_path) else 0
-        headers = {"User-Agent": USER_AGENT}
-        if existing_size > 0:
-            headers["Range"] = f"bytes={existing_size}-"
+    def _download_file(self, url: str, dest_path: str, task: DownloadTask, max_retries: int = 3) -> bool:
+        """Downloads a single file with resume support, auto-retry, and speed calculation."""
+        for attempt in range(max_retries):
+            if task.status in ("canceled", "paused"):
+                return False
 
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                status = resp.status
-                content_len = resp.headers.get("Content-Length")
-                file_total = int(content_len) if content_len else 0
+            existing_size = os.path.getsize(dest_path) if os.path.isfile(dest_path) else 0
+            headers = {"User-Agent": USER_AGENT}
+            if existing_size > 0:
+                headers["Range"] = f"bytes={existing_size}-"
 
-                if status == 206:  # Partial Content
-                    mode = "ab"
-                else:
-                    mode = "wb"
-                    existing_size = 0
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    status = resp.status
+                    content_len = resp.headers.get("Content-Length")
 
-                start_time = time.time()
-                last_time = start_time
-                bytes_in_interval = 0
-                chunk_size = self.config["download"].get("chunk_size_kb", 1024) * 1024
+                    if status == 206:  # Partial Content
+                        mode = "ab"
+                    else:
+                        mode = "wb"
+                        existing_size = 0
 
-                with open(dest_path, mode) as out_f:
-                    while True:
-                        if task.status in ("canceled", "paused"):
-                            return False
+                    start_time = time.time()
+                    last_time = start_time
+                    bytes_in_interval = 0
+                    chunk_size = self.config["download"].get("chunk_size_kb", 1024) * 1024
 
-                        chunk = resp.read(chunk_size)
-                        if not chunk:
-                            break
-                        out_f.write(chunk)
-                        chunk_len = len(chunk)
-                        existing_size += chunk_len
-                        bytes_in_interval += chunk_len
-                        task.downloaded_bytes = existing_size
+                    with open(dest_path, mode) as out_f:
+                        while True:
+                            if task.status in ("canceled", "paused"):
+                                return False
 
-                        now = time.time()
-                        dt = now - last_time
-                        if dt >= 0.5:
-                            speed = bytes_in_interval / dt
-                            # Exponential Moving Average for smooth speed display
-                            task.speed_bps = task.speed_bps * 0.7 + speed * 0.3 if task.speed_bps else speed
-                            bytes_in_interval = 0
-                            last_time = now
+                            chunk = resp.read(chunk_size)
+                            if not chunk:
+                                break
+                            out_f.write(chunk)
+                            chunk_len = len(chunk)
+                            existing_size += chunk_len
+                            bytes_in_interval += chunk_len
+                            task.downloaded_bytes = existing_size
 
-                            if task.total_bytes > 0:
-                                task.progress = min(1.0, task.downloaded_bytes / task.total_bytes)
-                                remaining_bytes = max(0, task.total_bytes - task.downloaded_bytes)
-                                task.eta_seconds = int(remaining_bytes / max(task.speed_bps, 1.0))
+                            now = time.time()
+                            dt = now - last_time
+                            if dt >= 0.5:
+                                speed = bytes_in_interval / dt
+                                # Exponential Moving Average for smooth speed display
+                                task.speed_bps = task.speed_bps * 0.7 + speed * 0.3 if task.speed_bps else speed
+                                bytes_in_interval = 0
+                                last_time = now
 
-            return True
-        except Exception as e:
-            print(f"[FrameLoad] Download chunk error for {url}: {e}")
-            return False
+                                if task.total_bytes > 0:
+                                    task.progress = min(1.0, task.downloaded_bytes / task.total_bytes)
+                                    remaining_bytes = max(0, task.total_bytes - task.downloaded_bytes)
+                                    task.eta_seconds = int(remaining_bytes / max(task.speed_bps, 1.0))
+
+                return True
+            except Exception as e:
+                print(f"[FrameLoad] Download attempt {attempt + 1}/{max_retries} error for {url}: {e}")
+                if task.status in ("canceled", "paused") or attempt == max_retries - 1:
+                    return False
+                time.sleep(2 ** attempt)
+
+        return False

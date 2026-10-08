@@ -37,10 +37,14 @@ fi
 # Detect best available Proton runner
 PROTON_BIN=""
 for cand in \
+    "$HOME/.steam/steam/compatibilitytools.d"/GE-Proton*/proton \
+    "$HOME/.steam/steam/steamapps/common/Proton - Experimental/proton" \
+    "$HOME/.steam/steam/steamapps/common/Proton"*/proton \
     "$HOME/.local/share/Steam/compatibilitytools.d"/GE-Proton*/proton \
     "$HOME/.local/share/Steam/steamapps/common/Proton - Experimental/proton" \
     "$HOME/.local/share/Steam/steamapps/common/Proton 9.0/proton" \
     "$HOME/.local/share/Steam/steamapps/common/Proton 8.0/proton" \
+    /run/media/*/*/steamapps/common/Proton*/proton \
     "/usr/share/steam/compatibilitytools.d"/GE-Proton*/proton \
     "/usr/bin/proton"; do
     if [[ -x "$cand" ]]; then

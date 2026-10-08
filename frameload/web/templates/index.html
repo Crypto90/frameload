@@ -32,6 +32,7 @@
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
       </svg>
       <input type="text" id="search-input" class="search-input" placeholder="Search VR games, packages, or releases... (Y to focus)" autocomplete="off">
+      <button id="btn-search-osk" class="search-osk-btn" onclick="window.SteamOSK && window.SteamOSK.toggle()" title="Toggle Steam Frame Keyboard (Steam + X)" aria-label="Toggle Keyboard">⌨️</button>
     </div>
 
     <!-- Telemetry Bar -->
@@ -358,6 +359,28 @@
             </svg>
             Uninstall FrameLoad...
           </button>
+        </div>
+        <!-- Steam Frame On-Screen Keyboard Card -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+              <span>⌨️</span> Steam Frame Virtual Keyboard
+            </h3>
+            <span id="sys-keyboard-badge" class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Auto-Trigger Active</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+            Triggers the Steam Frame / SteamOS on-screen keyboard (Steam + X) automatically whenever any search bar, filename, or text field gains focus.
+          </p>
+          <div style="margin-bottom:16px;">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.9rem;">
+              <input type="checkbox" id="osk-auto-trigger-check" checked onchange="toggleOSKAutoTrigger(this.checked)">
+              <span>Automatically summon keyboard on input field focus</span>
+            </label>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-primary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('show')">⌨️ Test / Summon Keyboard</button>
+            <button class="btn-secondary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('hide')">Dismiss Keyboard</button>
+          </div>
         </div>
         <!-- VR Input & Hand Tracking Switcher Card -->
         <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">

@@ -833,6 +833,14 @@ class SpatialGamepadNavigator {
   triggerAction() {
     if (!this.focusedElement) return;
 
+    if (this.focusedElement.tagName === "INPUT" || this.focusedElement.tagName === "TEXTAREA") {
+      this.focusedElement.focus();
+      if (window.SteamOSK && window.SteamOSK.enabled) {
+        window.SteamOSK.trigger("show");
+      }
+      return;
+    }
+
     if (this.focusedElement.classList.contains("game-card")) {
       const btn = this.focusedElement.querySelector(".card-btn");
       if (btn) {
@@ -849,6 +857,9 @@ class SpatialGamepadNavigator {
     if (searchInput) {
       this.setFocus(searchInput);
       searchInput.focus();
+      if (window.SteamOSK && window.SteamOSK.enabled) {
+        window.SteamOSK.trigger("show");
+      }
     }
   }
 

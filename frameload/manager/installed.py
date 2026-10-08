@@ -110,6 +110,8 @@ class InstalledManager:
                         "kind": dep.get("kind", "quest"),
                         "is_vr": bool(dep.get("is_vr", True)),
                         "engine": dep.get("engine", "Unknown"),
+                        "version_name": str(dep.get("version_name", "1.0")),
+                        "version_code": str(dep.get("version_code", "1")),
                         "apk_present": apk_present,
                         "apk_size": apk_size,
                         "installed_time": dep.get("time", 0),

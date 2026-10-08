@@ -208,6 +208,8 @@ class LeptonInstaller:
             "is_vr": is_vr,
             "window_preset": (window_preset or "tablet") if not is_vr else None,
             "engine": analysis.engine,
+            "version_name": analysis.version_name,
+            "version_code": analysis.version_code,
             "apk_size": os.path.getsize(dest_apk),
             "settings": settings,
             "installed_by": "frameload",

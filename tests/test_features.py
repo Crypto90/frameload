@@ -291,6 +291,36 @@ class TestNewMergedFeatures(unittest.TestCase):
             self.assertEqual(len(installed), 1)
             self.assertEqual(installed[0]["package"], "com.valid.game")
 
+    def test_downloader_enqueue_alias(self):
+        from frameload.catalog.downloader import Downloader
+        from frameload.catalog.models import CatalogGame
+        downloader = Downloader.get()
+        game = CatalogGame(
+            name="Enqueue Test",
+            release_name="Enqueue Test",
+            package_name="com.test.enqueue",
+            version_code="1.0",
+            last_updated="2026-10-08",
+            size_bytes=1000,
+        )
+        task = downloader.enqueue(game)
+        self.assertEqual(task.id, game.id)
+        downloader.cancel_task(task.id)
+
+    def test_steam_keyboard_trigger(self):
+        from frameload.system.steamos import trigger_steam_keyboard
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            res = trigger_steam_keyboard("show")
+            self.assertTrue(res["success"])
+            self.assertEqual(res["method"], "steam_uri")
+            self.assertEqual(res["action"], "show")
+
+            res_hide = trigger_steam_keyboard("hide")
+            self.assertTrue(res_hide["success"])
+            self.assertEqual(res_hide["action"], "hide")
+
 
 if __name__ == "__main__":
     unittest.main()
+

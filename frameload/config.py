@@ -68,6 +68,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "storage": {
         "default_device_id": "internal",
         "custom_paths": [],
+    },
+    "keyboard": {
+        "auto_trigger": True,
+        "mode": "auto",
+        "sound_feedback": True,
+        "haptic_feedback": True,
     }
 }
 

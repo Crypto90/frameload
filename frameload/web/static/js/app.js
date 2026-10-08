@@ -55,6 +55,118 @@ async function apiPost(url, data = {}) {
   return res.json();
 }
 
+// --- Steam Frame On-Screen Keyboard Integration ---
+window.SteamOSK = {
+  enabled: true,
+  lastTrigger: 0,
+  supported: true,
+
+  async init() {
+    const local = localStorage.getItem("frameload_osk_auto");
+    if (local !== null) {
+      this.enabled = local === "true";
+    }
+
+    try {
+      const res = await apiGet("/api/system/keyboard");
+      if (res) {
+        this.supported = !!res.supported;
+        if (local === null && typeof res.auto_trigger === "boolean") {
+          this.enabled = res.auto_trigger;
+        }
+      }
+    } catch (e) {
+      // Offline fallback
+    }
+
+    this.updateUI();
+
+    // Automatically trigger Steam Frame keyboard on focusin for text fields
+    document.addEventListener("focusin", (e) => {
+      if (!this.enabled) return;
+      const el = e.target;
+      if (!el) return;
+      const tag = el.tagName ? el.tagName.toUpperCase() : "";
+      const type = (el.type || "text").toLowerCase();
+      const isInput = (tag === "INPUT" && ["text", "search", "url", "number", "password"].includes(type)) || tag === "TEXTAREA";
+      if (isInput) {
+        this.trigger("show");
+      }
+    });
+
+    // Dismiss keyboard on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        this.trigger("hide");
+      }
+    });
+  },
+
+  updateUI() {
+    const check = document.getElementById("osk-auto-trigger-check");
+    if (check) check.checked = this.enabled;
+    const badge = document.getElementById("sys-keyboard-badge");
+    if (badge) {
+      if (this.enabled) {
+        badge.textContent = "Auto-Trigger Active";
+        badge.style.background = "rgba(0, 245, 212, 0.15)";
+        badge.style.color = "var(--accent-emerald)";
+      } else {
+        badge.textContent = "Manual Only (Steam + X)";
+        badge.style.background = "rgba(255, 255, 255, 0.1)";
+        badge.style.color = "var(--text-muted)";
+      }
+    }
+  },
+
+  setEnabled(val) {
+    this.enabled = !!val;
+    localStorage.setItem("frameload_osk_auto", this.enabled ? "true" : "false");
+    this.updateUI();
+    apiPost("/api/system/keyboard", { auto_trigger: this.enabled }).catch(() => {});
+    if (window.showToast) {
+      window.showToast(this.enabled ? "⌨️ Steam Frame Keyboard: Auto-trigger on focus enabled" : "⌨️ Steam Frame Keyboard: Auto-trigger disabled (Manual mode)", "info");
+    }
+  },
+
+  async trigger(action = "show") {
+    const now = Date.now();
+    // Debounce rapid focus triggers within 700ms
+    if (action === "show" && now - this.lastTrigger < 700) return;
+    this.lastTrigger = now;
+
+    const btn = document.getElementById("btn-search-osk");
+    if (btn) {
+      btn.classList.add("active");
+      setTimeout(() => btn.classList.remove("active"), 350);
+    }
+
+    try {
+      const res = await apiPost("/api/system/keyboard", { action: action });
+      console.log("[SteamOSK]", action, res);
+    } catch (err) {
+      console.warn("[SteamOSK] Error:", err);
+    }
+  },
+
+  toggle() {
+    this.trigger("show");
+  }
+};
+
+function toggleOSKAutoTrigger(enabled) {
+  if (window.SteamOSK) {
+    window.SteamOSK.setEnabled(enabled);
+  }
+}
+window.toggleOSKAutoTrigger = toggleOSKAutoTrigger;
+
+function setupSteamOSK() {
+  if (window.SteamOSK) {
+    window.SteamOSK.init();
+  }
+}
+
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   setupTabs();
@@ -62,6 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupModals();
   setupSideloadForm();
   setupStorage();
+  setupSteamOSK();
 
   // Initial loads
   loadCatalog();

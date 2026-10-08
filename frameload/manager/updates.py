@@ -156,8 +156,8 @@ class UpdateManager:
             # If release_name or version_code differs or update date is newer
             has_game_update = False
 
-            # If version code exists and is higher
-            inst_ver = inst.get("settings", {}).get("version_code", "")
+            # If version code exists and differs
+            inst_ver = inst.get("version_code") or inst.get("settings", {}).get("version_code", "")
             cat_ver = catalog_game.version_code
 
             if cat_ver and inst_ver and cat_ver != inst_ver:
