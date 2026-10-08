@@ -2246,3 +2246,24 @@ body.vr-grabbing * {
 .log-finding.error { border-left-color: var(--accent-danger); }
 .log-finding.warn { border-left-color: var(--accent-amber); }
 .log-finding.ok { border-left-color: var(--accent-emerald); }
+
+/* Stop control for a running game */
+.telemetry-chip.stop-chip {
+  color: #fff;
+  background: rgba(255, 51, 102, 0.22);
+  border-color: var(--accent-danger);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.telemetry-chip.stop-chip:hover,
+.telemetry-chip.stop-chip:focus-visible {
+  background: var(--accent-danger);
+}
+
+.card-btn.stop {
+  background: var(--accent-danger);
+  color: #fff;
+}

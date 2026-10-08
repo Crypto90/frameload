@@ -258,7 +258,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 3,
+            "layout_version": 4,
             "time": time.time(),
         }
         with open(dep_path, "w", encoding="utf-8") as f:

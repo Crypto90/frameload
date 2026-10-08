@@ -67,6 +67,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "porting": {
         "frameport_cli": "",
         "auto": True,
+        "auto_setup": True,
     },
     "keyboard": {
         "auto_trigger": True,

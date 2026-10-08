@@ -20,6 +20,13 @@ FRAMEBRIDGE_LIBS = ("libframe_settings.so", "libopenxr_loader_original.so")
 LEPTON_MAX_SDK = 34
 ARM64 = "arm64-v8a"
 
+# Apps that verify their own signing certificate. Porting re-signs the APK, so they stop at their
+# loading screen. Getting past that would mean defeating the app's tamper check, which neither
+# FramePort nor FrameLoad does. Keyed by a library only that app ships (FramePort's PLAYBOOK).
+SELF_SIGNATURE_CHECK_LIBS = {
+    "libskybox.so": "SKYBOX VR Player",
+}
+
 READY, LIKELY, NEEDS_PORT, BLOCKED = "ready", "likely", "needs_port", "blocked"
 COMPAT_LABELS = {
     READY: "Ready for Steam Frame",
@@ -93,6 +100,13 @@ def _build_compat(a: ApkAnalysis, manifest: ManifestInfo, platform_sdk: bool) ->
     if manifest.split_required:
         level = BLOCKED
         issue("error", "splits", "This is one part of a split APK. Lepton installs a single APK, so the app needs a merged (universal) build.")
+
+    for lib, app_name in SELF_SIGNATURE_CHECK_LIBS.items():
+        if lib in a.libs and a.xr_runtime != "openxr":
+            level = BLOCKED
+            issue("error", "signature_check",
+                  f"{app_name} checks its own signing certificate when it starts. A ported copy is signed with a "
+                  "different key, so it stays on its loading screen. It cannot run on the Steam Frame.")
 
     if level != BLOCKED and a.is_vr:
         if a.xr_runtime == "framebridge":

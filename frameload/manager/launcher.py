@@ -4,11 +4,14 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from ..config import ANCHOR_DIR
 from ..system.steam_vdf import steam_gameid
 from .installed import InstalledManager
+
+
+CONTAINER_PREFIX = "lepton-steamlaunch-"
 
 
 class GameLauncher:
@@ -68,17 +71,46 @@ class GameLauncher:
         }
 
     @staticmethod
+    def running_containers() -> List[str]:
+        """Names of the Lepton game containers that are running right now."""
+        try:
+            out = subprocess.run(["podman", "ps", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return [name for name in out.stdout.split() if name.startswith(CONTAINER_PREFIX)]
+
+    @staticmethod
+    def _stop_container(name: str) -> bool:
+        """Ends one game container. A game FrameLoad started itself has no "exit" in Steam, and a
+        hung one ignores a polite request, so this kills it and removes it if it lingers."""
+        try:
+            subprocess.run(["podman", "kill", name], capture_output=True, timeout=20)
+            for _ in range(10):
+                if name not in GameLauncher.running_containers():
+                    return True
+                time.sleep(0.5)
+            subprocess.run(["podman", "rm", "-f", name], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return name not in GameLauncher.running_containers()
+
+    @staticmethod
     def stop(package_name: str) -> Dict[str, Any]:
         """Stops the running game and its container."""
         dep = InstalledManager.get_game(package_name)
         if not dep:
             return {"success": False, "error": "Game not found"}
-
         appid = dep.get("appid")
-        if appid:
-            try:
-                subprocess.run(["podman", "kill", f"lepton-steamlaunch-{appid}"], capture_output=True)
-            except OSError:
-                pass
+        name = f"{CONTAINER_PREFIX}{appid}"
+        if not appid or name not in GameLauncher.running_containers():
+            return {"success": True, "package": package_name, "stopped": False, "message": "It is not running."}
+        stopped = GameLauncher._stop_container(name)
+        return {"success": stopped, "package": package_name, "stopped": stopped,
+                "error": "" if stopped else "The game's container could not be stopped."}
 
-        return {"success": True, "package": package_name}
+    @staticmethod
+    def stop_all() -> Dict[str, Any]:
+        """Stops every running Lepton game, whoever started it."""
+        names = GameLauncher.running_containers()
+        stopped = [name for name in names if GameLauncher._stop_container(name)]
+        return {"success": len(stopped) == len(names), "stopped": len(stopped), "running": len(names)}

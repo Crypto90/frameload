@@ -118,6 +118,19 @@ class TestRequestOrigin(unittest.TestCase):
         self.assertEqual(self.request("POST", "/api/porting/port", {"Origin": "https://evil.example"},
                                       {"package": "a.b"})[0], 403)
 
+    def test_app_that_cannot_run_is_not_started(self):
+        from unittest.mock import patch
+        from frameload.manager.installed import InstalledManager
+        from frameload.manager.launcher import GameLauncher
+        dep = {"package": "com.blocked", "kind": "quest", "compat": {"level": "blocked", "issues": [
+            {"severity": "error", "code": "signature_check", "message": "It checks its own signature."}]}}
+        with patch.object(InstalledManager, "get_game", return_value=dep), patch.object(GameLauncher, "launch") as launch:
+            status, _, body = self.request("POST", "/api/installed/launch", body={"package": "com.blocked"})
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertEqual((data["success"], data["error"]), (False, "It checks its own signature."))
+        launch.assert_not_called()
+
     def test_static_files_cannot_escape(self):
         self.assertEqual(self.request("GET", "/static/../server.py")[0], 404)
         self.assertEqual(self.request("GET", "/static/css/style.css")[0], 200)

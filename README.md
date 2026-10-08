@@ -62,7 +62,7 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - Automatically isolates containers and cleans up rootless podman keyring quota leaks (`keyring = false`).
 - **🔧 What Runs:**
   - Quest games already ported for the Frame with [FramePort](https://github.com/spoopyghosty0/frameport) (OVRPort + FrameBridge), native OpenXR 1.0 Android apps, and 2D Android apps.
-  - **On-headset porting (experimental):** a game built for Meta's runtime is flagged "Needs porting first" and is ported automatically when you sideload it (or with its **Port for Steam Frame** button). FrameLoad runs [FramePort](https://github.com/spoopyghosty0/frameport)'s command line on the headset (OVRPort conversion, FrameBridge adapter, signing) and swaps in the result, keeping saves and OBB files. Set it up once under **System & Diagnostics > Quest Game Porting**.
+  - **On-headset porting (experimental):** a game built for Meta's runtime is flagged "Needs porting first" and is ported automatically when you sideload it (or with its **Port for Steam Frame** button). FrameLoad runs [FramePort](https://github.com/spoopyghosty0/frameport)'s command line on the headset (OVRPort conversion, FrameBridge adapter, signing) and swaps in the result, keeping saves and OBB files. Nothing to set up: FrameLoad fetches the porting tools by itself.
   - 2D Android apps get Lepton's `lepton-show-flatscreen` marker and open as a flat window in the headset.
   - PCVR Games: Compatibility with Proton ARM64, Revive, and WineOpenXR.
 - **🎨 Steam Library Integration:**
@@ -186,7 +186,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.2}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.3}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 
@@ -360,13 +360,19 @@ Lepton writes its own Android system properties (`ro.product.model=Lepton`) and 
 
 ### Porting a Quest game on the headset
 
-1. **System & Diagnostics > Quest Game Porting > Set Up Porting.** FrameLoad installs FramePort's command-line wheel into `~/.local/share/frameload/frameport-venv` and lets it download its Java runtime, OVRPort and apksigner. FramePort's own data stays in `~/.local/share/frameload/frameport-home`.
-2. From then on a sideloaded Quest game that needs it is ported automatically right after it is installed; the dialog shows FramePort's output, and a big game takes several minutes. Games sideloaded before the setup are ported when the setup finishes. **Port for Steam Frame** on a game in your library does the same by hand (to retry, or after updating FramePort), and the switch on the porting card turns the automatic step off.
+There is no setup step. Shortly after FrameLoad starts on a Steam Frame it downloads the porting tools in the background, once: FramePort's command line into `~/.local/share/frameload/frameport-venv`, and a Java runtime, OVRPort and apksigner into `~/.local/share/frameload/frameport-home` (about 310 MB on disk in total). It checks weekly for a newer FramePort, because that is where per-game fixes arrive.
+
+1. Sideload a Quest game, or press **Port & Play** on one that is already in your library. If it was built for Meta's runtime it is ported right after it is installed (or before it starts); the dialog shows FramePort's output, and a big game takes several minutes. If the tools are not there yet (first minutes after installing FrameLoad, or no network), they are fetched first and the game is ported as soon as they are ready.
+2. **Port for Steam Frame** on a game in your library does the same by hand, to retry or after a FramePort update.
 3. The original APK is kept as `unported.apk` next to the game, so it can be ported again with a newer FramePort.
+
+Two switches on the **Quest Game Porting** card turn off the automatic port and the automatic download (for a metered connection); **Set Up Now** then fetches the tools on request.
+
+On the Frame one of FramePort's dependencies cannot be installed (it needs a C compiler SteamOS does not ship), so FramePort's "Unity: turn off MSAA" fix is unavailable there; everything else works.
 
 Command line: `frameload port --setup`, `frameload port <package>`, `frameload port --status`. An existing FramePort install can be used instead by setting `porting.frameport_cli` in `config.json`.
 
-Setup, analysis and the build step were run against the real FramePort command line on Linux (x86-64 and ARM64 containers). It has not yet been run on a Steam Frame, and whether a given game then starts is decided by FramePort's patches for it; game-specific fixes belong in FramePort's catalog.
+The automatic setup, update, analysis and the start of the build were run against the real FramePort command line in Linux x86-64 and ARM64 containers. It has not yet been run on a Steam Frame, and whether a given game then starts is decided by FramePort's patches for it; game-specific fixes belong in FramePort's catalog.
 
 ### Self-test
 
@@ -387,6 +393,14 @@ The dashboard answers under an IP address, `localhost` and the headset's own nam
 ### When a new game is missing from Steam
 
 Steam reads its shortcut list only when it starts. After an install, FrameLoad shows which games are waiting. You can start them right away with **Launch** in FrameLoad's library, or press **Restart Steam Now**, which closes FrameLoad's window and any running game, rewrites the shortcuts while Steam is stopped, and starts Steam again.
+
+### Stopping a game
+
+A running game has a **Stop** button on its card and page, and a red **Stop** chip in FrameLoad's header. Use it for any game FrameLoad started itself: Steam only offers "exit" for games it started. From a terminal: `frameload stop` (all running games) or `frameload stop <package>`.
+
+### Apps that cannot be ported
+
+Some apps verify their own signing certificate when they start. Porting has to re-sign the APK, so such an app stops at its loading screen (SteamVR shows "Waiting"). FrameLoad marks the ones it knows (currently SKYBOX VR Player) as **Cannot run** and does not start them. Working around this would mean defeating the app's tamper check, which FrameLoad does not do.
 
 ### When a game does not start
 

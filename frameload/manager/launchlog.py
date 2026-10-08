@@ -82,6 +82,12 @@ def diagnose(lines: List[str]) -> List[Dict[str, str]]:
         if match.groups():
             finding["title"] = f"{title} ({match.group(1)} fps)"
         findings.append(finding)
+    if "FrameBridge" in text and "pacing:" not in text and not any(f["severity"] == "error" for f in findings):
+        findings.append({
+            "severity": "warn", "title": "The game started but has not shown a VR frame",
+            "advice": "If it stays on its loading screen with SteamVR showing \"Waiting\", the game may be checking "
+                      "its own signature (a ported copy is re-signed) or waiting for a Meta service that does not "
+                      "exist on the Frame. Such games cannot be made to run by porting."})
     if any(f["severity"] == "error" for f in findings):
         findings = [f for f in findings if f["severity"] != "ok"]
     if not findings:

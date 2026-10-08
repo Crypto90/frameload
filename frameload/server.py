@@ -403,6 +403,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             info = porting.status()
             info["job"] = porting.PortingJobs.active()
             info["auto"] = porting.is_auto()
+            info["auto_setup"] = porting.auto_setup_enabled()
+            info["setup_error"] = porting.PortingJobs.last_error("setup")
             info["pending"] = porting.pending_games()
             self.send_json(info)
         elif path.startswith("/api/porting/jobs/"):
@@ -708,10 +710,26 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/installed/launch":
             pkg = body.get("package", "")
             try:
+                # A game built for Meta's runtime cannot start as it is: port it first, then start it.
+                dep = InstalledManager.get_game(pkg)
+                compat = (dep or {}).get("compat") or {}
+                if compat.get("level") == "blocked":
+                    reasons = [i["message"] for i in compat.get("issues", []) if i.get("severity") == "error"]
+                    self.send_json({"success": False, "launched": False, "package": pkg,
+                                    "error": reasons[0] if reasons else "This app cannot run on the Steam Frame."})
+                    return
+                if dep and porting.needs_port(dep):
+                    outcome = porting.auto_port(dep)
+                    if outcome.get("started") or outcome.get("reason") in ("failed", "disabled", "not_set_up"):
+                        self.send_json({"success": True, "launched": False, "package": pkg,
+                                        "title": dep.get("title", pkg), "porting": outcome})
+                        return
                 res = GameLauncher.launch(pkg)
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/installed/stop-all":
+            self.send_json(GameLauncher.stop_all())
         elif path == "/api/installed/stop":
             pkg = body.get("package", "")
             res = GameLauncher.stop(pkg)
@@ -877,6 +895,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/porting/setup":
+            if body.get("package") and InstalledManager.get_game(body["package"]):
+                porting._set_pending(body["package"], True)  # ported as soon as the tools are there
             try:
                 job = porting.PortingJobs.start("setup", porting.setup_and_port_pending)
                 self.send_json({"success": True, "job": job})
@@ -885,16 +905,25 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/porting/settings":
             cfg = Config.get()
             porting_cfg = dict(cfg.get("porting", {}) or {})
-            porting_cfg["auto"] = bool(body.get("auto", True))
+            for key in ("auto", "auto_setup"):
+                if key in body:
+                    porting_cfg[key] = bool(body[key])
             cfg["porting"] = porting_cfg
-            self.send_json({"success": True, "auto": porting_cfg["auto"]})
+            if porting_cfg.get("auto_setup", True):
+                try:
+                    porting.ensure_ready()  # switched on: fetch the tools now rather than at the next start
+                except porting.PortingError:
+                    pass
+            self.send_json({"success": True, "auto": porting_cfg.get("auto", True),
+                            "auto_setup": porting_cfg.get("auto_setup", True)})
         elif path == "/api/porting/port":
             pkg = body.get("package", "")
             if not InstalledManager.get_game(pkg):
                 self.send_json({"error": "Game is not installed"}, status=HTTPStatus.NOT_FOUND)
                 return
             try:
-                job = porting.PortingJobs.start("port", lambda log: porting.port_installed_game(pkg, log), package=pkg)
+                porting._set_flags(pkg, port_failed=False, port_error="")  # asked for by hand: try again
+                job = porting.PortingJobs.start("port", lambda log: porting.port_and_record(pkg, log), package=pkg)
                 self.send_json({"success": True, "job": job})
             except porting.PortingError as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.CONFLICT)
@@ -1058,7 +1087,7 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
 
         target_device = getattr(task, "device_id", None) or config.get("storage", {}).get("default_device_id", "internal")
         try:
-            LeptonInstaller.install_quest_game(
+            installed = LeptonInstaller.install_quest_game(
                 package_name=task.game.package_name,
                 title=task.game.name,
                 apk_path=task.target_apk,
@@ -1069,6 +1098,11 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
             )
             task.status = "completed"
             task.status_detail = "Installed & Ready to Play"
+            try:
+                if porting.auto_port(installed).get("started"):
+                    task.status_detail = "Installed. Porting for the Steam Frame..."
+            except Exception as port_exc:  # the install itself succeeded
+                print(f"[FrameLoad] Could not start porting {task.game.name}: {port_exc}")
             print(f"{GREEN}✔ [Auto-Install Success]: {task.game.name} installed successfully!{RESET}")
         except Exception as exc:
             task.status = "error"
@@ -1085,6 +1119,19 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
 
     threading.Thread(target=migrate, daemon=True, name="migrate-installs").start()
     file_manager.clean_stale_uploads()
+
+    def porting_maintenance() -> None:
+        try:
+            job = porting.background_maintenance()
+            if job:
+                print(f"[FrameLoad] Porting tools: {job['kind']} started in the background")
+        except Exception as e:
+            print(f"[FrameLoad] Porting maintenance skipped: {e}")
+
+    # Give the dashboard and the network a moment after boot before downloading anything.
+    timer = threading.Timer(30.0, porting_maintenance)
+    timer.daemon = True
+    timer.start()
 
     server = ThreadingHTTPServer((host, port), FrameLoadApiHandler)
     print(f"{CYAN}============================================================{RESET}")

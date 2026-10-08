@@ -152,6 +152,9 @@ def main() -> None:
     win_parser.add_argument("--url", default="http://127.0.0.1:5050", help="Dashboard URL")
     win_parser.add_argument("--fullscreen", action="store_true", help="Launch in fullscreen mode")
 
+    stop_parser = subparsers.add_parser("stop", help="Stop a running game (or all of them)")
+    stop_parser.add_argument("package", nargs="?", default="", help="Package name; leave out to stop every running game")
+
     subparsers.add_parser("doctor", help="Check that this Steam Frame has everything FrameLoad needs")
     subparsers.add_parser("sync-shortcuts", help="Write the Steam shortcut of every installed game again")
 
@@ -289,6 +292,13 @@ def main() -> None:
             res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
             print("Uninstallation summary:", json.dumps(res, indent=2))
             print_ok("FrameLoad successfully removed from the system.")
+        elif args.command == "stop":
+            res = GameLauncher.stop(args.package) if args.package else GameLauncher.stop_all()
+            if res.get("success"):
+                print_ok(f"Stopped {res.get('stopped', 0) if not args.package else args.package}.")
+            else:
+                print_err(res.get("error") or "Some games could not be stopped.")
+                sys.exit(1)
         elif args.command == "sync-shortcuts":
             from .system.steam_session import resync_shortcuts
             print_ok(f"Wrote {resync_shortcuts()} Steam shortcut(s).")

@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 3
+LAYOUT_VERSION = 4
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (
@@ -59,6 +59,16 @@ def migrate_game(game: Dict[str, Any]) -> List[str]:
 
     dep = InstalledManager.get_game(package)
     if dep:
+        # Judge the APK again: newer versions recognise more apps that cannot run.
+        try:
+            from ..installer.apk_analysis import inspect_apk
+            analysis = inspect_apk(os.path.join(base, "lepton-app", "game.apk"))
+            if analysis.compat.get("level") != (dep.get("compat") or {}).get("level"):
+                changes.append(f"compatibility is now: {analysis.compat.get('label', '')}")
+            dep.update(compat=analysis.compat, framebridge=analysis.framebridge,
+                       hand_tracking=analysis.hand_tracking, xr_runtime=analysis.xr_runtime)
+        except Exception:
+            pass
         dep["layout_version"] = LAYOUT_VERSION
         with open(os.path.join(dep["anchor"], "deployment.json"), "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in dep.items() if k not in ("device_name", "is_external")}, f, indent=2)

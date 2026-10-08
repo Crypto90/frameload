@@ -41,6 +41,9 @@ KEY_BACKUP_DIR = os.path.join(os.path.expanduser("~"), "Documents", "FrameLoad-s
 # off MSAA"), so its command line works without them.
 OPTIONAL_DEPENDENCIES = ("unitypy",)
 LIMITED_MARKER = os.path.join(VENV_DIR, "frameload-limited.txt")
+STATE_FILE = os.path.join(FRAMELOAD_DIR, "porting_state.json")
+RETRY_SECONDS = 6 * 3600           # after a failed automatic setup (no network, for instance)
+UPDATE_CHECK_SECONDS = 7 * 24 * 3600  # FramePort gains per-game fixes often
 
 Log = Callable[[str], None]
 
@@ -194,6 +197,21 @@ def _install_without_optional(pip: List[str], venv_python: str, wheel: str, log:
     return code, out
 
 
+def _pip_install(wheel: str, log: Log) -> None:
+    """Installs or upgrades FramePort's wheel in FrameLoad's own Python environment."""
+    venv_python = os.path.join(os.path.dirname(_venv_cli()), "python.exe" if os.name == "nt" else "python")
+    if not os.path.isfile(venv_python):
+        code, out = _run([sys.executable or "python3", "-m", "venv", VENV_DIR], log, 300)
+        if code:
+            raise PortingError("Could not create a Python environment for FramePort: " + out[-400:])
+    pip = [venv_python, "-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir", "--upgrade"]
+    code, out = _run(pip + [wheel], log, 1800)
+    if code:
+        code, out = _install_without_optional(pip, venv_python, wheel, log)
+    if code or not os.path.isfile(_venv_cli()):
+        raise PortingError("pip could not install FramePort: " + out[-600:])
+
+
 def setup(log: Log) -> Dict[str, Any]:
     """Installs FramePort's command line into FrameLoad's folder and lets it fetch its tools."""
     os.makedirs(FRAMEPORT_HOME, exist_ok=True)
@@ -201,18 +219,11 @@ def setup(log: Log) -> Dict[str, Any]:
     if not cli:
         version, wheel = latest_wheel()
         log(f"Installing FramePort {version} (command line) into {VENV_DIR}")
-        python = sys.executable or "python3"
-        code, out = _run([python, "-m", "venv", VENV_DIR], log, 300)
-        if code:
-            raise PortingError("Could not create a Python environment for FramePort: " + out[-400:])
-        venv_python = os.path.join(os.path.dirname(_venv_cli()), "python.exe" if os.name == "nt" else "python")
-        pip = [venv_python, "-m", "pip", "install", "--disable-pip-version-check"]
-        code, out = _run(pip + [wheel], log, 1800)
-        if code:
-            code, out = _install_without_optional(pip, venv_python, wheel, log)
-        if code or not os.path.isfile(_venv_cli()):
+        try:
+            _pip_install(wheel, log)
+        except PortingError:
             shutil.rmtree(VENV_DIR, ignore_errors=True)
-            raise PortingError("pip could not install FramePort: " + out[-600:])
+            raise
         cli = [_venv_cli()]
     log("Downloading FramePort's tools (Java runtime, OVRPort, apksigner)...")
     code, out = _run(cli + ["tools", "install"], log, 3600)
@@ -221,6 +232,20 @@ def setup(log: Log) -> Dict[str, Any]:
     if os.path.isdir(KEY_BACKUP_DIR):  # keys saved by an earlier uninstall
         _run(cli + ["tools", "import-keys", KEY_BACKUP_DIR], log, 120)
     return status()
+
+
+def update(log: Log, wheel: str, version: str) -> Dict[str, Any]:
+    """Moves FrameLoad's own FramePort to a newer release and refreshes its tools."""
+    log(f"Updating FramePort to {version}")
+    _pip_install(wheel, log)
+    code, out = _run([_venv_cli(), "tools", "install", "--update"], log, 3600)
+    if code:
+        log("FramePort's tools could not be refreshed; the installed ones stay in use.")
+    result = status()
+    # A newer FramePort may port what the previous one could not.
+    if clear_failed_ports() and is_auto():
+        result["ported"] = port_pending(log)
+    return result
 
 
 def _stage(apk_path: str, package: str) -> str:
@@ -311,55 +336,163 @@ def needs_port(game: Dict[str, Any]) -> bool:
     return game.get("kind") == "quest" and (game.get("compat") or {}).get("level") == "needs_port"
 
 
-def _set_pending(package: str, pending: bool) -> None:
-    """Remembers a game that could not be ported yet because porting is not set up."""
+def _set_flags(package: str, **flags: Any) -> None:
+    """Records porting state (port_pending, port_failed, port_error) in a game's deployment.json."""
     from ..manager.installed import InstalledManager
 
     dep = InstalledManager.get_game(package)
-    if not dep or bool(dep.get("port_pending")) == pending:
+    if not dep or all(dep.get(key) == value for key, value in flags.items()):
         return
-    dep["port_pending"] = pending
+    dep.update(flags)
     path = os.path.join(dep["anchor"], "deployment.json")
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump({k: v for k, v in dep.items() if k not in ("device_name", "is_external")}, f, indent=2)
     os.replace(path + ".tmp", path)
 
 
+def _set_pending(package: str, pending: bool) -> None:
+    _set_flags(package, port_pending=pending)
+
+
 def pending_games() -> List[Dict[str, Any]]:
+    """Installed Quest games that still need porting and have not already failed to port.
+
+    With automatic porting on that is every such game, wherever it came from; with it off, only
+    games that were explicitly queued."""
     from ..manager.installed import InstalledManager
 
+    automatic = is_auto()
     found = []
     for game in InstalledManager.list_installed():
         dep = InstalledManager.get_game(game["package"]) or {}
-        if dep.get("port_pending") and needs_port(dep):
+        if needs_port(dep) and not dep.get("port_failed") and (automatic or dep.get("port_pending")):
             found.append({"package": game["package"], "title": dep.get("title", game["package"])})
     return found
 
 
-def auto_port(installed: Dict[str, Any]) -> Dict[str, Any]:
-    """Called with the result of an install: starts porting when the game needs it and it is possible.
+def port_and_record(package: str, log: Log) -> Dict[str, Any]:
+    """Ports one installed game. A failure is remembered on the game, so automatic porting does not
+    repeat a port that takes minutes and fails the same way until FramePort changes or the user asks."""
+    try:
+        return port_installed_game(package, log)
+    except Exception as e:
+        _set_flags(package, port_failed=True, port_error=str(e)[:500], port_pending=False)
+        raise
 
-    Never downloads FramePort on its own; a game that has to wait is marked and ported after setup."""
+
+def clear_failed_ports() -> int:
+    """Lets games that failed to port be tried again (after a FramePort update)."""
+    from ..manager.installed import InstalledManager
+
+    cleared = 0
+    for game in InstalledManager.list_installed():
+        dep = InstalledManager.get_game(game["package"]) or {}
+        if dep.get("port_failed"):
+            _set_flags(game["package"], port_failed=False, port_error="")
+            cleared += 1
+    return cleared
+
+
+def auto_setup_enabled() -> bool:
+    """Whether FrameLoad fetches and updates the porting tools by itself."""
+    return bool(Config.get().get("porting", {}).get("auto_setup", True))
+
+
+def _state() -> Dict[str, Any]:
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(**changes: Any) -> None:
+    data = _state()
+    data.update(changes)
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except OSError:
+        pass
+
+
+def ensure_ready() -> Optional[Dict[str, Any]]:
+    """Starts the one-time setup in the background unless porting is ready or already being set up.
+    Returns the setup job, or None when there is nothing to do."""
+    running = PortingJobs.active()
+    if running and running["kind"] == "setup":
+        return running
+    current = status()
+    if current["installed"] and current["tools_ready"]:
+        return None
+    _save_state(last_attempt=time.time())
+    return PortingJobs.start("setup", setup_and_port_pending, queue=True)
+
+
+def background_maintenance() -> Optional[Dict[str, Any]]:
+    """Run shortly after FrameLoad starts: sets porting up the first time and keeps FramePort current,
+    so nobody has to press a button. Only on a Steam Frame, and only when allowed in the settings."""
+    from ..system.steamos import is_steam_frame
+
+    if not auto_setup_enabled() or not is_steam_frame():
+        return None
+    state = _state()
+    now = time.time()
+    current = status()
+    if not (current["installed"] and current["tools_ready"]):
+        if now - state.get("last_attempt", 0) < RETRY_SECONDS:
+            return None
+        return ensure_ready()
+    if is_auto() and pending_games() and not PortingJobs.active():  # "blocked" games are not "needs_port"
+        # Games already in the library (installed by an older version, or downloaded) are ported too.
+        return PortingJobs.start("port", lambda log: {"ported": port_pending(log)}, queue=True)
+    if not current["managed"] or now - state.get("last_update_check", 0) < UPDATE_CHECK_SECONDS:
+        return None
+    _save_state(last_update_check=now)
+    try:
+        version, wheel = latest_wheel()
+    except Exception:
+        return None
+    if version.lstrip("vV") == current["version"]:
+        return None
+    return PortingJobs.start("update", lambda log: update(log, wheel, version), queue=True)
+
+
+def auto_port(installed: Dict[str, Any]) -> Dict[str, Any]:
+    """Called after an install and before a launch: ports the game when it needs it.
+
+    If porting has not been set up yet, the game is marked as waiting and (unless switched off) the
+    setup starts now; the game is ported as soon as it finishes."""
     if not needs_port(installed):
         return {"needed": False, "started": False}
     package = installed["package"]
     if not is_auto():
         return {"needed": True, "started": False, "reason": "disabled"}
+    if installed.get("port_failed"):
+        return {"needed": True, "started": False, "reason": "failed", "error": installed.get("port_error", "")}
+    for job in PortingJobs._jobs.values():  # already being ported: show that job instead of queueing again
+        if job["kind"] == "port" and job["package"] == package and job["status"] in ("running", "queued"):
+            return {"needed": True, "started": True, "job": PortingJobs.public(job)}
     current = status()
     if not (current["installed"] and current["tools_ready"]):
         _set_pending(package, True)
-        return {"needed": True, "started": False, "reason": "not_set_up"}
-    job = PortingJobs.start("port", lambda log: port_installed_game(package, log), package=package, queue=True)
+        if not auto_setup_enabled():
+            return {"needed": True, "started": False, "reason": "not_set_up"}
+        job = ensure_ready()
+        return {"needed": True, "started": bool(job), "job": job, "reason": "setting_up"}
+    job = PortingJobs.start("port", lambda log: port_and_record(package, log), package=package, queue=True)
     return {"needed": True, "started": True, "job": job}
 
 
 def port_pending(log: Log) -> List[str]:
-    """Ports every game that was waiting for porting to be set up. Returns the packages that worked."""
+    """Ports every game that is waiting to be ported. Returns the packages that worked."""
     done = []
     for game in pending_games():
-        log(f"Porting {game['title']}, installed before porting was set up...")
+        log(f"Porting {game['title']}...")
         try:
-            port_installed_game(game["package"], log)
+            port_and_record(game["package"], log)
             done.append(game["package"])
         except Exception as e:  # one failing game must not stop the others
             log(f"{game['title']}: {e}")
@@ -412,6 +545,12 @@ class PortingJobs:
 
         threading.Thread(target=run, daemon=True, name=f"porting-{kind}").start()
         return cls.public(job)
+
+    @classmethod
+    def last_error(cls, kind: str) -> str:
+        """The error of the most recent job of this kind, '' if it worked or never ran."""
+        jobs = sorted((j for j in cls._jobs.values() if j["kind"] == kind), key=lambda j: j["started"])
+        return jobs[-1]["error"] if jobs and jobs[-1]["status"] == "error" else ""
 
     @classmethod
     def get(cls, job_id: str) -> Optional[Dict[str, Any]]:

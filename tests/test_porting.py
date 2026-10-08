@@ -220,9 +220,11 @@ class TestAutomaticPorting(LibraryTestCase):
     def setUp(self):
         super().setUp()
         porting.PortingJobs._jobs.clear()
-        auto = patch.object(porting, "is_auto", return_value=True)
-        auto.start()
-        self.addCleanup(auto.stop)
+        for p in (patch.object(porting, "is_auto", return_value=True),
+                  patch.object(porting, "auto_setup_enabled", return_value=True),
+                  patch.object(porting, "STATE_FILE", os.path.join(self.tmp, "porting_state.json"))):
+            p.start()
+            self.addCleanup(p.stop)
 
     def test_ports_right_after_install_when_porting_is_set_up(self):
         porting.setup(lambda line: None)
@@ -242,18 +244,103 @@ class TestAutomaticPorting(LibraryTestCase):
         for pkg in ("com.studio.one", "com.studio.two"):
             self.assertTrue(InstalledManager.get_game(pkg)["framebridge"])
 
-    def test_waits_for_setup_instead_of_downloading_tools_unasked(self):
-        res = self.install_unported("com.studio.waiting")
+    def test_first_quest_game_fetches_the_tools_by_itself_then_is_ported(self):
+        res = self.install_unported("com.studio.first")
         outcome = porting.auto_port(res)
+        self.assertEqual((outcome["needed"], outcome["started"], outcome["reason"]), (True, True, "setting_up"))
+        self.assertEqual(outcome["job"]["kind"], "setup")
+        done = self.wait(outcome["job"])
+        self.assertEqual(done["status"], "done", done)
+        self.assertEqual(done["result"]["ported"], ["com.studio.first"])
+        self.assertEqual(InstalledManager.get_game("com.studio.first")["compat"]["level"], "ready")
+        self.assertEqual(porting.pending_games(), [])
+        self.assertIsNone(porting.ensure_ready())  # ready now: nothing left to do
+
+    def test_with_automatic_download_off_the_game_waits_for_a_manual_setup(self):
+        res = self.install_unported("com.studio.waiting")
+        with patch.object(porting, "auto_setup_enabled", return_value=False):
+            outcome = porting.auto_port(res)
         self.assertEqual((outcome["needed"], outcome["started"], outcome["reason"]), (True, False, "not_set_up"))
         self.assertEqual([g["package"] for g in porting.pending_games()], ["com.studio.waiting"])
         self.assertIsNone(porting.PortingJobs.active())
 
-        # Finishing the one-time setup ports what was waiting.
+        # Finishing the setup by hand ports what was waiting.
         result = porting.setup_and_port_pending(lambda line: None)
         self.assertEqual(result["ported"], ["com.studio.waiting"])
         self.assertEqual(porting.pending_games(), [])
-        self.assertEqual(InstalledManager.get_game("com.studio.waiting")["compat"]["level"], "ready")
+
+    def test_background_maintenance_sets_up_once_and_only_on_a_steam_frame(self):
+        with patch("frameload.system.steamos.is_steam_frame", return_value=False):
+            self.assertIsNone(porting.background_maintenance())  # never on a development PC
+        with patch("frameload.system.steamos.is_steam_frame", return_value=True):
+            with patch.object(porting, "auto_setup_enabled", return_value=False):
+                self.assertIsNone(porting.background_maintenance())
+            job = porting.background_maintenance()
+            self.assertEqual(job["kind"], "setup")
+            self.assertEqual(self.wait(job)["status"], "done")
+            self.assertTrue(porting.status()["tools_ready"])
+            self.assertIsNone(porting.background_maintenance())  # ready, and no update check due yet
+
+    def test_failed_setup_is_not_retried_at_every_start(self):
+        with patch("frameload.system.steamos.is_steam_frame", return_value=True), \
+                patch.object(porting, "setup", side_effect=porting.PortingError("no network")):
+            job = porting.background_maintenance()
+            self.assertEqual(self.wait(job)["status"], "error")
+            self.assertEqual(porting.PortingJobs.last_error("setup"), "no network")
+            self.assertIsNone(porting.background_maintenance())  # waits before the next attempt
+            porting._save_state(last_attempt=0)
+            self.assertIsNotNone(porting.background_maintenance())
+
+    def test_newer_frameport_release_is_picked_up(self):
+        porting.setup(lambda line: None)
+        updated = []
+        with patch("frameload.system.steamos.is_steam_frame", return_value=True), \
+                patch.object(porting, "status", return_value={"installed": True, "tools_ready": True, "managed": True, "version": "9.9.9"}), \
+                patch.object(porting, "update", side_effect=lambda log, wheel, version: updated.append((wheel, version)) or {}):
+            with patch.object(porting, "latest_wheel", return_value=("v9.9.9", "https://example.org/same.whl")):
+                self.assertIsNone(porting.background_maintenance())  # same version
+            porting._save_state(last_update_check=0)
+            with patch.object(porting, "latest_wheel", return_value=("v10.0.0", "https://example.org/new.whl")):
+                job = porting.background_maintenance()
+                self.assertEqual(job["kind"], "update")
+                self.wait(job)
+        self.assertEqual(updated, [("https://example.org/new.whl", "v10.0.0")])
+
+    def test_games_already_in_the_library_are_ported_in_the_background(self):
+        porting.setup(lambda line: None)
+        self.install_unported("com.studio.old")  # installed earlier, never flagged as waiting
+        self.assertEqual([g["package"] for g in porting.pending_games()], ["com.studio.old"])
+        with patch("frameload.system.steamos.is_steam_frame", return_value=True):
+            job = porting.background_maintenance()
+        self.assertEqual(job["kind"], "port")
+        done = self.wait(job)
+        self.assertEqual(done["result"], {"ported": ["com.studio.old"]})
+        self.assertEqual(InstalledManager.get_game("com.studio.old")["compat"]["level"], "ready")
+
+    def test_failed_port_is_remembered_and_not_repeated_until_asked_or_frameport_changes(self):
+        porting.setup(lambda line: None)
+        res = self.install_unported("com.studio.broken")
+        with patch.dict(os.environ, {"FAKE_FRAMEPORT_FAIL": "1"}):
+            job = porting.auto_port(res)["job"]
+            self.assertEqual(self.wait(job)["status"], "error")
+        dep = InstalledManager.get_game("com.studio.broken")
+        self.assertTrue(dep["port_failed"])
+        self.assertIn("could not patch", dep["port_error"])
+        self.assertEqual(porting.pending_games(), [])  # not retried in the background
+        outcome = porting.auto_port(dep)               # nor on every press of Launch
+        self.assertEqual((outcome["started"], outcome["reason"]), (False, "failed"))
+
+        self.assertEqual(porting.clear_failed_ports(), 1)  # what a FramePort update does
+        self.assertEqual([g["package"] for g in porting.pending_games()], ["com.studio.broken"])
+
+    def test_pressing_launch_twice_shows_the_same_port_job(self):
+        porting.setup(lambda line: None)
+        res = self.install_unported("com.studio.twice")
+        first = porting.auto_port(res)
+        second = porting.auto_port(InstalledManager.get_game("com.studio.twice") or res)
+        if second.get("started"):  # still queued or running: the same job, not a second one
+            self.assertEqual(second["job"]["id"], first["job"]["id"])
+        self.wait(first["job"])
 
     def test_nothing_happens_for_games_that_do_not_need_it_or_when_switched_off(self):
         porting.setup(lambda line: None)

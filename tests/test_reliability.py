@@ -97,6 +97,51 @@ class TestSteamSession(TempCase):
         self.assertTrue(popen.call_args[0][0][-1].startswith("steam://rungameid/"))
 
 
+class TestStop(TempCase):
+    def test_stop_kills_the_games_container_and_reports_honestly(self):
+        self.patch(InstalledManager, "get_game", return_value={"package": "a.b", "appid": 77})
+        self.patch("time.sleep")
+        running = {"lepton-steamlaunch-77", "lepton-steamlaunch-88", "some-other-container"}
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            result = type("R", (), {"stdout": "", "returncode": 0})()
+            if cmd[:2] == ["podman", "ps"]:
+                result.stdout = "\n".join(sorted(running))
+            elif cmd[:2] == ["podman", "kill"]:
+                running.discard(cmd[2])
+            return result
+
+        self.patch("subprocess.run", side_effect=fake_run)
+        res = GameLauncher.stop("a.b")
+        self.assertEqual((res["success"], res["stopped"]), (True, True))
+        self.assertIn(["podman", "kill", "lepton-steamlaunch-77"], calls)
+
+        again = GameLauncher.stop("a.b")
+        self.assertEqual((again["success"], again["stopped"]), (True, False))  # already gone
+
+        everything = GameLauncher.stop_all()
+        self.assertEqual((everything["stopped"], everything["running"]), (1, 1))
+        self.assertEqual(running, {"some-other-container"})  # only Lepton games are touched
+
+    def test_container_that_survives_kill_is_removed(self):
+        self.patch(InstalledManager, "get_game", return_value={"package": "a.b", "appid": 5})
+        self.patch("time.sleep")
+        running = {"lepton-steamlaunch-5"}
+
+        def fake_run(cmd, **kwargs):
+            result = type("R", (), {"stdout": "", "returncode": 0})()
+            if cmd[:2] == ["podman", "ps"]:
+                result.stdout = "\n".join(running)
+            elif cmd[:3] == ["podman", "rm", "-f"]:
+                running.discard(cmd[3])
+            return result
+
+        self.patch("subprocess.run", side_effect=fake_run)
+        self.assertTrue(GameLauncher.stop("a.b")["stopped"])
+
+
 class TestBackups(TempCase):
     def setUp(self):
         super().setUp()
@@ -368,6 +413,12 @@ class TestLaunchLog(TempCase):
         self.assertEqual(titles("nothing special"), ["No known problem found in the log"])
         # An error outranks an earlier sign of life.
         self.assertNotIn("The game was running (72 fps)", titles("FrameBridge: pacing: 72 fps\nFatal signal 11 (SIGSEGV)"))
+
+    def test_started_but_never_drew_a_frame(self):
+        titles = [f["title"] for f in launchlog.diagnose(["FrameBridge: adapter loaded", "FrameBridge: session FOCUSED"])]
+        self.assertEqual(titles, ["The game started but has not shown a VR frame"])
+        titles = [f["title"] for f in launchlog.diagnose(["FrameBridge: adapter loaded", "FrameBridge: pacing: 72 fps"])]
+        self.assertEqual(titles, ["The game was running (72 fps)"])
 
     def test_reads_the_tail_of_the_log(self):
         base = os.path.join(self.tmp, "game")

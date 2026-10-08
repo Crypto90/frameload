@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.3] - 2026-10-08
+
+### Changed
+- **Porting needs no setup step.** On a Steam Frame, FrameLoad downloads the porting tools (FramePort, a Java runtime, OVRPort, apksigner; about 310 MB on disk) in the background shortly after it starts, and again on demand if a Quest game needs them first. A game sideloaded before the tools are ready is ported as soon as they are.
+- **FramePort is kept current:** a weekly check installs a newer FramePort release, which is where per-game fixes arrive.
+- **Failed downloads are retried** after six hours instead of at every start, and the porting card shows what went wrong.
+- **New switch:** "Download and update the porting tools automatically" (on by default) for metered connections; "Set Up Now" fetches them on request.
+- pip's download cache is no longer kept on the headset (44 MB saved).
+- **Launch ports first.** Pressing Launch (now "Port & Play") on a game that needs porting ports it and then starts it. Games already in the library, and games that arrive through a download, are ported in the background as well, not only freshly sideloaded ones.
+- **A failed port is remembered** and not repeated on every start or every press of Launch; "Port Again" retries, and a FramePort update retries by itself.
+- **A game's buttons are at the top of its page**, above the details, so nothing has to be scrolled to in the headset.
+
+### Added
+- **Stop.** A running game gets a Stop button on its card and page, and a red "Stop <game>" chip stays in the header. A game FrameLoad starts itself (because Steam has not loaded its shortcut yet) has no exit in Steam, and a hung one could not be closed at all. `frameload stop [package]` does the same from a terminal.
+- **Apps that check their own signature are recognised** (SKYBOX VR Player): they are marked "Cannot run" before any time is spent porting them, and are not started. A ported copy is signed with a different key, and such an app stays on its loading screen; getting past that would mean defeating its tamper check, which FrameLoad does not do.
+- **Launch log:** names the case where a game started but never showed a VR frame.
+
+### Fixed
+- **A game that cannot run could still be launched** and then hang with SteamVR showing "Waiting".
+
+---
+
 ## [v1.3.2] - 2026-10-08
 
 ### Added

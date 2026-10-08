@@ -137,6 +137,13 @@ class TestCompatVerdict(unittest.TestCase):
         self.assertEqual(a.xr_runtime, "vrapi")
         self.assertEqual(a.compat["level"], "needs_port")
 
+    def test_app_that_checks_its_own_signature_cannot_run_ported_or_not(self):
+        for libs in (["libOVRPlugin.so", "libunity.so", "libskybox.so"],
+                     ["libframe_settings.so", "libopenxr_loader.so", "libunity.so", "libskybox.so"]):
+            a = inspect_apk(self.apk(manifest_node=manifest("com.example.player", categories=(LAUNCHER, VR)), libs=libs))
+            self.assertEqual(a.compat["level"], "blocked", libs)
+            self.assertIn("signature_check", self.codes(a))
+
     def test_unreadable_manifest_falls_back_to_file_name(self):
         path = self.apk(name="com.vendor.title-v12.apk", raw_manifest=b"\x00garbage\x00")
         a = inspect_apk(path)

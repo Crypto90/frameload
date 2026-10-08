@@ -209,6 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
   checkHealthOnce();
   startPollingDownloads();
   setInterval(loadSystemTelemetry, 8000);
+  setInterval(refreshRunningGames, 8000);
   setInterval(() => checkForUpdates(false), 6 * 3600 * 1000);
   loadSteamStatus();
 });
@@ -824,6 +825,7 @@ async function loadInstalled() {
     const data = await res.json();
     state.installed = Array.isArray(data.games) ? data.games : [];
     renderInstalledGrid();
+    renderStopChip();
   } catch (err) {
     console.error("Error loading installed library:", err);
     container.innerHTML = `
@@ -882,9 +884,13 @@ function renderInstalledGrid() {
             <span>${escapeHtml(game.engine || "")}</span>
           </div>
           <div class="card-actions">
-            ${updateInfo
+            ${game.is_running
+              ? `<button class="card-btn stop" onclick="event.stopPropagation(); stopGame(${pkg})">Stop</button>`
+              : updateInfo
               ? `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame(${pkg})">⚡ Update</button>`
-              : `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${pkg})">Launch</button>`}
+              : level === "needs_port" && game.kind === "quest"
+                ? `<button class="card-btn play" title="Ports the game for the Steam Frame, then starts it" onclick="event.stopPropagation(); ${game.port_failed ? "portGame" : "launchGame"}(${pkg})">${game.port_failed ? "Port Again" : "Port & Play"}</button>`
+                : `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${pkg})">Launch</button>`}
             <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
           </div>
         </div>
@@ -896,19 +902,30 @@ function renderInstalledGrid() {
 }
 
 async function launchGame(pkg) {
-  showToast(`🚀 Launching ${pkg}...`, "info");
+  const game = (state.installed || []).find(g => g.package === pkg);
+  const name = game ? game.title : pkg;
+  showToast(`Starting ${name}...`, "info");
   try {
-    const res = await fetch("/api/installed/launch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ package: pkg })
-    });
-    const data = await res.json();
-    if (data.success) {
+    const data = await apiPost("/api/installed/launch", { package: pkg });
+    const port = data.porting;
+    if (port && port.started) {
+      // Built for Meta's runtime: it is ported first and started as soon as that is done.
+      state.porting.jobId = port.job.id;
+      state.porting.launchAfter = pkg;
+      openPortingModal();
+      showToast(port.reason === "setting_up"
+        ? `${name} has to be ported first. Getting the porting tools (one time), then porting and starting it...`
+        : `${name} has to be ported first. Porting it now, then starting it...`, "info");
+    } else if (port && port.reason === "failed") {
+      showToast(`${name} could not be ported: ${port.error || "see its launch log"}. Open the game and press Port Again to retry.`, "error");
+    } else if (port && port.needed) {
+      showToast(`${name} needs porting before it can start. Open the game and press Port & Play.`, "warning");
+    } else if (data.success) {
       showToast(data.launched_via_steam ? "Starting through Steam..."
-        : data.in_steam_library === false ? "Starting directly: Steam has not loaded this game yet."
+        : data.in_steam_library === false ? "Starting directly: Steam has not loaded this game yet. Use Stop in FrameLoad to close it."
         : "Starting...", "success");
       loadInstalled();
+      [4000, 12000, 25000].forEach(delay => setTimeout(refreshRunningGames, delay));
     } else {
       showToast(data.error || "Failed to launch game", "error");
     }
@@ -916,6 +933,54 @@ async function launchGame(pkg) {
     showToast(`Error: ${err.message}`, "error");
   }
 }
+
+// A game FrameLoad started itself has no "exit" in Steam, so the dashboard always offers Stop.
+function renderStopChip() {
+  const chip = document.getElementById("header-stop-game");
+  if (!chip) return;
+  const running = (state.installed || []).filter(g => g.is_running);
+  chip.style.display = running.length ? "" : "none";
+  chip.textContent = running.length === 1 ? `Stop ${running[0].title}` : `Stop ${running.length} Games`;
+}
+
+async function refreshRunningGames() {
+  try {
+    const data = await apiGet("/api/installed");
+    const games = Array.isArray(data.games) ? data.games : [];
+    const before = (state.installed || []).filter(g => g.is_running).map(g => g.package).join(",");
+    const after = games.filter(g => g.is_running).map(g => g.package).join(",");
+    state.installed = games;
+    if (before !== after) renderInstalledGrid();  // only redraw when something started or stopped
+    renderStopChip();
+  } catch (e) {
+    /* next round */
+  }
+}
+
+async function stopGame(pkg) {
+  const game = (state.installed || []).find(g => g.package === pkg);
+  showToast(`Stopping ${game ? game.title : pkg}...`, "info");
+  try {
+    const res = await apiPost("/api/installed/stop", { package: pkg });
+    showToast(res.success ? (res.stopped ? "Stopped." : res.message) : res.error, res.success ? "success" : "error");
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+  refreshRunningGames();
+}
+
+async function stopRunningGames() {
+  showToast("Stopping...", "info");
+  try {
+    const res = await apiPost("/api/installed/stop-all", {});
+    showToast(res.success ? `Stopped ${res.stopped} game(s).` : "Some games could not be stopped.", res.success ? "success" : "error");
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+  refreshRunningGames();
+}
+window.stopGame = stopGame;
+window.stopRunningGames = stopRunningGames;
 
 async function uninstallGame(pkg, keepSaves = true) {
   if (!confirm(`Are you sure you want to uninstall ${pkg}?`)) return;
@@ -1228,10 +1293,18 @@ function openGameModal(id, mode = "catalog") {
   } else {
     const arg = jsArg(game.package);
     const lepton = game.kind === "quest" || game.kind === "flat";
+    const needsPort = game.kind === "quest" && game.compat && game.compat.level === "needs_port";
+    const primary = game.is_running
+      ? `<button class="btn-danger" onclick="closeModal(); stopGame(${arg})">Stop</button>`
+      : needsPort
+      ? (game.port_failed
+          ? `<button class="btn-primary" onclick="closeModal(); portGame(${arg})">Port Again</button>`
+          : `<button class="btn-primary" onclick="closeModal(); launchGame(${arg})">Port &amp; Play</button>`)
+      : `<button class="btn-primary" onclick="launchGame(${arg}); closeModal();">${game.is_vr ? "Launch in VR" : "Open"}</button>`;
     actionContainer.innerHTML = `
-      <button class="btn-primary" onclick="launchGame(${arg}); closeModal();">${game.is_vr ? "Launch in VR" : "Open"}</button>
+      ${primary}
       ${lepton ? `<button class="btn-secondary" onclick="openTuningModal(${arg})">Settings</button>` : ""}
-      ${game.kind === "quest" && game.compat && game.compat.level === "needs_port" ? `<button class="btn-secondary" style="border-color:var(--accent-amber); color:var(--accent-amber);" onclick="closeModal(); portGame(${arg})">Port for Steam Frame</button>` : ""}
+      ${needsPort && game.port_failed && game.port_error ? `<span class="tuning-micro-note" style="flex-basis:100%; color:var(--accent-amber);">Last port failed: ${escapeHtml(game.port_error)}</span>` : ""}
       ${lepton ? `<button class="btn-secondary" onclick="openLogModal(${arg})">Launch Log</button>` : ""}
       <button class="btn-secondary" onclick="backupSaves(${arg})">Backup Saves</button>
       <button class="btn-secondary" style="color:var(--accent-danger);" onclick="uninstallGame(${arg})">Uninstall</button>
@@ -1416,7 +1489,9 @@ function setupSideloadForm() {
           // Built for Meta's runtime: the port starts on its own, and its progress is shown.
           state.porting.jobId = port.job.id;
           openPortingModal();
-          showToast("Installed. Porting it for the Steam Frame now...", "info");
+          showToast(port.reason === "setting_up"
+            ? "Installed. Getting the porting tools first (one time), then porting it..."
+            : "Installed. Porting it for the Steam Frame now...", "info");
         } else if (port.needed && port.reason === "not_set_up") {
           showToast("Installed. It needs porting before it starts: press Set Up Porting under System & Diagnostics once, and it is ported automatically.", "warning");
         } else if (level === "needs_port" || level === "blocked") {
@@ -2843,7 +2918,7 @@ window.onTuningInput = onTuningInput;
 window.saveGameTuningFromModal = saveGameTuningFromModal;
 
 // === Quest game porting (FramePort on this headset) and self-test ===
-state.porting = { status: null, jobId: null, timer: null };
+state.porting = { status: null, jobId: null, timer: null, launchAfter: null };
 
 async function loadPortingStatus() {
   const badge = document.getElementById("porting-badge");
@@ -2855,16 +2930,22 @@ async function loadPortingStatus() {
     const st = await apiGet("/api/porting/status");
     state.porting.status = st;
     const ready = st.installed && st.tools_ready;
-    badge.textContent = st.job ? "Working..." : ready ? "Ready" : st.installed ? "Tools missing" : "Not set up";
+    const settingUp = st.job && st.job.kind !== "port";
+    badge.textContent = settingUp ? (st.job.kind === "update" ? "Updating..." : "Setting up...")
+      : st.job ? "Porting..." : ready ? "Ready" : st.setup_error ? "Setup failed" : st.auto_setup ? "Sets up by itself" : "Not set up";
     badge.style.color = ready ? "var(--accent-emerald)" : "var(--text-muted)";
     const waiting = (st.pending || []).map(g => g.title);
     const parts = [];
     if (st.installed) parts.push(`FramePort ${st.version}${ready ? " with Java, OVRPort and apksigner." : "; its tools still need to be downloaded."}`);
     if (st.limited) parts.push(st.limited);
+    if (!ready && !st.job && st.setup_error) parts.push(`The last setup attempt failed: ${st.setup_error} FrameLoad tries again later, or press Set Up Now.`);
+    else if (!ready && !st.job && st.auto_setup) parts.push("The tools are downloaded in the background shortly after FrameLoad starts, or as soon as a game needs them.");
     if (waiting.length) parts.push(`Waiting to be ported after setup: ${waiting.join(", ")}.`);
     if (detail) detail.textContent = parts.join(" ");
     const autoCheck = document.getElementById("porting-auto-check");
     if (autoCheck) autoCheck.checked = st.auto !== false;
+    const setupCheck = document.getElementById("porting-setup-check");
+    if (setupCheck) setupCheck.checked = st.auto_setup !== false;
     if (setupBtn) {
       setupBtn.style.display = ready ? "none" : "";
       setupBtn.disabled = !!st.job;
@@ -2903,7 +2984,9 @@ async function pollPortingJob() {
   if (!id || !log) return;
   try {
     const job = await apiGet(`/api/porting/jobs/${encodeURIComponent(id)}`);
-    if (title) title.textContent = job.kind === "setup" ? "Setting up porting" : `Porting ${job.package}`;
+    const jobGame = (state.installed || []).find(g => g.package === job.package);
+    if (title) title.textContent = job.kind === "setup" ? "Getting the porting tools" : job.kind === "update" ? "Updating the porting tools"
+      : job.package ? `Porting ${jobGame ? jobGame.title : job.package}` : "Porting the games that need it";
     const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
     log.textContent = job.log.join("\n");
     if (atEnd) log.scrollTop = log.scrollHeight;
@@ -2916,12 +2999,27 @@ async function pollPortingJob() {
     }
     if (status) {
       status.textContent = job.status === "done"
-        ? (job.kind === "setup" ? "Porting is set up." : `Finished: ${(job.result && job.result.compat && job.result.compat.label) || "installed"}. Start it from your library.`)
+        ? (job.kind !== "port" ? ((job.result && job.result.ported && job.result.ported.length) ? `Ready. Ported ${job.result.ported.length} waiting game(s).` : "The porting tools are ready.") :  `Finished: ${(job.result && job.result.compat && job.result.compat.label) || "installed"}. Start it from your library.`)
         : `Failed: ${job.error}`;
     }
     showToast(job.status === "done" ? "Finished." : `Failed: ${job.error}`, job.status === "done" ? "success" : "error");
     loadPortingStatus();
-    loadInstalled();
+    await loadInstalled();
+    // Launch asked for this: start the game now that it is ported.
+    const wanted = state.porting.launchAfter;
+    if (wanted) {
+      const ported = (job.kind === "port" && job.package === wanted) || (job.result && (job.result.ported || []).includes(wanted));
+      if (job.status === "done" && ported) {
+        state.porting.launchAfter = null;
+        closePortingModal();
+        launchGame(wanted);
+      } else if (job.kind === "port" || job.status !== "done") {
+        state.porting.launchAfter = null;
+      } else if (state.porting.status && state.porting.status.job) {
+        state.porting.jobId = state.porting.status.job.id;  // setup finished; the port itself is next
+        state.porting.timer = setTimeout(pollPortingJob, 1500);
+      }
+    }
   } catch (e) {
     if (status) status.textContent = `Could not read progress: ${e.message}`;
   }
@@ -2950,6 +3048,17 @@ async function setPortingAuto(enabled) {
 }
 window.setPortingAuto = setPortingAuto;
 
+async function setPortingAutoSetup(enabled) {
+  try {
+    await apiPost("/api/porting/settings", { auto_setup: !!enabled });
+    showToast(enabled ? "FrameLoad downloads and updates the porting tools by itself." : "Automatic download is off. Use Set Up Now when you want the tools.", "info");
+    loadPortingStatus();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.setPortingAutoSetup = setPortingAutoSetup;
+
 function startPortingSetup() {
   return startPortingJob("/api/porting/setup", {});
 }
@@ -2957,8 +3066,9 @@ function startPortingSetup() {
 async function portGame(pkg) {
   const st = state.porting.status || await loadPortingStatus();
   if (!st || !st.installed || !st.tools_ready) {
-    showToast("Porting is not set up yet. Open System & Diagnostics and press Set Up Porting first.", "warning");
-    return;
+    // Not ready yet: fetch the tools now; the waiting game is ported when that finishes.
+    showToast("Getting the porting tools first (one time). The game is ported right after.", "info");
+    return startPortingJob("/api/porting/setup", { package: pkg });
   }
   return startPortingJob("/api/porting/port", { package: pkg });
 }

@@ -46,6 +46,7 @@
       <div id="header-lepton" class="telemetry-chip lepton missing">
         Lepton Checking...
       </div>
+      <button id="header-stop-game" class="telemetry-chip stop-chip" style="display:none;" onclick="stopRunningGames()" title="Stop the running game"></button>
       <div id="header-update-alert" class="telemetry-chip update-alert clickable" style="display:none;" onclick="openUpdateModal()" title="FrameLoad Update Available!">
         ⚡ Update: <strong id="header-update-tag" style="margin-left:4px; color:#fff;">v1.0.0</strong>
       </div>
@@ -465,15 +466,19 @@
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px; line-height:1.5;">
             Games built for Meta's Quest runtime are converted on this headset with
             <a href="https://github.com/spoopyghosty0/frameport" target="_blank" rel="noopener" style="color:var(--accent-cyan);">FramePort</a>
-            (OVRPort conversion, FrameBridge adapter, signing). Setup downloads FramePort, a Java runtime and its tools once (a few hundred MB).
+            (OVRPort conversion, FrameBridge adapter, signing). FrameLoad fetches FramePort, a Java runtime and its tools by itself, once, and keeps them current.
           </p>
           <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.88rem; margin-bottom:10px;">
             <input type="checkbox" id="porting-auto-check" checked onchange="setPortingAuto(this.checked)" style="width:18px; height:18px; accent-color:var(--accent-cyan);">
             <span>Port Quest games automatically after installing them</span>
           </label>
+          <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.88rem; margin-bottom:10px;">
+            <input type="checkbox" id="porting-setup-check" checked onchange="setPortingAutoSetup(this.checked)" style="width:18px; height:18px; accent-color:var(--accent-cyan);">
+            <span>Download and update the porting tools automatically</span>
+          </label>
           <p id="porting-detail" class="tuning-micro-note" style="margin-bottom:12px;"></p>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button id="btn-porting-setup" class="btn-primary compact" onclick="startPortingSetup()">Set Up Porting</button>
+            <button id="btn-porting-setup" class="btn-primary compact" onclick="startPortingSetup()">Set Up Now</button>
             <button id="btn-porting-log" class="btn-secondary compact" style="display:none;" onclick="openPortingModal()">Show Progress</button>
           </div>
         </div>
@@ -687,6 +692,10 @@
 
       <h2 id="modal-game-title" style="font-size:1.4rem; font-weight:800; margin-bottom:4px; color:#fff;">Game Title</h2>
       <p id="modal-game-pkg" style="font-size:0.82rem; color:var(--text-muted); font-family:monospace; margin-bottom:12px;">package.name</p>
+
+      <!-- What you can do with it comes first: no scrolling to reach Play in the headset -->
+      <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;"></div>
+      <div id="modal-compat" style="display:none; margin-bottom:16px;"></div>
       
       <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.84rem;">
         <div><strong>Size:</strong> <span id="modal-game-size" style="color:var(--text-primary);">--</span></div>
@@ -729,9 +738,7 @@
         </p>
       </div>
 
-      <div id="modal-compat" style="display:none; margin-bottom:16px;"></div>
 
-      <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
     </div>
   </div>
 

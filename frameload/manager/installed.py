@@ -117,6 +117,8 @@ class InstalledManager:
                         "framebridge": bool(dep.get("framebridge", False)),
                         "hand_tracking": dep.get("hand_tracking", "none"),
                         "compat": dep.get("compat", {}) if isinstance(dep.get("compat"), dict) else {},
+                        "port_failed": bool(dep.get("port_failed", False)),
+                        "port_error": str(dep.get("port_error", "")),
                         "is_running": is_running,
                         "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
                     })
