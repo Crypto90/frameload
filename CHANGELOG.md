@@ -131,10 +131,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.1.8] - 2026-10-08
+
+### Added
+- **Mirror Diagnostics Endpoint:** Integrated `/api/mirror/test` endpoint to diagnose connection latency, HTTP mirror headers, and reachability.
+
+---
+
+## [v1.1.7] - 2026-10-08
+
+### Fixed
+- **Cloudflare 403 Block Mitigation:** Normalized rclone User-Agent and headers to prevent automated Cloudflare anti-bot blocks on mirror sync.
+
+---
+
+## [v1.1.6] - 2026-10-08
+
+### Fixed
+- **Pure Python Downloader Headers:** Added custom browser User-Agent headers to the Python streaming downloader for HTTP mirror compatibility.
+
+---
+
+## [v1.1.5] - 2026-10-08
+
+### Changed
+- **Mirror Download Headers:** Configured spoofed User-Agent headers for background rclone jobs.
+
+---
+
+## [v1.1.4] - 2026-10-08
+
+### Added
+- **VR & 2D Catalog Selector:** Dedicated UI dropdown selector to switch between Quest VR games and 2D flat Android apps.
+
+---
+
+## [v1.1.3] - 2026-10-08
+
+### Fixed
+- **vrSrc Authentication:** Restored API key authentication headers for vrSrc public mirror endpoints.
+
+---
+
+## [v1.1.2] - 2026-10-08
+
+### Changed
+- **Catalog Synchronization:** Improved error handling and resilience during catalog index fetch.
+
+---
+
 ## [v1.1.1] - 2026-10-08
 
 ### Added
 - **F-Droid 2D Android Flat App Catalog:** Integration for browsing and sideloading flat 2D Android applications alongside VR titles.
+
+---
+
+## [v1.1.0] - 2026-10-08
+
+### Fixed
+- **Mirror UI & Cache Invalidation:** Resolved caching issues and Cloudflare 403 blocks in the Mirror Manager UI.
+
+---
+
+## [v1.0.9] - 2026-10-08
+
+### Changed
+- **Mirror Configuration Persistence:** Enhanced local mirror config caching and recovery.
+
+---
+
+## [v1.0.8] - 2026-10-08
+
+### Added
+- **Default Mirror Configuration:** Baked-in default mirror settings for instant zero-config catalog access.
+
+---
+
+## [v1.0.7] - 2026-10-08
+
+### Added
+- **Dynamic SVG Artwork Placeholders:** Responsive fallback SVG posters when game covers are loading or unavailable.
+### Fixed
+- **Rclone Auth Validation:** Fixed rclone credentials validation routine.
+
+---
+
+## [v1.0.6] - 2026-10-08
+
+### Fixed
+- **Mirror Manager Modal:** Resolved modal UI interaction bug and ensured spoofed mirror is selected by default.
+
+---
+
+## [v1.0.5] - 2026-10-08
+
+### Added
+- **Mirror Manager:** Comprehensive UI to manage, switch, and test custom community mirrors and vrSrc integration.
+
+---
+
+## [v1.0.4] - 2026-10-08
+
+### Added
+- **Offline VR Catalog Bundling:** Pre-packaged local VR catalog allowing game discovery without active internet connection.
+
+---
+
+## [v1.0.3] - 2026-10-08
+
+### Fixed
+- **CLI Import Path:** Fixed relative import error when running the CLI directly and formatted error messages in terminal red.
 
 ---
 
