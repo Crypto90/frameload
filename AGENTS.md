@@ -99,6 +99,7 @@ FrameLoad/
 │   │   ├── doctor.py         # Self-test of every assumption about the headset (`frameload doctor`)
 │   │   ├── fsutil.py         # Delete/move/inspect Lepton data (podman unshare, filesystem support)
 │   │   ├── steam_session.py  # Which shortcuts the running Steam has loaded; safe Steam restart
+│   │   ├── steam_ui.py       # Hides Steam's menu over a freshly started game (CEF devtools on 127.0.0.1:8080)
 │   │   └── steamos.py        # Hardware telemetry (battery, storage, Lepton container, Proton status)
 │   ├── web/                  # Web Dashboard UI & REST API
 │   │   ├── static/           # CSS (style.css), JS (app.js, gamepad.js), and Steam artwork assets
@@ -110,7 +111,7 @@ FrameLoad/
 │   ├── build_release.py      # Builds tarballs, self-extracting installer, SHA256SUMS, and release notes
 │   ├── capture_screenshots.py# Headless Chrome script for automated 1080p README screenshots
 │   └── github_release.py     # Pure Python GitHub REST API release publisher and asset uploader
-├── tests/                    # Unit tests (140+ cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
+├── tests/                    # Unit tests (160 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
 ├── install.sh                # 1-Click on-device installer script
 ├── run.sh                    # Smart runner for Steam and command-line execution
 └── uninstall.sh              # 1-Click clean uninstaller
@@ -135,6 +136,8 @@ Verified against Valve's Lepton source (`compat_tool/liblepton/*.sh`) and FrameP
 12. **Only loopback is trusted.** Any other client must hold a paired session (`system/access.py`). New API routes inherit this from `do_GET`/`do_POST`; do not add routes that bypass `authorized()`.
 13. **Some apps cannot be ported** because they check their own signing certificate (`SELF_SIGNATURE_CHECK_LIBS` in `apk_analysis.py`). Mark them blocked; never add code that defeats such a check.
 14. **Always offer Stop.** Games FrameLoad launches directly are invisible to Steam's exit; `GameLauncher.stop()` kills the `lepton-steamlaunch-<appid>` container.
+15. **Steam opens its Resume / Exit menu over a game's first frame.** `launch.sh` of a VR game starts `python3 -m frameload.system.steam_ui`, which waits for FrameBridge's first-frame lines in `launch.log` and then calls `SteamClient.OpenVR.VROverlay.HideDashboard()` in Steam's `SharedJSContext` (the approach is FramePort's). It must never close a dashboard the player opened (`toggle_dashboard_action` in `vrwebhelper_systemui.txt`). Any change to `LAUNCH_SCRIPT_TEMPLATE` needs `layout_version` raised in both `lepton_quest.py` and `migrate.py`, or existing games keep the old launcher.
+16. **Dashboard UI rules.** It is used with a laser pointer in a headset: interactive targets are at least 40 px tall; no `confirm()` / `alert()` (use `confirmDialog()` in `app.js`); every scrollable view must work with the scroll arrows (`ScrollAssist` in `gamepad.js`) because not every controller reaches the page as a gamepad; long jobs report steps and a percentage (`JOB_STEPS` / `JOB_MARKERS` in `porting.py`), not raw console output.
 9. **Camera hand tracking does not exist on the Frame yet.** It needs a tracker inside SteamVR; nothing in this repo can provide it. Do not add UI or files that claim otherwise.
 
 ---

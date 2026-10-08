@@ -153,6 +153,24 @@ class TestPorting(LibraryTestCase):
         with self.assertRaises(porting.PortingError):
             porting.port_installed_game("com.not.installed", lambda line: None)
 
+    def test_job_progress_follows_the_real_steps(self):
+        job = {"kind": "port", "step": 0, "progress": 0.0, "ceiling": 4.0}
+        seen = []
+        for line in ("$ frameport scan /tmp/stage/com.game", "com.game  Test Game  suggested  heuristics",
+                     "$ frameport build com.game --outdir /tmp/out --verbose", "  step: overport", "  step: adapter",
+                     "com.game: OK -> /tmp/out/com.game.apk", "Installing the ported build...", "Done: Ready for Steam Frame"):
+            porting.track_progress(job, line)
+            seen.append((job["step"], int(job["progress"])))
+        self.assertEqual([s for s, _ in seen], [0, 0, 1, 1, 1, 2, 3, 3])
+        self.assertEqual([p for _, p in seen][0], 6)
+        self.assertEqual(seen[-1], (3, 100))
+        self.assertTrue(all(a[1] <= b[1] for a, b in zip(seen, seen[1:])), seen)  # never moves backwards
+
+        quiet = {"kind": "port", "step": 1, "progress": 20.0, "ceiling": 82.0}
+        for _ in range(2000):  # a long conversion with lots of output stops short of the next step
+            porting.track_progress(quiet, "  converting...")
+        self.assertEqual(quiet["progress"], 82.0)
+
     def test_jobs_run_in_background_and_one_at_a_time(self):
         pkg = "com.studio.job"
         self.install_unported(pkg)
@@ -167,6 +185,8 @@ class TestPorting(LibraryTestCase):
             time.sleep(0.05)
         self.assertEqual(current["status"], "done", current)
         self.assertEqual(current["result"]["package"], pkg)
+        self.assertEqual((current["progress"], current["step"]), (100, 3))
+        self.assertEqual(len(current["steps"]), 4)
         self.assertTrue(current["log"])
         self.assertIsNone(porting.PortingJobs.active())
 

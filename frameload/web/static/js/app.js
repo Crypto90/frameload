@@ -28,7 +28,7 @@ const state = {
     app: null,
     games: []
   },
-  activeTab: "catalog",
+  activeTab: "library",
   selectedGame: null
 };
 
@@ -215,19 +215,45 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // --- Tab Switching ---
+const SEARCH_HINTS = { library: "Search your library...", catalog: "Search games and apps..." };
+
+function syncSearchBox() {
+  const input = document.getElementById("search-input");
+  if (!input) return;
+  input.placeholder = SEARCH_HINTS[state.activeTab] || SEARCH_HINTS.catalog;
+  input.value = state.activeTab === "library" ? (state.libraryQuery || "")
+    : state.activeTab === "catalog" ? (state.catalog.query || "") : "";
+}
+
+function goToTab(name) {
+  const tab = document.querySelector(`.tab-btn[data-tab="${name}"]`);
+  if (tab && !tab.classList.contains("active")) tab.click();
+}
+window.goToTab = goToTab;
+
 function setupTabs() {
   const tabs = document.querySelectorAll(".tab-btn");
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       const targetId = tab.dataset.tab;
+      // Pressing the tab you are already on is the quick way back to the top of a long list.
+      if (tab.classList.contains("active")) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       state.activeTab = targetId;
 
       tabs.forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
+      tab.scrollIntoView({ block: "nearest", inline: "nearest" });
 
       document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
       const targetPanel = document.getElementById(`tab-${targetId}`);
       if (targetPanel) targetPanel.classList.add("active");
+      window.scrollTo(0, 0);  // a new tab starts at its top, not where the last one was left
+      try { history.replaceState(null, "", `#${targetId}`); } catch (e) { /* file:// or sandboxed */ }
+      syncSearchBox();
+      if (targetId !== "system" && typeof stopControllerTest === "function") stopControllerTest();
 
       if (targetId === "catalog") loadCatalog();
       else if (targetId === "library") { loadInstalled(); loadSteamStatus(); }
@@ -240,10 +266,8 @@ function setupTabs() {
 
   // Handle URL hash on load (e.g. #library, #system, #downloads)
   const hash = window.location.hash.replace("#", "");
-  if (hash) {
-    const tabEl = document.querySelector(`.tab-btn[data-tab="${hash}"]`);
-    if (tabEl) tabEl.click();
-  }
+  if (hash) goToTab(hash);
+  syncSearchBox();
 }
 
 // --- Search & Filters ---
@@ -254,10 +278,17 @@ function setupSearch() {
   if (searchInput) {
     searchInput.addEventListener("input", (e) => {
       clearTimeout(debounceTimeout);
+      const value = e.target.value;
+      if (state.activeTab === "library") {  // the search box searches what you are looking at
+        state.libraryQuery = value;
+        renderInstalledGrid();
+        return;
+      }
       debounceTimeout = setTimeout(() => {
-        state.catalog.query = e.target.value;
+        state.catalog.query = value;
         state.catalog.page = 1;
-        loadCatalog();
+        if (state.activeTab !== "catalog") goToTab("catalog");  // loads the catalog itself
+        else loadCatalog();
       }, 350);
     });
   }
@@ -316,7 +347,8 @@ function applyCatalogKind() {
   const search = document.getElementById("search-input");
   if (categorySelect) categorySelect.style.display = isFlat ? "" : "none";
   if (hint) hint.textContent = isFlat ? "Free and open-source Android apps from F-Droid, shown as 2D windows" : "Browse public VR mirror";
-  if (search) search.placeholder = isFlat ? "Search apps... (Y to focus)" : "Search VR games, packages, or releases... (Y to focus)";
+  SEARCH_HINTS.catalog = isFlat ? "Search apps..." : "Search games and apps...";
+  if (search) search.placeholder = SEARCH_HINTS[state.activeTab] || SEARCH_HINTS.catalog;
   if (sortSelect) {
     Array.from(sortSelect.options).forEach(opt => {
       const unsupported = isFlat && /^(downloads|rating)_/.test(opt.value);
@@ -662,6 +694,8 @@ async function pollDownloadsOnce() {
     const res = await fetch("/api/downloads");
     const data = await res.json();
     state.downloads = data.tasks || [];
+    renderDownloadsBadge();
+    notePortingJob(data.porting_job);
     renderDownloadsDrawer();
     renderDownloadsTab();
     offerPendingLink(data.pending_links || []);
@@ -852,12 +886,45 @@ function renderInstalledGrid() {
   const container = document.getElementById("library-grid");
   if (!container) return;
 
+  const count = document.getElementById("library-count");
+  if (count) {
+    count.textContent = state.installed.length;
+    count.style.display = state.installed.length ? "" : "none";
+  }
+
   if (state.installed.length === 0) {
-    container.innerHTML = `<div class="empty-state">Nothing installed yet. Browse the catalog or sideload an APK.</div>`;
+    container.innerHTML = `
+      <div class="empty-state">
+        <h3>Your library is empty</h3>
+        <p>Install something from Browse, or a file you already have. Everything you install appears here and in your Steam library.</p>
+        <div class="empty-actions">
+          <button class="btn-primary" onclick="goToTab('catalog')">Browse Apps</button>
+          <button class="btn-secondary" onclick="goToTab('sideload')">Install a File</button>
+        </div>
+      </div>`;
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
     return;
   }
 
-  container.innerHTML = state.installed.map(game => {
+  const words = (state.libraryQuery || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const games = state.installed.filter(game => {
+    const text = `${game.title || ""} ${game.package || ""}`.toLowerCase();
+    return words.every(word => text.includes(word));
+  });
+  if (games.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <h3>Nothing in your library matches &ldquo;${escapeHtml(state.libraryQuery)}&rdquo;</h3>
+        <div class="empty-actions">
+          <button class="btn-secondary" onclick="clearLibrarySearch()">Clear Search</button>
+          <button class="btn-primary" onclick="searchCatalogInstead()">Search Browse Instead</button>
+        </div>
+      </div>`;
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
+    return;
+  }
+
+  container.innerHTML = games.map(game => {
     const updateInfo = (state.updates && state.updates.games)
       ? state.updates.games.find(u => u.package === game.package)
       : null;
@@ -983,7 +1050,11 @@ window.stopGame = stopGame;
 window.stopRunningGames = stopRunningGames;
 
 async function uninstallGame(pkg, keepSaves = true) {
-  if (!confirm(`Are you sure you want to uninstall ${pkg}?`)) return;
+  const target = (state.installed || []).find(g => g.package === pkg);
+  if (!await confirmDialog(`Uninstall ${target ? target.title : pkg}?`,
+    keepSaves ? "It is removed from this headset and from your Steam library. Its save data is kept."
+      : "It is removed from this headset and from your Steam library, together with its save data.",
+    { yes: "Uninstall", danger: true })) return;
 
   showToast(`Removing ${pkg}...`, "info");
   try {
@@ -1140,6 +1211,8 @@ function openGameModal(id, mode = "catalog") {
   // Cover image banner
   const coverEl = document.getElementById("modal-game-cover");
   if (coverEl) {
+    // Armed again for every game: the handler removes itself after its first use.
+    coverEl.onerror = () => { coverEl.onerror = null; coverEl.src = "/static/assets/fallback_cover.svg"; };
     coverEl.src = thumbUrl;
   }
 
@@ -1327,7 +1400,8 @@ async function moveCurrentModalGame() {
   }
 
   const targetDev = otherDevices[0];
-  if (!confirm(`Move ${state.selectedGame.title || pkg} to ${targetDev.name}? Steam shortcut will be automatically updated.`)) {
+  if (!await confirmDialog(`Move ${state.selectedGame.title || pkg} to ${targetDev.name}?`,
+    "Its Steam shortcut is updated to the new place.", { yes: "Move" })) {
     return;
   }
 
@@ -1585,7 +1659,7 @@ async function injectModFromModal() {
 window.injectModFromModal = injectModFromModal;
 
 async function deleteModalMod(pkg, modId) {
-  if (!confirm(`Delete this custom content item?`)) return;
+  if (!await confirmDialog("Delete this item?", "The file is removed from the game's folder.", { yes: "Delete", danger: true })) return;
   showToast("Removing mod...", "info");
   try {
     const res = await fetch("/api/installed/mods/delete", {
@@ -1609,17 +1683,33 @@ window.deleteModalMod = deleteModalMod;
 // --- Toast Notifications ---
 function showToast(message, type = "info") {
   const container = document.getElementById("toast-container");
-  if (!container) return;
+  if (!container || !message) return;
+  const text = String(message);
+
+  // The same message again replaces its toast instead of stacking; four at most stay on screen.
+  Array.from(container.children).filter(t => t.dataset.text === text).forEach(t => t.remove());
+  while (container.children.length >= 4) container.firstElementChild.remove();
 
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
-  toast.textContent = message;
+  toast.dataset.text = text;
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.title = "Dismiss";
+  const mark = document.createElement("span");
+  mark.className = "toast-mark";
+  const body = document.createElement("span");
+  body.textContent = text;
+  toast.append(mark, body);
   container.appendChild(toast);
 
-  setTimeout(() => {
+  const dismiss = () => {
     toast.style.opacity = "0";
     setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  };
+  toast.addEventListener("click", dismiss);
+  // Problems stay long enough to be read in a headset; long messages get extra time.
+  const base = type === "error" ? 9000 : type === "warning" ? 7000 : 4000;
+  setTimeout(dismiss, base + Math.min(6000, text.length * 35));
 }
 window.showToast = showToast;
 
@@ -2165,7 +2255,8 @@ async function cleanShaderCaches() {
   const menu = document.getElementById("storage-dropdown-menu");
   if (menu) menu.classList.remove("open");
 
-  if (!confirm("Reset shader caches across all installed games? Shader files will be safely regenerated on next launch.")) return;
+  if (!await confirmDialog("Reset all shader caches?",
+    "Every game rebuilds its shaders the next time it starts, so the first minutes may stutter.", { yes: "Reset" })) return;
 
   showToast("Resetting Lepton shader caches...", "info");
   try {
@@ -2968,41 +3059,130 @@ function openPortingModal() {
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
 }
 
+// Closing only hides the dialog: the job keeps running and FrameLoad keeps following it.
 function closePortingModal() {
   const modal = document.getElementById("porting-modal");
   if (modal) modal.classList.remove("open");
-  clearTimeout(state.porting.timer);
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function formatElapsed(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
+function togglePortingDetails(show) {
+  const log = document.getElementById("porting-modal-log");
+  const btn = document.getElementById("porting-modal-details");
+  if (!log) return;
+  const open = typeof show === "boolean" ? show : log.style.display === "none";
+  log.style.display = open ? "" : "none";
+  if (btn) btn.textContent = open ? "Hide Details" : "Show Details";
+  if (open) log.scrollTop = log.scrollHeight;
+}
+window.togglePortingDetails = togglePortingDetails;
+
+function portingJobTitle(job) {
+  if (job.kind === "setup") return "Getting the porting tools";
+  if (job.kind === "update") return "Updating the porting tools";
+  const game = (state.installed || []).find(g => g.package === job.package);
+  return job.package ? `Porting ${game ? game.title : job.package}` : "Porting the games that need it";
+}
+
+function renderPortingJob(job) {
+  const el = id => document.getElementById(`porting-modal-${id}`);
+  if (!el("title")) return;
+  const active = job.status === "running" || job.status === "queued";
+  const percent = job.status === "done" ? 100 : Math.max(0, Math.min(99, job.progress || 0));
+  const title = portingJobTitle(job);
+
+  // The header chip shows the job while the dialog is closed.
+  const chip = document.getElementById("header-porting");
+  if (chip) {
+    chip.style.display = active ? "" : "none";
+    chip.textContent = job.status === "queued" ? "Porting: waiting"
+      : `${job.kind === "port" ? "Porting" : "Porting tools"} ${percent}%`;
+  }
+
+  el("title").textContent = title;
+  el("icon").className = `job-icon ${job.status}`;
+  el("bar").className = `job-bar ${job.status}`;
+  el("bar").setAttribute("aria-valuenow", percent);
+  el("fill").style.width = `${job.status === "queued" ? 100 : percent}%`;
+  el("percent").textContent = job.status === "queued" ? "Waiting" : `${percent}%`;
+  el("elapsed").textContent = job.status === "queued" ? "" : formatElapsed(job.elapsed);
+  el("close").textContent = active ? "Run in Background" : "Close";
+
+  const ported = (job.result && job.result.ported) || [];
+  const label = (job.result && job.result.compat && job.result.compat.label) || "Ready";
+  el("status").textContent = job.status === "queued" ? "Waiting for another porting job to finish."
+    : job.status === "running"
+      ? (state.porting.launchAfter ? "The game starts by itself when this is done. You can close this window."
+        : "This takes a few minutes. You can close this window; it keeps going.")
+      : job.status === "failed" ? "This did not work."
+        : job.kind === "port" ? `${label}. The game is in your library.`
+          : ported.length ? `The porting tools are ready, and ${ported.length} waiting game(s) were ported.`
+            : "The porting tools are ready.";
+
+  // Steps and result change rarely; rebuilding them on every poll would steal the focus.
+  const signature = `${job.id}:${job.status}:${job.step}:${state.porting.launchAfter || ""}`;
+  if (state.porting.rendered !== signature) {
+    state.porting.rendered = signature;
+    el("steps").innerHTML = (job.steps || []).map((text, i) => {
+      const st = job.status === "done" ? "done" : job.status === "queued" ? "todo"
+        : i < job.step ? "done" : i > job.step ? "todo" : job.status === "failed" ? "failed" : "active";
+      return `<li class="${st}"><span class="job-step-mark"></span><span>${escapeHtml(text)}</span></li>`;
+    }).join("");
+
+    const result = el("result");
+    if (job.status === "failed") {
+      result.className = "job-result failed";
+      result.innerHTML = `<strong>What went wrong</strong><span>${escapeHtml(job.error || "Unknown error")}</span>`;
+      result.style.display = "";
+      togglePortingDetails(true);
+    } else if (job.status === "done" && job.kind === "port" && job.package && !state.porting.launchAfter) {
+      result.className = "job-result done";
+      result.innerHTML = `<span>Ported and installed.</span>
+        <button type="button" class="btn-primary compact" onclick="closePortingModal(); launchGame(${jsArg(job.package)})">Play Now</button>`;
+      result.style.display = "";
+    } else {
+      result.style.display = "none";
+    }
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  }
+
+  const log = el("log");
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  log.textContent = (job.log || []).join("\n");
+  if (atEnd) log.scrollTop = log.scrollHeight;
+}
+
+// The server names its running porting job with every downloads poll, so jobs it starts by itself
+// (after an install, or the first setup) show up without anyone opening a dialog.
+function notePortingJob(id) {
+  if (!id || state.porting.watching === id) return;
+  state.porting.jobId = id;
+  pollPortingJob();
 }
 
 async function pollPortingJob() {
   clearTimeout(state.porting.timer);
   const id = state.porting.jobId;
-  const title = document.getElementById("porting-modal-title");
-  const status = document.getElementById("porting-modal-status");
-  const log = document.getElementById("porting-modal-log");
-  if (!id || !log) return;
+  if (!id) return;
   try {
     const job = await apiGet(`/api/porting/jobs/${encodeURIComponent(id)}`);
-    const jobGame = (state.installed || []).find(g => g.package === job.package);
-    if (title) title.textContent = job.kind === "setup" ? "Getting the porting tools" : job.kind === "update" ? "Updating the porting tools"
-      : job.package ? `Porting ${jobGame ? jobGame.title : job.package}` : "Porting the games that need it";
-    const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-    log.textContent = job.log.join("\n");
-    if (atEnd) log.scrollTop = log.scrollHeight;
+    if (state.porting.jobId !== id) return;  // another job took over while this answer was on its way
+    renderPortingJob(job);
     if (job.status === "running" || job.status === "queued") {
-      if (status) status.textContent = job.status === "queued"
-        ? "Waiting for another porting job to finish."
-        : "Working. This can take several minutes; you can close this window, it keeps going.";
-      state.porting.timer = setTimeout(pollPortingJob, 1500);
+      state.porting.watching = id;
+      state.porting.timer = setTimeout(pollPortingJob, 1000);
       return;
     }
-    if (status) {
-      status.textContent = job.status === "done"
-        ? (job.kind !== "port" ? ((job.result && job.result.ported && job.result.ported.length) ? `Ready. Ported ${job.result.ported.length} waiting game(s).` : "The porting tools are ready.") :  `Finished: ${(job.result && job.result.compat && job.result.compat.label) || "installed"}. Start it from your library.`)
-        : `Failed: ${job.error}`;
-    }
-    showToast(job.status === "done" ? "Finished." : `Failed: ${job.error}`, job.status === "done" ? "success" : "error");
+    state.porting.watching = null;
+    if (state.porting.announced === id) return;  // reopening the dialog only shows the result again
+    state.porting.announced = id;
+    showToast(job.status === "done" ? `${portingJobTitle(job)}: finished.` : `${portingJobTitle(job)} failed: ${job.error}`,
+      job.status === "done" ? "success" : "error");
     loadPortingStatus();
     await loadInstalled();
     // Launch asked for this: start the game now that it is ported.
@@ -3015,13 +3195,16 @@ async function pollPortingJob() {
         launchGame(wanted);
       } else if (job.kind === "port" || job.status !== "done") {
         state.porting.launchAfter = null;
+        renderPortingJob(job);
       } else if (state.porting.status && state.porting.status.job) {
         state.porting.jobId = state.porting.status.job.id;  // setup finished; the port itself is next
-        state.porting.timer = setTimeout(pollPortingJob, 1500);
+        state.porting.timer = setTimeout(pollPortingJob, 1000);
       }
     }
   } catch (e) {
+    const status = document.getElementById("porting-modal-status");
     if (status) status.textContent = `Could not read progress: ${e.message}`;
+    state.porting.watching = null;
   }
 }
 
@@ -3145,7 +3328,9 @@ async function loadSteamStatus() {
 }
 
 async function restartSteam() {
-  if (!confirm("Restart Steam now? This closes FrameLoad's window and any running game. Steam comes back by itself with the new games in your library.")) return;
+  if (!await confirmDialog("Restart Steam now?",
+    "This closes FrameLoad's window and any running game. Steam comes back by itself with the new games in your library.",
+    { yes: "Restart Steam" })) return;
   try {
     const res = await apiPost("/api/steam/restart", {});
     showToast(res.success ? res.message : res.error, res.success ? "success" : "error");
@@ -3372,3 +3557,120 @@ async function answerLink(install) {
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
 }
 window.answerLink = answerLink;
+
+// === Dashboard behaviour shared by every tab ===
+
+// Asks a yes/no question in the page. Resolves true for yes; Back, Cancel and a click outside mean no.
+function confirmDialog(title, text = "", options = {}) {
+  const modal = document.getElementById("confirm-modal");
+  if (!modal) return Promise.resolve(window.confirm(text ? `${title}\n\n${text}` : title));
+  const yes = document.getElementById("confirm-yes");
+  const no = document.getElementById("confirm-no");
+  document.getElementById("confirm-title").textContent = title;
+  const body = document.getElementById("confirm-text");
+  body.textContent = text;
+  body.style.display = text ? "" : "none";
+  yes.textContent = options.yes || "OK";
+  no.textContent = options.no || "Cancel";
+  yes.className = options.danger ? "btn-danger" : "btn-primary";
+  return new Promise(resolve => {
+    const finish = (answer) => {
+      modal.classList.remove("open");
+      yes.onclick = no.onclick = modal.onclick = null;
+      if (window.gamepadNav) window.gamepadNav.updateFocusables();
+      resolve(answer);
+    };
+    yes.onclick = () => finish(true);
+    no.onclick = () => finish(false);
+    modal.onclick = (e) => { if (e.target === modal) finish(false); };
+    modal.classList.add("open");
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
+    (options.danger ? no : yes).focus({ preventScroll: true });
+  });
+}
+window.confirmDialog = confirmDialog;
+
+function clearLibrarySearch() {
+  state.libraryQuery = "";
+  syncSearchBox();
+  renderInstalledGrid();
+}
+window.clearLibrarySearch = clearLibrarySearch;
+
+function searchCatalogInstead() {
+  state.catalog.query = state.libraryQuery || "";
+  state.catalog.page = 1;
+  state.libraryQuery = "";
+  goToTab("catalog");
+}
+window.searchCatalogInstead = searchCatalogInstead;
+
+function renderDownloadsBadge() {
+  const badge = document.getElementById("tab-downloads-count");
+  if (!badge) return;
+  const finished = ["completed", "canceled", "cancelled", "failed", "error"];
+  const busy = (state.downloads || []).filter(t => !finished.includes(t.status)).length;
+  badge.textContent = busy;
+  badge.style.display = busy ? "" : "none";
+}
+
+// The tab bar sticks right under the header, whose height changes when its chips wrap.
+function syncHeaderHeight() {
+  const header = document.querySelector(".app-header");
+  if (header) document.documentElement.style.setProperty("--header-h", `${Math.round(header.getBoundingClientRect().height)}px`);
+}
+
+// --- System > Controller Test: what the controllers send to this page ---
+state.inputTest = { timer: null };
+
+function renderControllerTest() {
+  const out = document.getElementById("input-test-output");
+  if (!out || !window.FrameLoadInput) return;
+  const snap = window.FrameLoadInput.snapshot();
+  const ago = (event) => `${Math.max(0, (Date.now() - event.time) / 1000).toFixed(1)}s ago`;
+  const row = (name, value) => `<div class="input-test-row"><span>${name}</span><span>${value}</span></div>`;
+  const rows = [];
+  if (!snap.gamepads.length) {
+    rows.push(`<p class="tuning-micro-note">No controller is reporting as a gamepad yet. Press any button on a controller: a browser only shows a gamepad after its first button press. If none appears, the headset sends pointer and scroll input only; the arrows at the right edge of the window scroll in that case.</p>`);
+  }
+  snap.gamepads.forEach((pad, i) => {
+    rows.push(row(`Gamepad ${i + 1}`, `${escapeHtml(pad.id)} (${escapeHtml(pad.mapping)}${pad.hand ? ", " + escapeHtml(pad.hand) : ""})`));
+    rows.push(row("Sticks / axes", pad.axes.map(a => `<code class="${Math.abs(a) > 0.2 ? "on" : ""}">${a.toFixed(2)}</code>`).join(" ") || "none"));
+    rows.push(row("Buttons held", pad.pressed.length ? pad.pressed.map(b => `<code class="on">${b}</code>`).join(" ") : "none"));
+  });
+  const last = snap.last;
+  rows.push(row("Last scroll", last.wheel ? `x ${last.wheel.deltaX}, y ${last.wheel.deltaY} (${ago(last.wheel)})` : "none yet"));
+  rows.push(row("Last key", last.key ? `${escapeHtml(last.key.key)} (${ago(last.key)})` : "none yet"));
+  rows.push(row("Last pointer press", last.pointer ? `${escapeHtml(last.pointer.type)} (${ago(last.pointer)})` : "none yet"));
+  out.innerHTML = rows.join("");
+}
+
+function stopControllerTest() {
+  if (!state.inputTest.timer) return;
+  clearInterval(state.inputTest.timer);
+  state.inputTest.timer = null;
+  const btn = document.getElementById("btn-input-test");
+  const badge = document.getElementById("input-test-badge");
+  if (btn) btn.textContent = "Start Test";
+  if (badge) { badge.textContent = "Off"; badge.style.color = "var(--text-muted)"; }
+}
+
+function toggleControllerTest() {
+  if (state.inputTest.timer) return stopControllerTest();
+  const out = document.getElementById("input-test-output");
+  const btn = document.getElementById("btn-input-test");
+  const badge = document.getElementById("input-test-badge");
+  if (out) out.style.display = "";
+  if (btn) btn.textContent = "Stop Test";
+  if (badge) { badge.textContent = "Live"; badge.style.color = "var(--accent-emerald)"; }
+  renderControllerTest();
+  state.inputTest.timer = setInterval(renderControllerTest, 150);
+}
+window.toggleControllerTest = toggleControllerTest;
+
+document.addEventListener("DOMContentLoaded", () => {
+  syncHeaderHeight();
+  window.addEventListener("resize", syncHeaderHeight);
+  const header = document.querySelector(".app-header");
+  if (header && window.ResizeObserver) new ResizeObserver(syncHeaderHeight).observe(header);
+});

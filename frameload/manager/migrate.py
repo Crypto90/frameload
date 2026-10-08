@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 4
+LAYOUT_VERSION = 5
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (

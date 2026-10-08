@@ -21,6 +21,11 @@ from .apk_analysis import inspect_apk
 from .artwork import ArtworkManager
 
 FLATSCREEN_MARKER = "lepton-show-flatscreen"
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Steam opens its "Resume game" menu over a game's first frame. This helper hides it once the game
+# is drawing (see system/steam_ui.py); FRAMELOAD_KEEP_DASHBOARD=1 leaves the menu alone.
+DASHBOARD_LINE = ('[[ -n "${{FRAMELOAD_KEEP_DASHBOARD:-}}" ]] || PYTHONPATH={repo_q} python3 -m frameload.system.steam_ui '
+                  '"$app_dir/launch.log" $$ >"$app_dir/dashboard.log" 2>&1 9>&- &')
 
 LAUNCH_SCRIPT_TEMPLATE = r"""#!/usr/bin/env bash
 # FrameLoad Steam Frame launcher for {title} ({pkg})
@@ -86,6 +91,7 @@ trap 'exit 143' TERM
 
 setsid "$lepton" start >"$app_dir/launch.log" 2>&1 &
 child=$!
+{dashboard}
 wait "$child"
 """
 
@@ -123,7 +129,7 @@ class LeptonInstaller:
 
     @staticmethod
     def write_launcher(anchor: str, base: str, package_name: str, title: str, appid: Any,
-                       env: Optional[Dict[str, str]] = None) -> str:
+                       env: Optional[Dict[str, str]] = None, hide_dashboard: bool = False) -> str:
         """Writes <anchor>/launch.sh, the script the game's Steam shortcut runs."""
         extra = "".join(
             f"export {k}={shlex.quote(str(v))}\n" for k, v in (env or {}).items()
@@ -136,6 +142,7 @@ class LeptonInstaller:
             appid=int(appid or 0),
             lepton_q=shlex.quote(lepton_status()["path"] or "/usr/bin/lepton"),
             extra_env=extra,
+            dashboard=DASHBOARD_LINE.format(repo_q=shlex.quote(REPO_ROOT)) if hide_dashboard else "",
         )
         path = os.path.join(anchor, "launch.sh")
         tmp = path + ".tmp"
@@ -258,7 +265,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 4,
+            "layout_version": 5,
             "time": time.time(),
         }
         with open(dep_path, "w", encoding="utf-8") as f:

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.4] - 2026-10-08
+
+### Added
+- **Scroll arrows.** Whenever a page or dialog is longer than the window, three buttons appear at the right edge: back to top, up and down. A tap moves a step, holding keeps scrolling and speeds up. They need nothing but the laser pointer.
+- **More ways to scroll:** the triggers page up and down, a stick click jumps to the top, the D-pad and a single stick scroll when nothing can be focused, Page Up / Page Down / Home / End work everywhere, and pressing the tab you are on returns to its top.
+- **Porting shows progress.** The dialog has a progress bar, the elapsed time and the steps (reading, converting, signing, installing) instead of console output; FramePort's output is behind "Show Details" and opens by itself when something fails. A finished port offers "Play Now".
+- **Porting in the background is visible:** a chip in the header shows a running job and its percentage and reopens the dialog. Jobs FrameLoad starts by itself (after an install, the first tool download) appear the same way.
+- **Steam's menu no longer covers a game that just started.** When a ported game shows its first frame, the launcher closes Steam's Resume / Exit menu through Steam's own interface. A menu you open yourself is never closed; `FRAMELOAD_KEEP_DASHBOARD=1` turns it off. Existing games get the new launcher automatically.
+- **Controller Test** (System tab): shows live which gamepads, sticks, buttons, scroll and pointer events reach FrameLoad.
+- **Search works on the Library**, and offers to search Browse when nothing matches.
+
+### Changed
+- **Library is the first tab** and the one FrameLoad opens with. Tabs are named Library, Browse, Install File, Downloads, Storage and System; the Downloads tab shows how many are running.
+- **The tab bar stays on screen** under the header while a page scrolls, and a tab always opens at its top. Reloading stays on the tab you were on.
+- **Sized for a headset:** larger text, buttons and checkboxes at least 40 px tall, larger close buttons, a wider scrollbar.
+- **Questions are asked inside the page** (uninstall, move, delete, reset shader caches, restart Steam) with large buttons, instead of the browser's own small dialog. Back answers "no".
+- **Notifications** are larger, stay longer when they report a problem, do not stack the same message twice and close when pressed.
+- **Empty lists say what to do next:** an empty library offers Browse and Install a File.
+- **System tab** is ordered by how often a card is needed: Self-Test, Lepton, Porting, Hand Tracking, Phone & PC Access first.
+- The header wraps onto a second line when a running game, a porting job and an update all add a chip, instead of squeezing the search box.
+- Closing the porting dialog no longer stops FrameLoad from following the job, so a game queued with Port & Play still starts when its port is done.
+
+### Fixed
+- **Analog stick scrolling** only worked while the laser pointed at one particular kind of container; it now scrolls whatever is under the pointer, then the open dialog, then the page.
+- **Broken cover in a game's page:** placeholders that older versions saved as `poster.png` but were really SVG are skipped, artwork is served as the type its content has, and the cover falls back correctly every time the page is opened.
+- With one dialog on top of another, Back, focus and scrolling now belong to the top one.
+
+---
+
 ## [v1.3.3] - 2026-10-08
 
 ### Changed

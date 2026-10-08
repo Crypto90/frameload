@@ -351,6 +351,7 @@ class TuningManager:
         LeptonInstaller.write_launcher(
             anchor=anchor, base=base, package_name=package_name, title=dep.get("title", package_name),
             appid=dep.get("appid", 0), env=TuningManager.launch_env(effective, is_vr),
+            hide_dashboard=is_vr,
         )
 
         previous = [k for k in dep.get("framebridge_keys", []) if k in FRAMEBRIDGE_KEYS]

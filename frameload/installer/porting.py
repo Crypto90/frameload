@@ -506,6 +506,34 @@ def setup_and_port_pending(log: Log) -> Dict[str, Any]:
     return result
 
 
+# What a job is doing, for a progress bar instead of raw console output. Each marker is a piece of a
+# log line FrameLoad itself writes or a command it runs; (step index, progress the bar jumps to,
+# progress it may creep up to while that step produces output).
+JOB_STEPS = {
+    "setup": ["Installing FramePort", "Downloading Java, OVRPort and the signing tool", "Finishing"],
+    "update": ["Updating FramePort", "Refreshing its tools", "Finishing"],
+    "port": ["Reading the game", "Converting it for the Steam Frame", "Signing", "Installing"],
+}
+JOB_MARKERS = {
+    "setup": [("Installing FramePort", 0, 5, 50), (" -m venv ", 0, 8, 50), ("pip install", 0, 12, 50),
+              ("Downloading FramePort's tools", 1, 55, 93), ("tools import-keys", 2, 95, 97),
+              ("Porting ", 2, 96, 99)],
+    "update": [("Updating FramePort", 0, 5, 60), ("tools install", 1, 65, 95)],
+    "port": [(" scan ", 0, 6, 18), (" build ", 1, 20, 82), (": OK -> ", 2, 86, 90), (": CHECKS FAILED -> ", 2, 86, 90),
+             ("Installing the ported build", 3, 92, 98), ("Done: ", 3, 100, 100)],
+}
+
+
+def track_progress(job: Dict[str, Any], line: str) -> None:
+    """Moves a job's step and progress from one line of its log."""
+    for marker, step, start, ceiling in JOB_MARKERS.get(job["kind"], []):
+        if marker in line and (step, start) >= (job["step"], job["progress"]):
+            job.update(step=step, progress=float(start), ceiling=float(ceiling))
+            return
+    # No marker: the step is still producing output, so the bar keeps moving a little.
+    job["progress"] = min(job.get("ceiling", 0.0), job["progress"] + 0.15)
+
+
 class PortingJobs:
     """Background jobs for setup and porting; one runs at a time (they are heavy on a headset)."""
     _lock = threading.Lock()
@@ -521,7 +549,8 @@ class PortingJobs:
                 raise PortingError("Another porting job is still running.")
             job = {"id": uuid.uuid4().hex[:12], "kind": kind, "package": package,
                    "status": "queued" if busy else "running",
-                   "log": [], "error": "", "result": None, "started": time.time(), "finished": 0.0}
+                   "log": [], "error": "", "result": None, "started": time.time(), "finished": 0.0,
+                   "step": 0, "progress": 0.0, "ceiling": 4.0}
             cls._jobs[job["id"]] = job
             for old in sorted(cls._jobs.values(), key=lambda j: j["started"])[:-10]:
                 cls._jobs.pop(old["id"], None)
@@ -529,13 +558,17 @@ class PortingJobs:
         def log(line: str) -> None:
             job["log"].append(line)
             del job["log"][:-2000]
+            track_progress(job, line)
 
         def run() -> None:
             with cls._busy:
                 job["status"] = "running"
+                job["started"] = time.time()  # time spent waiting in the queue is not time spent working
                 try:
                     job["result"] = work(log)
                     job["status"] = "done"
+                    job["progress"] = 100.0
+                    job["step"] = len(JOB_STEPS.get(kind, [])) - 1
                 except Exception as e:  # reported to the user through the job
                     job["error"] = str(e)
                     job["status"] = "error"
@@ -565,9 +598,22 @@ class PortingJobs:
                     return cls.public(job)
         return None
 
+    @classmethod
+    def active_id(cls) -> str:
+        """The running (or next) job's id without its log: cheap enough for the dashboard's poll."""
+        for wanted in ("running", "queued"):
+            for job in cls._jobs.values():
+                if job["status"] == wanted:
+                    return job["id"]
+        return ""
+
     @staticmethod
     def public(job: Dict[str, Any]) -> Dict[str, Any]:
         out = {k: job[k] for k in ("id", "kind", "package", "status", "error", "started", "finished")}
+        out["steps"] = JOB_STEPS.get(job["kind"], [])
+        out["step"] = job.get("step", 0)
+        out["progress"] = int(job.get("progress", 0))
+        out["elapsed"] = int((job["finished"] or time.time()) - job["started"])
         out["log"] = job["log"][-400:]
         result = job["result"]
         out["result"] = result if isinstance(result, dict) else None

@@ -31,7 +31,7 @@
         <circle cx="11" cy="11" r="8"></circle>
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
       </svg>
-      <input type="text" id="search-input" class="search-input" placeholder="Search VR games, packages, or releases... (Y to focus)" autocomplete="off">
+      <input type="text" id="search-input" class="search-input" placeholder="Search your library..." autocomplete="off">
       <button id="btn-search-osk" class="search-osk-btn" onclick="window.SteamOSK && window.SteamOSK.toggle()" title="Toggle Steam Frame Keyboard (Steam + X)" aria-label="Toggle Keyboard">⌨️</button>
     </div>
 
@@ -47,6 +47,7 @@
         Lepton Checking...
       </div>
       <button id="header-stop-game" class="telemetry-chip stop-chip" style="display:none;" onclick="stopRunningGames()" title="Stop the running game"></button>
+      <button id="header-porting" class="telemetry-chip porting-chip" style="display:none;" onclick="openPortingModal()" title="Show porting progress"></button>
       <div id="header-update-alert" class="telemetry-chip update-alert clickable" style="display:none;" onclick="openUpdateModal()" title="FrameLoad Update Available!">
         ⚡ Update: <strong id="header-update-tag" style="margin-left:4px; color:#fff;">v1.0.0</strong>
       </div>
@@ -61,15 +62,7 @@
 
   <!-- Navigation Tabs -->
   <nav class="nav-tabs" role="tablist">
-    <button class="tab-btn active" data-tab="catalog" role="tab">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="2" y1="12" x2="22" y2="12"></line>
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-      </svg>
-      Browse Catalog
-    </button>
-    <button class="tab-btn" data-tab="library" role="tab">
+    <button class="tab-btn active" data-tab="library" role="tab">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="2" y="6" width="20" height="12" rx="2"></rect>
         <line x1="6" y1="12" x2="10" y2="12"></line>
@@ -77,7 +70,31 @@
         <circle cx="15" cy="11" r="1"></circle>
         <circle cx="17" cy="13" r="1"></circle>
       </svg>
-      Installed Library
+      Library
+    </button>
+    <button class="tab-btn" data-tab="catalog" role="tab">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      </svg>
+      Browse
+    </button>
+    <button class="tab-btn" data-tab="sideload" role="tab">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      Install File
+    </button>
+    <button class="tab-btn" data-tab="downloads" role="tab">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Downloads <span id="tab-downloads-count" class="tab-badge" style="display:none;"></span>
     </button>
     <button class="tab-btn" data-tab="storage" role="tab">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -87,22 +104,6 @@
         <line x1="6" y1="18" x2="6.01" y2="18"></line>
       </svg>
       Storage
-    </button>
-    <button class="tab-btn" data-tab="downloads" role="tab">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="7 10 12 15 17 10"></polyline>
-        <line x1="12" y1="15" x2="12" y2="3"></line>
-      </svg>
-      Downloads
-    </button>
-    <button class="tab-btn" data-tab="sideload" role="tab">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="17 8 12 3 7 8"></polyline>
-        <line x1="12" y1="3" x2="12" y2="15"></line>
-      </svg>
-      Sideload Local APK
     </button>
     <button class="tab-btn" data-tab="system" role="tab">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -117,7 +118,7 @@
         <line x1="1" y1="9" x2="4" y2="9"></line>
         <line x1="1" y1="14" x2="4" y2="14"></line>
       </svg>
-      System &amp; Diagnostics
+      System
     </button>
   </nav>
 
@@ -173,7 +174,7 @@
     </div>
 
     <!-- 1. Catalog Tab -->
-    <section id="tab-catalog" class="tab-panel active">
+    <section id="tab-catalog" class="tab-panel">
       <div class="control-bar">
         <div class="control-group">
           <button id="sync-catalog-btn" class="btn-primary">
@@ -222,7 +223,7 @@
     </section>
 
     <!-- 2. Installed Library Tab -->
-    <section id="tab-library" class="tab-panel">
+    <section id="tab-library" class="tab-panel active">
       <!-- 1-Click Game Updates Banner -->
       <div id="library-updates-banner" class="updates-banner" style="display:none;">
         <div class="updates-banner-info">
@@ -235,7 +236,7 @@
       </div>
 
       <div class="control-bar">
-        <h2 style="font-size:1.15rem; font-weight:700;">Installed on Steam Frame</h2>
+        <h2 style="font-size:1.15rem; font-weight:700;">Your Library <span id="library-count" class="tab-badge" style="display:none; margin-left:6px;"></span></h2>
         <div style="display:flex; gap:10px; align-items:center;">
           <button id="btn-check-updates" class="btn-secondary compact" onclick="checkForUpdates(true)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -267,7 +268,7 @@
     <!-- 4. Sideload Local APK or Bundle Tab -->
     <section id="tab-sideload" class="tab-panel">
       <div class="control-bar">
-        <h2 style="font-size:1.15rem; font-weight:700;">Sideload VR Games, Android Bundles, Windows EXEs &amp; Linux Apps</h2>
+        <h2 style="font-size:1.15rem; font-weight:700;">Install an App You Already Have</h2>
       </div>
       <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:28px; border-radius:var(--radius-lg); max-width:680px;">
         <form id="sideload-form">
@@ -321,140 +322,26 @@
       <div class="control-bar">
         <h2 style="font-size:1.15rem; font-weight:700;">Steam Frame System &amp; Runtime Status</h2>
       </div>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px;">
-        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
-          <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Operating System &amp; Hardware</h3>
-          <p style="margin-bottom:8px;"><strong>OS:</strong> <span id="sys-os">--</span></p>
-          <p style="margin-bottom:8px;"><strong>Storage:</strong> <span id="sys-storage">--</span></p>
+      <div class="system-grid">
+        <!-- Self-test -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Self-Test</h3>
+            <span id="doctor-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Not run</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            Checks Lepton, podman, the launcher's tools, your Steam library and every installed game on this headset.
+          </p>
+          <div id="doctor-results"></div>
+          <button class="btn-secondary compact" onclick="runDoctor()">Run Self-Test</button>
         </div>
+
         <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
           <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Valve Lepton Runtime</h3>
           <p style="margin-bottom:12px;"><strong>Lepton Container:</strong> <span id="sys-lepton">--</span></p>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Valve's Android container. It ships with the Steam Frame and runs every Android app FrameLoad installs.</p>
           <p id="sys-not-frame-note" style="display:none; font-size:0.8rem; color:var(--accent-amber); margin-bottom:12px;">This machine is not a Steam Frame, so installed apps cannot be launched from here.</p>
           <button class="btn-secondary" onclick="fixKeyring()">Apply Podman Keyring Leak Fix</button>
-        </div>
-        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
-          <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Proton ARM64 &amp; PCVR</h3>
-          <p style="margin-bottom:8px;"><strong>Proton Status:</strong> <span id="sys-proton">--</span></p>
-          <p style="font-size:0.85rem; color:var(--text-muted);">Runs Windows VR games via Proton + WineOpenXR.</p>
-        </div>
-        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Updates Management (OTA)</h3>
-            <span id="sys-update-badge" class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Up to Date</span>
-          </div>
-          <p style="margin-bottom:8px;"><strong>FrameLoad Version:</strong> <span id="sys-version">v1.0.0</span></p>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">Checks GitHub releases &amp; VRP mirror for on-device 1-click upgrades.</p>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn-secondary compact" onclick="checkForUpdates(true)">Check for Updates</button>
-            <button id="btn-system-update" class="btn-primary compact" style="display:none;" onclick="triggerAppUpdate()">⚡ 1-Click Update</button>
-          </div>
-        </div>
-        <div style="background:var(--bg-card); border:1px solid rgba(255, 94, 91, 0.3); padding:24px; border-radius:var(--radius-lg);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:#ff5e5b; display:flex; align-items:center; gap:8px;">
-              <span>☕</span> Support Development
-            </h3>
-            <span class="badge" style="background:rgba(255, 94, 91, 0.15); color:#ff5e5b;">Ko-fi</span>
-          </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
-            FrameLoad is 100% free and open source. If you enjoy on-device VR sideloading on your Steam Frame, consider supporting ongoing development on Ko-fi!
-          </p>
-          <a href="https://ko-fi.com/K3K314GUP" target="_blank" rel="noopener noreferrer" class="btn-kofi">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.966-1.041-2.7-.091-3.71.951-1.01 3.005-.526 4.342.859 1.336-1.385 3.39-1.869 4.341-.859.95 1.01.618 2.744-.09 3.71l-.039.045zm7.391-.617c-.456.96-1.296 1.573-2.457 1.706V8.169c1.026.046 2.019.539 2.457 1.706.333.889.333 1.157 0 1.967z"/>
-            </svg>
-            <span>Support on Ko-fi</span>
-          </a>
-        </div>
-        <div style="background:var(--bg-card); border:1px solid rgba(239, 71, 111, 0.25); padding:24px; border-radius:var(--radius-lg);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-danger);">Clean Uninstallation</h3>
-            <span class="badge" style="background:rgba(239, 71, 111, 0.15); color:var(--accent-danger);">Danger Zone</span>
-          </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">
-            Completely remove FrameLoad from your Steam Frame: stops the daemon, deletes desktop &amp; Steam shortcuts, clears grid artwork, and cleans up caches.
-          </p>
-          <button class="btn-danger compact" onclick="openUninstallAppModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-            Uninstall FrameLoad...
-          </button>
-        </div>
-        <!-- Steam Frame On-Screen Keyboard Card -->
-        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
-              <span>⌨️</span> Steam Frame Virtual Keyboard
-            </h3>
-            <span id="sys-keyboard-badge" class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Auto-Trigger Active</span>
-          </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
-            Triggers the Steam Frame / SteamOS on-screen keyboard (Steam + X) automatically whenever any search bar, filename, or text field gains focus.
-          </p>
-          <div style="margin-bottom:16px;">
-            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.9rem;">
-              <input type="checkbox" id="osk-auto-trigger-check" checked onchange="toggleOSKAutoTrigger(this.checked)">
-              <span>Automatically summon keyboard on input field focus</span>
-            </label>
-          </div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn-primary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('show')">⌨️ Test / Summon Keyboard</button>
-            <button class="btn-secondary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('hide')">Dismiss Keyboard</button>
-          </div>
-        </div>
-        <!-- Hand tracking status -->
-        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Hand Tracking in Games</h3>
-            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Controller-driven</span>
-          </div>
-          <p id="hand-status-summary" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">Loading...</p>
-          <div id="hand-status-games"></div>
-          <p class="tuning-micro-note" style="margin-top:10px;">Choose per game whether it sees controllers or hands: open the game in your library and press Settings.</p>
-        </div>
-
-        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.2); padding:24px; border-radius:var(--radius-lg);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"></path></svg>
-              Mirror Manager
-            </h3>
-            <span id="mirror-status-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Built-in Catalog</span>
-          </div>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px;" id="mirror-status-text">
-            Using FrameLoad built-in catalog. Configure a VRP-compatible mirror for full live game access.
-          </p>
-          <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:14px;">
-            Get mirror config from: <a href="https://t.me/the_vrSrc" target="_blank" rel="noopener" style="color:var(--accent-cyan); text-decoration:none;">t.me/the_vrSrc</a>
-          </p>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn-primary compact" onclick="openMirrorModal()">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"></path></svg>
-              Configure Mirror
-            </button>
-            <button class="btn-secondary compact" onclick="testMirrorConnection()" id="btn-test-mirror">
-              Test Connection
-            </button>
-          </div>
-        </div>
-
-        <!-- Access from a phone or PC -->
-        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
-          <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:12px;">Phone &amp; PC Access</h3>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
-            Open FrameLoad from another device on your Wi-Fi to upload games from it. Each device is approved once with a code shown here.
-          </p>
-          <p id="access-address" class="tuning-micro-note" style="margin-bottom:10px;"></p>
-          <div id="access-code-box" style="display:none; margin-bottom:12px;">
-            <div id="access-code" class="pairing-code"></div>
-            <p class="tuning-micro-note">Enter this code on the other device within five minutes. It works once.</p>
-          </div>
-          <div id="access-devices" style="margin-bottom:12px;"></div>
-          <button id="btn-access-code" class="btn-primary compact" onclick="showPairingCode()">Show Pairing Code</button>
         </div>
 
         <!-- Quest game porting -->
@@ -483,17 +370,30 @@
           </div>
         </div>
 
-        <!-- Self-test -->
+        <!-- Hand tracking status -->
         <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Self-Test</h3>
-            <span id="doctor-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Not run</span>
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Hand Tracking in Games</h3>
+            <span class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Controller-driven</span>
           </div>
+          <p id="hand-status-summary" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">Loading...</p>
+          <div id="hand-status-games"></div>
+          <p class="tuning-micro-note" style="margin-top:10px;">Choose per game whether it sees controllers or hands: open the game in your library and press Settings.</p>
+        </div>
+
+        <!-- Access from a phone or PC -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:12px;">Phone &amp; PC Access</h3>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
-            Checks Lepton, podman, the launcher's tools, your Steam library and every installed game on this headset.
+            Open FrameLoad from another device on your Wi-Fi to upload games from it. Each device is approved once with a code shown here.
           </p>
-          <div id="doctor-results"></div>
-          <button class="btn-secondary compact" onclick="runDoctor()">Run Self-Test</button>
+          <p id="access-address" class="tuning-micro-note" style="margin-bottom:10px;"></p>
+          <div id="access-code-box" style="display:none; margin-bottom:12px;">
+            <div id="access-code" class="pairing-code"></div>
+            <p class="tuning-micro-note">Enter this code on the other device within five minutes. It works once.</p>
+          </div>
+          <div id="access-devices" style="margin-bottom:12px;"></div>
+          <button id="btn-access-code" class="btn-primary compact" onclick="showPairingCode()">Show Pairing Code</button>
         </div>
 
         <!-- Default game settings -->
@@ -503,6 +403,127 @@
             Resolution scale, refresh rate, foveated rendering and hand input for games that have no setting of their own.
           </p>
           <button class="btn-secondary compact" onclick="openGlobalTuningModal()">Edit Defaults</button>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">FrameLoad Updates</h3>
+            <span id="sys-update-badge" class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Up to Date</span>
+          </div>
+          <p style="margin-bottom:8px;"><strong>FrameLoad Version:</strong> <span id="sys-version">v1.0.0</span></p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">Checks GitHub releases &amp; VRP mirror for on-device 1-click upgrades.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-secondary compact" onclick="checkForUpdates(true)">Check for Updates</button>
+            <button id="btn-system-update" class="btn-primary compact" style="display:none;" onclick="triggerAppUpdate()">⚡ 1-Click Update</button>
+          </div>
+        </div>
+
+        <!-- Steam Frame On-Screen Keyboard Card -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+              <span>⌨️</span> Steam Frame Virtual Keyboard
+            </h3>
+            <span id="sys-keyboard-badge" class="badge" style="background:rgba(0, 245, 212, 0.15); color:var(--accent-emerald);">Auto-Trigger Active</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+            Triggers the Steam Frame / SteamOS on-screen keyboard (Steam + X) automatically whenever any search bar, filename, or text field gains focus.
+          </p>
+          <div style="margin-bottom:16px;">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.9rem;">
+              <input type="checkbox" id="osk-auto-trigger-check" checked onchange="toggleOSKAutoTrigger(this.checked)">
+              <span>Automatically summon keyboard on input field focus</span>
+            </label>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-primary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('show')">⌨️ Test / Summon Keyboard</button>
+            <button class="btn-secondary compact" onclick="window.SteamOSK && window.SteamOSK.trigger('hide')">Dismiss Keyboard</button>
+          </div>
+        </div>
+
+        <!-- What the controllers actually send to this page -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Controller Test</h3>
+            <span id="input-test-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Off</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            Shows what the controllers send to FrameLoad: sticks, buttons, scrolling and the pointer. Start it, then move a stick and press a few buttons. Helpful when something does not react.
+          </p>
+          <div id="input-test-output" class="input-test" style="display:none;"></div>
+          <button id="btn-input-test" class="btn-secondary compact" onclick="toggleControllerTest()">Start Test</button>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
+          <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Operating System &amp; Hardware</h3>
+          <p style="margin-bottom:8px;"><strong>OS:</strong> <span id="sys-os">--</span></p>
+          <p style="margin-bottom:8px;"><strong>Storage:</strong> <span id="sys-storage">--</span></p>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:24px; border-radius:var(--radius-lg);">
+          <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Proton ARM64 &amp; PCVR</h3>
+          <p style="margin-bottom:8px;"><strong>Proton Status:</strong> <span id="sys-proton">--</span></p>
+          <p style="font-size:0.85rem; color:var(--text-muted);">Runs Windows VR games via Proton + WineOpenXR.</p>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.2); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"></path></svg>
+              Mirror Manager
+            </h3>
+            <span id="mirror-status-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Built-in Catalog</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px;" id="mirror-status-text">
+            Using FrameLoad built-in catalog. Configure a VRP-compatible mirror for full live game access.
+          </p>
+          <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:14px;">
+            Get mirror config from: <a href="https://t.me/the_vrSrc" target="_blank" rel="noopener" style="color:var(--accent-cyan); text-decoration:none;">t.me/the_vrSrc</a>
+          </p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-primary compact" onclick="openMirrorModal()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"></path></svg>
+              Configure Mirror
+            </button>
+            <button class="btn-secondary compact" onclick="testMirrorConnection()" id="btn-test-mirror">
+              Test Connection
+            </button>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid rgba(255, 94, 91, 0.3); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:#ff5e5b; display:flex; align-items:center; gap:8px;">
+              <span>☕</span> Support Development
+            </h3>
+            <span class="badge" style="background:rgba(255, 94, 91, 0.15); color:#ff5e5b;">Ko-fi</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+            FrameLoad is 100% free and open source. If you enjoy on-device VR sideloading on your Steam Frame, consider supporting ongoing development on Ko-fi!
+          </p>
+          <a href="https://ko-fi.com/K3K314GUP" target="_blank" rel="noopener noreferrer" class="btn-kofi">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.966-1.041-2.7-.091-3.71.951-1.01 3.005-.526 4.342.859 1.336-1.385 3.39-1.869 4.341-.859.95 1.01.618 2.744-.09 3.71l-.039.045zm7.391-.617c-.456.96-1.296 1.573-2.457 1.706V8.169c1.026.046 2.019.539 2.457 1.706.333.889.333 1.157 0 1.967z"/>
+            </svg>
+            <span>Support on Ko-fi</span>
+          </a>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid rgba(239, 71, 111, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-danger);">Clean Uninstallation</h3>
+            <span class="badge" style="background:rgba(239, 71, 111, 0.15); color:var(--accent-danger);">Danger Zone</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">
+            Completely remove FrameLoad from your Steam Frame: stops the daemon, deletes desktop &amp; Steam shortcuts, clears grid artwork, and cleans up caches.
+          </p>
+          <button class="btn-danger compact" onclick="openUninstallAppModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Uninstall FrameLoad...
+          </button>
         </div>
       </div>
     </section>
@@ -998,13 +1019,37 @@
 
   <!-- Porting / setup progress -->
   <div id="porting-modal" class="modal-backdrop">
-    <div class="modal-content" style="max-width:680px;">
-      <button class="modal-close" onclick="closePortingModal()">&times;</button>
-      <h2 id="porting-modal-title" style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:6px;">Porting</h2>
-      <p id="porting-modal-status" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;"></p>
-      <pre id="porting-modal-log" class="job-log" tabindex="0"></pre>
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
-        <button type="button" class="btn-secondary" onclick="closePortingModal()">Close</button>
+    <div class="modal-content job-dialog" style="max-width:620px;">
+      <button class="modal-close" onclick="closePortingModal()" aria-label="Close">&times;</button>
+      <div class="job-head">
+        <div id="porting-modal-icon" class="job-icon running"></div>
+        <div>
+          <h2 id="porting-modal-title" class="job-title">Porting</h2>
+          <p id="porting-modal-status" class="job-status"></p>
+        </div>
+      </div>
+      <div id="porting-modal-bar" class="job-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+        <div id="porting-modal-fill" class="job-bar-fill"></div>
+      </div>
+      <div class="job-meta"><span id="porting-modal-percent">0%</span><span id="porting-modal-elapsed"></span></div>
+      <ol id="porting-modal-steps" class="job-steps"></ol>
+      <div id="porting-modal-result" class="job-result" style="display:none;"></div>
+      <pre id="porting-modal-log" class="job-log" tabindex="0" style="display:none;"></pre>
+      <div class="job-actions">
+        <button type="button" id="porting-modal-details" class="btn-secondary" onclick="togglePortingDetails()">Show Details</button>
+        <button type="button" id="porting-modal-close" class="btn-primary" data-back onclick="closePortingModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Yes / no questions. The browser's own dialog is tiny and awkward to hit with a VR pointer. -->
+  <div id="confirm-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:520px;" role="alertdialog" aria-labelledby="confirm-title">
+      <h2 id="confirm-title" style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:10px;"></h2>
+      <p id="confirm-text" style="font-size:0.95rem; color:var(--text-muted); margin-bottom:22px; line-height:1.55;"></p>
+      <div style="display:flex; justify-content:flex-end; gap:12px; flex-wrap:wrap;">
+        <button type="button" id="confirm-no" class="btn-secondary" data-back>Cancel</button>
+        <button type="button" id="confirm-yes" class="btn-primary">OK</button>
       </div>
     </div>
   </div>

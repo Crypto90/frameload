@@ -45,6 +45,7 @@ from .catalog.downloader import Downloader
 from .catalog.vrp_mirror import VrpMirror
 from .catalog.fdroid import FDroidCatalog
 from .config import ANCHOR_DIR, Config, DATA_DIR
+from .installer.artwork import image_extension
 from .installer import hand_tracking, porting
 from .installer.lepton_quest import LeptonInstaller
 from .installer.package_loader import PackageLoader
@@ -315,7 +316,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except BrokenPipeError:
                 pass
         elif path == "/api/downloads":
-            self.send_json({"tasks": self.downloader.get_all_tasks(), "pending_links": PendingLinks.all()})
+            self.send_json({"tasks": self.downloader.get_all_tasks(), "pending_links": PendingLinks.all(),
+                            "porting_job": porting.PortingJobs.active_id()})
         elif path == "/api/steam/status":
             self.send_json(steam_session.status())
         elif path == "/api/access/devices":
@@ -357,6 +359,17 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 f = os.path.join(art_dir, name)
                 if os.path.isfile(f):
                     mime, _ = mimetypes.guess_type(f)
+                    if not name.endswith(".svg"):
+                        # Older versions saved SVG placeholders as poster.png; a browser cannot show
+                        # those as PNG, so the type comes from the file's content and fakes are skipped.
+                        try:
+                            with open(f, "rb") as probe:
+                                real = image_extension(probe.read(16))
+                        except OSError:
+                            real = ""
+                        if not real:
+                            continue
+                        mime = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}[real]
                     self.serve_file(f, mime or "image/png")
                     return
             # Fallback to thumbnail

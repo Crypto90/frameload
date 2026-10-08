@@ -2267,3 +2267,466 @@ body.vr-grabbing * {
   background: var(--accent-danger);
   color: #fff;
 }
+
+/* ==========================================================================
+   v1.3.4: sized for a headset. Everything below is read at arm's length through
+   lenses and pressed with a laser pointer, so text is larger, targets are at
+   least 40px tall, and the ways back (tabs, scroll arrows) are always on screen.
+   ========================================================================== */
+html {
+  font-size: 17px;
+  scroll-padding-top: calc(var(--header-h, 64px) + 70px);
+}
+
+.btn-primary, .btn-secondary, .btn-danger, .btn-kofi, .select-styled, .tab-btn {
+  min-height: 44px;
+  font-size: 0.92rem;
+}
+
+.btn-primary.compact, .btn-secondary.compact, .btn-danger.compact, .select-styled.compact {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+}
+
+.btn-primary:disabled, .btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.card-btn {
+  min-height: 42px;
+  font-size: 0.88rem;
+}
+
+.telemetry-chip {
+  min-height: 36px;
+}
+
+.modal-close {
+  width: 46px;
+  height: 46px;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+input[type="checkbox"]:not(.toggle-switch input) {
+  width: 22px !important;
+  height: 22px !important;
+  flex: none;
+  cursor: pointer;
+  accent-color: var(--accent-cyan);
+}
+
+::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.26);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-cyan);
+  background-clip: padding-box;
+}
+
+/* A running game, a porting job and an update can all add a chip: the header wraps instead of
+   squeezing the search box to nothing. */
+.app-header {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+.search-wrapper { min-width: 240px; }
+.telemetry-bar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* Tabs stay under the header while a long list scrolls */
+.nav-tabs {
+  position: sticky;
+  top: var(--header-h, 64px);
+  z-index: 99;
+  background: rgba(10, 15, 28, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  scrollbar-width: none;
+}
+.nav-tabs::-webkit-scrollbar { display: none; }
+.tab-btn { border: 1px solid transparent; }
+
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+/* Scroll arrows: back to top, up, down. Hold to keep scrolling. */
+.scroll-rail {
+  position: fixed;
+  right: 22px;
+  top: 50%;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform: translateY(-50%) translateX(90px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.scroll-rail.visible {
+  transform: translateY(-50%);
+  opacity: 1;
+  pointer-events: auto;
+}
+.scroll-rail.in-dialog { z-index: 250; }
+.scroll-rail button {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-cyan);
+  background: rgba(10, 15, 29, 0.92);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition: var(--transition-fast);
+}
+.scroll-rail button:hover:not(:disabled),
+.scroll-rail button:active:not(:disabled) {
+  background: var(--accent-cyan);
+  color: #040915;
+  box-shadow: 0 0 22px rgba(0, 242, 254, 0.6);
+}
+.scroll-rail button:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+.scroll-rail button svg { pointer-events: none; }
+/* Room for the arrows, so they never cover the last column of cards */
+body:has(.scroll-rail.visible:not(.in-dialog)) .main-content { padding-right: 96px; }
+
+/* Empty lists explain what to do next */
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 56px 24px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-lg);
+}
+.empty-state h3 {
+  color: #fff;
+  font-size: 1.2rem;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.empty-state p {
+  max-width: 560px;
+  margin: 0 auto;
+}
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+/* Toasts */
+.toast-container {
+  bottom: 84px;
+  right: 24px;
+  max-width: min(520px, calc(100vw - 48px));
+}
+.toast {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  padding: 14px 18px;
+  cursor: pointer;
+  align-items: flex-start;
+  transition: opacity 0.3s ease;
+  overflow-wrap: anywhere;
+}
+.toast-mark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 10px currentColor;
+}
+.toast-error .toast-mark { background: #ff3b30; }
+.toast-success .toast-mark { background: #30d158; }
+.toast-warning .toast-mark { background: #ffd60a; }
+
+/* Porting and setup progress */
+.telemetry-chip.porting-chip {
+  color: var(--accent-cyan);
+  border-color: rgba(0, 242, 254, 0.45);
+  background: rgba(0, 242, 254, 0.1);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.telemetry-chip.porting-chip::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 242, 254, 0.25);
+  border-top-color: var(--accent-cyan);
+  animation: spin 0.9s linear infinite;
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 46px 20px 0;
+}
+.job-icon {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+}
+.job-icon.running {
+  border-color: rgba(0, 242, 254, 0.18);
+  border-top-color: var(--accent-cyan);
+  animation: spin 0.9s linear infinite;
+}
+.job-icon.queued::after { content: "\2026"; color: var(--text-muted); }
+.job-icon.done {
+  border-color: var(--accent-emerald);
+  background: rgba(0, 245, 212, 0.12);
+  color: var(--accent-emerald);
+}
+.job-icon.done::after { content: "\2713"; }
+.job-icon.failed {
+  border-color: var(--accent-danger);
+  background: rgba(255, 51, 102, 0.12);
+  color: var(--accent-danger);
+}
+.job-icon.failed::after { content: "!"; }
+.job-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.job-status {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.job-bar {
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+.job-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan), var(--accent-emerald));
+  background-size: 200% 100%;
+  box-shadow: 0 0 16px rgba(0, 242, 254, 0.5);
+  transition: width 0.9s ease;
+  position: relative;
+}
+.job-bar.running .job-bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: jobShine 1.6s ease-in-out infinite;
+}
+.job-bar.queued .job-bar-fill {
+  background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.16) 0 12px, rgba(255, 255, 255, 0.05) 12px 24px);
+  background-size: 34px 100%;
+  box-shadow: none;
+  animation: jobStripes 1s linear infinite;
+}
+.job-bar.done .job-bar-fill {
+  background: var(--accent-emerald);
+  box-shadow: 0 0 16px rgba(0, 245, 212, 0.5);
+}
+.job-bar.failed .job-bar-fill {
+  background: var(--accent-danger);
+  box-shadow: none;
+}
+@keyframes jobShine {
+  to { transform: translateX(100%); }
+}
+@keyframes jobStripes {
+  to { background-position: 34px 0; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.job-meta {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 2px 18px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+.job-meta span:last-child {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.job-steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.job-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+}
+.job-step-mark {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.job-steps li.done { color: var(--text-muted); }
+.job-steps li.done .job-step-mark {
+  border-color: var(--accent-emerald);
+  background: var(--accent-emerald);
+  color: #04130f;
+}
+.job-steps li.done .job-step-mark::after { content: "\2713"; }
+.job-steps li.active {
+  color: #fff;
+  font-weight: 700;
+}
+.job-steps li.active .job-step-mark {
+  border-color: rgba(0, 242, 254, 0.25);
+  border-top-color: var(--accent-cyan);
+  animation: spin 0.9s linear infinite;
+}
+.job-steps li.failed { color: #ffd0da; font-weight: 700; }
+.job-steps li.failed .job-step-mark {
+  border-color: var(--accent-danger);
+  background: var(--accent-danger);
+  color: #fff;
+}
+.job-steps li.failed .job-step-mark::after { content: "!"; }
+
+.job-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.job-result.done {
+  background: rgba(0, 245, 212, 0.08);
+  border: 1px solid rgba(0, 245, 212, 0.35);
+  color: #d8fff8;
+}
+.job-result.failed {
+  display: block;
+  background: rgba(255, 51, 102, 0.08);
+  border: 1px solid rgba(255, 51, 102, 0.4);
+  color: #ffd0da;
+  overflow-wrap: anywhere;
+}
+.job-result.failed strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.job-dialog .job-log {
+  max-height: 30vh;
+  margin-bottom: 16px;
+}
+.job-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Controller Test */
+.input-test {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+}
+.input-test-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+.input-test-row:last-child { border-bottom: none; }
+.input-test-row > span:first-child { color: var(--text-muted); }
+.input-test code {
+  display: inline-block;
+  min-width: 44px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  font-variant-numeric: tabular-nums;
+}
+.input-test code.on {
+  background: var(--accent-cyan);
+  color: #040915;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-bar-fill::after, .job-icon.running, .job-steps li.active .job-step-mark { animation-duration: 3s; }
+}

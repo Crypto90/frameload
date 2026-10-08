@@ -97,6 +97,115 @@ class TestSteamSession(TempCase):
         self.assertTrue(popen.call_args[0][0][-1].startswith("steam://rungameid/"))
 
 
+class TestSteamDashboard(TempCase):
+    """Steam's "Resume game" menu is hidden once the game draws, unless the player opened it."""
+
+    def worker(self, log_text, evaluate, ui_text=None, **kwargs):
+        from frameload.system import steam_ui
+        log = self.write("launch.log", data=log_text)
+        ui_log = os.path.join(self.tmp, "ui.txt")
+        self.write("ui.txt", data="")
+        if ui_text is not None:
+            original = evaluate
+
+            def evaluate(expression):  # the player presses the dashboard button while we watch
+                with open(ui_log, "a") as f:
+                    f.write(ui_text)
+                return original(expression)
+        lines = []
+        hidden = steam_ui.dashboard_worker(log, os.getpid(), wait_start=1, window=1, poll=0.05, ui_log=ui_log,
+                                           evaluate=evaluate, say=lines.append, **kwargs)
+        return hidden, lines
+
+    def test_hides_the_menu_after_the_first_frame(self):
+        calls = []
+        visible = [True, False, True, False]
+
+        def evaluate(expression):
+            calls.append(expression)
+            if "IsDashboardVisible" in expression:
+                return visible.pop(0) if visible else False
+            return None
+
+        hidden, lines = self.worker("boot\nFrameBridge: new layer: 0\n", evaluate)
+        self.assertEqual(hidden, 2)
+        self.assertEqual(calls.count("SteamClient.OpenVR.VROverlay.HideDashboard()"), 2)
+        self.assertTrue(any("first VR frame" in line for line in lines))
+
+    def test_leaves_the_menu_when_the_game_never_draws_or_the_player_opened_it(self):
+        never = []
+        hidden, lines = self.worker("boot only\n", lambda e: never.append(e))
+        self.assertEqual((hidden, never), (0, []))
+        self.assertIn("no VR frames logged", lines[0])
+
+        hidden, lines = self.worker("FrameBridge: pacing: 72 fps\n", lambda e: True, max_hides=3,
+                                    ui_text="[ToggleDashboard] toggle_dashboard_action\n")
+        self.assertLessEqual(hidden, 1)  # at most the one before the press was seen
+        self.assertTrue(any("leaving it to the player" in line for line in lines))
+
+        hidden, lines = self.worker("FrameBridge: pacing: 72 fps\n", lambda e: (_ for _ in ()).throw(OSError("refused")))
+        self.assertEqual(hidden, 0)  # no devtools port: give up quietly
+
+    def test_steam_js_speaks_to_a_devtools_endpoint(self):
+        import socketserver
+        from frameload.system import steam_ui
+        seen = {}
+
+        class Devtools(socketserver.BaseRequestHandler):
+            def handle(self):
+                head = b""
+                while b"\r\n\r\n" not in head:
+                    head += self.request.recv(1024)
+                port = self.server.server_address[1]
+                if head.startswith(b"GET /json"):
+                    body = json.dumps([{"title": "Steam Big Picture Mode", "webSocketDebuggerUrl": "ws://x/other"},
+                                       {"title": "SharedJSContext",
+                                        "webSocketDebuggerUrl": f"ws://127.0.0.1:{port}/devtools/page/ABC"}]).encode()
+                    self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                                         + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+                    return
+                seen["path"] = head.split(b" ")[1].decode()
+                self.request.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+                first, second = self.request.recv(2)
+                length = second & 0x7F
+                if length == 126:
+                    length = int.from_bytes(self.request.recv(2), "big")
+                mask = self.request.recv(4)
+                data = b""
+                while len(data) < length:
+                    data += self.request.recv(length - len(data))
+                seen["message"] = json.loads(bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+                for reply in ({"method": "Runtime.somethingElse"},
+                              {"id": 1, "result": {"result": {"type": "boolean", "value": True}}}):
+                    payload = json.dumps(reply).encode()
+                    self.request.sendall(bytes([0x81, len(payload)]) + payload)
+
+        server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Devtools)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        value = steam_ui.steam_js("SteamClient.OpenVR.VROverlay.IsDashboardVisible()", address=server.server_address)
+        self.assertIs(value, True)
+        self.assertEqual(seen["path"], "/devtools/page/ABC")
+        self.assertEqual(seen["message"]["method"], "Runtime.evaluate")
+        self.assertEqual(seen["message"]["params"]["expression"], "SteamClient.OpenVR.VROverlay.IsDashboardVisible()")
+
+    def test_vr_launcher_starts_the_helper_and_2d_apps_do_not(self):
+        from frameload.installer.lepton_quest import LeptonInstaller
+        anchor = os.path.join(self.tmp, "game")
+        os.makedirs(anchor)
+        vr = LeptonInstaller.write_launcher(anchor, anchor, "a.vr", "VR", 1, hide_dashboard=True)
+        with open(vr, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("-m frameload.system.steam_ui", text)
+        self.assertIn("FRAMELOAD_KEEP_DASHBOARD", text)
+        self.assertLess(text.index("child=$!"), text.index("frameload.system.steam_ui"))
+        flat = LeptonInstaller.write_launcher(anchor, anchor, "a.flat", "Flat", 2)
+        with open(flat, encoding="utf-8") as f:
+            self.assertNotIn("steam_ui", f.read())
+
+
 class TestStop(TempCase):
     def test_stop_kills_the_games_container_and_reports_honestly(self):
         self.patch(InstalledManager, "get_game", return_value={"package": "a.b", "appid": 77})
@@ -289,6 +398,29 @@ class TestRemoteDevices(TempCase):
         self.assertEqual(self.request("POST", "/api/system/uninstall-app", {"confirm": "UNINSTALL"})[0], 401)
         self.assertEqual(self.request("POST", "/api/upload?session=abcdef12&name=a.apk", raw=b"x")[0], 401)
         self.assertEqual(self.request("GET", "/static/css/style.css")[0], 200)
+
+    def test_artwork_is_served_as_what_it_really_is(self):
+        self.remote.return_value = True
+        self.patch("frameload.server.ANCHOR_DIR", self.tmp)
+        self.patch(InstalledManager, "get_game", return_value=None)
+        # An older version saved an SVG placeholder under a .png name; the real icon follows it.
+        self.write("a.game", "artwork", "poster.png", data=b"<svg xmlns='http://www.w3.org/2000/svg'/>")
+        self.write("a.game", "artwork", "icon.png", data=b"\xff\xd8\xff\xe0 jpeg saved as png")
+        status, headers, body = self.request("GET", "/api/installed/artwork/a.game")
+        self.assertEqual((status, headers["Content-Type"]), (200, "image/jpeg"))
+        self.assertTrue(body.startswith(b"\xff\xd8\xff"))
+
+        self.write("b.game", "artwork", "poster.png", data=b"<svg xmlns='http://www.w3.org/2000/svg'/>")
+        self.assertEqual(self.request("GET", "/api/installed/artwork/b.game")[0], 404)  # the page shows its own fallback
+
+    def test_downloads_poll_names_the_running_porting_job(self):
+        from frameload.installer import porting
+        self.remote.return_value = True
+        self.patch(porting.PortingJobs, "_jobs", {"j1": {"id": "j1", "status": "done"}, "j2": {"id": "j2", "status": "queued"}})
+        _, _, body = self.request("GET", "/api/downloads")
+        self.assertEqual(json.loads(body)["porting_job"], "j2")
+        porting.PortingJobs._jobs["j2"]["status"] = "failed"
+        self.assertEqual(json.loads(self.request("GET", "/api/downloads")[2])["porting_job"], "")
 
     def test_pairing_with_the_headsets_code_grants_access(self):
         self.assertEqual(self.request("POST", "/api/pair", {"code": "000000"})[0], 403)

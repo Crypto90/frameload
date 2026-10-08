@@ -114,7 +114,7 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 
 ## 📸 App Screenshots
 
-| 🌐 Browse Mirror Catalog | 🎮 Installed Library |
+| 🌐 Browse | 🎮 Library |
 |:---:|:---:|
 | [![Browse Catalog](docs/images/screenshot_catalog.png)](docs/images/screenshot_catalog.png) | [![Installed Library](docs/images/screenshot_library.png)](docs/images/screenshot_library.png) |
 | *Browse, search, and queue VR titles with live Ko-fi chip, battery, storage & Lepton telemetry* | *Manage installed games, launch in VR, and configure FrameBridge per-title settings* |
@@ -124,7 +124,7 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 | [![Steam Storage Manager](docs/images/screenshot_storage.png)](docs/images/screenshot_storage.png) | [![Sideloading Hub](docs/images/screenshot_sideload.png)](docs/images/screenshot_sideload.png) |
 | *Segmented storage visualizer, multi-drive mover (Internal SSD & MicroSD), and cache cleanup* | *Sideload Quest APKs, Windows Proton EXEs, Linux apps, and toggle flat theater presets* |
 
-| 🛠️ System & Diagnostics with Ko-fi | 🎵 Game Details & Custom Songs / Mods |
+| 🛠️ System | 🎵 Game Details & Custom Songs / Mods |
 |:---:|:---:|
 | [![System & Diagnostics](docs/images/screenshot_system.png)](docs/images/screenshot_system.png) | [![Game Details & Mods](docs/images/screenshot_modal.png)](docs/images/screenshot_modal.png) |
 | *Live telemetry (Lepton VR, FEX-Emu Proton ARM64), OTA updates, and Support on Ko-fi card* | *Per-game settings, drive migration, and Beat Saber custom songs & mod injector* |
@@ -186,7 +186,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.3}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.4}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 
@@ -228,7 +228,7 @@ Lepton itself ships with the Steam Frame; FrameLoad only locates it.
   ```
   http://<steam-frame-ip>:5050
   ```
-  The first time, that device shows a pairing page. In the headset open **System & Diagnostics → Phone & PC Access → Show Pairing Code** and type the six digits on the device. Paired devices are listed there and can be removed.
+  The first time, that device shows a pairing page. In the headset open **System → Phone & PC Access → Show Pairing Code** and type the six digits on the device. Paired devices are listed there and can be removed.
 
 ---
 
@@ -329,7 +329,7 @@ frameload uninstall-app --keep-backups
 
 ## 🥽 Per-Game Settings Guide
 
-Open a game in **Installed Library** and press **Settings**. Every control maps to something the headset reads.
+Open a game in **Library** and press **Settings**. Every control maps to something the headset reads.
 
 ### For every Android app (Lepton)
 
@@ -362,11 +362,13 @@ Lepton writes its own Android system properties (`ro.product.model=Lepton`) and 
 
 There is no setup step. Shortly after FrameLoad starts on a Steam Frame it downloads the porting tools in the background, once: FramePort's command line into `~/.local/share/frameload/frameport-venv`, and a Java runtime, OVRPort and apksigner into `~/.local/share/frameload/frameport-home` (about 310 MB on disk in total). It checks weekly for a newer FramePort, because that is where per-game fixes arrive.
 
-1. Sideload a Quest game, or press **Port & Play** on one that is already in your library. If it was built for Meta's runtime it is ported right after it is installed (or before it starts); the dialog shows FramePort's output, and a big game takes several minutes. If the tools are not there yet (first minutes after installing FrameLoad, or no network), they are fetched first and the game is ported as soon as they are ready.
+1. Sideload a Quest game, or press **Port & Play** on one that is already in your library. If it was built for Meta's runtime it is ported right after it is installed (or before it starts); the dialog shows a progress bar with the step it is on (FramePort's own output is behind **Show Details**), and a big game takes several minutes. You can close the dialog: the job keeps running, a chip in the header shows its progress, and a game you pressed Play on starts by itself when it is done. If the tools are not there yet (first minutes after installing FrameLoad, or no network), they are fetched first and the game is ported as soon as they are ready.
 2. **Port for Steam Frame** on a game in your library does the same by hand, to retry or after a FramePort update.
 3. The original APK is kept as `unported.apk` next to the game, so it can be ported again with a newer FramePort.
 
 Two switches on the **Quest Game Porting** card turn off the automatic port and the automatic download (for a metered connection); **Set Up Now** then fetches the tools on request.
+
+When a ported game shows its first frame, Steam opens its own menu (Resume / Exit game) on top of it. FrameLoad's launcher closes that menu for you through Steam's own interface, and leaves it alone as soon as you open it yourself with the controller's Steam button. To switch this off for a game, put `FRAMELOAD_KEEP_DASHBOARD=1 %command%` in its Steam launch options. If Steam's "Exit game" does not end a game (it cannot when FrameLoad started the game itself because Steam had not loaded its shortcut yet), use **Stop** in FrameLoad.
 
 On the Frame one of FramePort's dependencies cannot be installed (it needs a C compiler SteamOS does not ship), so FramePort's "Unity: turn off MSAA" fix is unavailable there; everything else works.
 
@@ -376,7 +378,7 @@ The automatic setup, update, analysis and the start of the build were run agains
 
 ### Self-test
 
-You never have to run this: the dashboard runs it by itself each time it opens and shows a notice only if something is wrong. To see the full list, `frameload doctor` (or **System & Diagnostics > Run Self-Test**) checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library, every installed game and the porting setup, and lists the cameras the system exposes. Include its output when you report a problem.
+You never have to run this: the dashboard runs it by itself each time it opens and shows a notice only if something is wrong. To see the full list, `frameload doctor` (or **System > Run Self-Test**) checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library, every installed game and the porting setup, and lists the cameras the system exposes. Include its output when you report a problem.
 
 ### Hand tracking
 
@@ -386,7 +388,7 @@ Playing with bare hands and no controllers is not possible today: it needs a tra
 
 ### Opening the dashboard from another device
 
-Requests from the headset itself are trusted. Every other device must be paired once with a six-digit code shown in the headset (**System & Diagnostics → Phone & PC Access**); the code is valid for five minutes and works once. Only someone at the headset can create codes or remove devices.
+Requests from the headset itself are trusted. Every other device must be paired once with a six-digit code shown in the headset (**System → Phone & PC Access**); the code is valid for five minutes and works once. Only someone at the headset can create codes or remove devices.
 
 The dashboard answers under an IP address, `localhost` and the headset's own name. To use another host name, run `frameload allow-host <name>` on the Frame (`--remove` undoes it).
 
@@ -429,6 +431,10 @@ Open the game in the library and press **Launch Log**. FrameLoad reads the log o
 | Control / Gesture | Action |
 |---|---|
 | **Laser Pointer Drag & Flick** | **Momentum Drag-to-Scroll:** Grab any page, catalog grid, or modal and flick with natural inertial physics friction |
+| **Scroll arrows (right edge)** | Appear whenever a page or dialog is longer than the window: **back to top**, **up**, **down**. Tap for a step, hold to keep scrolling |
+| **Press the tab you are on** | Back to the top of that tab |
+| **Left / Right Trigger** | Page up / page down |
+| **Stick Click** | Back to the top |
 | **Laser Aim + Right Stick** | **Targeted Scrolling:** Point your laser at any specific card, release note, chips bar, or log drawer and tilt Right Stick to scroll it smoothly |
 | **Laser Aim + Left Stick / D-Pad** | **Contextual Navigation:** Pointing at any element anchors joystick movement directly to that card |
 | **Index Trigger / A Button** | Select / Open Game Details / Sideload / Confirm |
@@ -436,6 +442,9 @@ Open the game in the library and press **Launch Log**. FrameLoad reads the log o
 | **X Button** | Quick Action (Download / Launch) |
 | **Y Button** | Instant Search Focus |
 | **LB / RB (Bumpers)** | Previous / Next Tab switching |
+| **Keyboard** | Arrow keys move, Enter selects, Esc goes back, Page Up / Page Down / Home / End scroll |
+
+If a stick or button does nothing, open **System → Controller Test**: it shows live what the controllers send to FrameLoad (gamepad axes and buttons, scroll events, pointer presses). A browser only reports a gamepad after its first button press.
 
 ---
 
