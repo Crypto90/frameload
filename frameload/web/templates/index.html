@@ -39,6 +39,10 @@
       <div id="header-battery" class="telemetry-chip battery">
         <span class="pulse-dot"></span> --%
       </div>
+      <div id="header-input-mode" class="telemetry-chip input-mode clickable" onclick="toggleVRInputMode()" title="VR Input: Auto / Controllers / Hands (Click to toggle)">
+        <span class="pulse-dot" style="background:var(--accent-cyan);"></span>
+        <span id="header-input-label">🎮 Knuckles</span>
+      </div>
       <div id="header-storage" class="telemetry-chip clickable" onclick="openStorageTab()" title="Open Steam Storage Manager">
         💾 -- GB Free
       </div>
@@ -346,6 +350,38 @@
             Uninstall FrameLoad...
           </button>
         </div>
+        <!-- VR Input & Hand Tracking Switcher Card -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+              <span>🥽</span> VR Input &amp; Hand Tracking
+            </h3>
+            <span id="sys-input-badge" class="badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan);">Auto-Switch</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+            Switch seamlessly between Valve Knuckles motion controllers and Quest-style optical hand tracking. Automatically falls back to hand gestures when controllers are put down or powered off.
+          </p>
+          <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
+            <label style="display:flex; align-items:center; gap:10px; font-size:0.86rem; cursor:pointer;">
+              <input type="radio" name="vr-input-mode" value="auto" checked onchange="setVRInputMode('auto')">
+              <span><strong>🔄 Auto-Switch (Recommended)</strong> — Knuckles when active; auto-fallback to hands when off</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:10px; font-size:0.86rem; cursor:pointer;">
+              <input type="radio" name="vr-input-mode" value="controllers" onchange="setVRInputMode('controllers')">
+              <span><strong>🎮 Motion Controllers Only</strong> — Force Valve Knuckles / Steam Frame Roy controllers</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:10px; font-size:0.86rem; cursor:pointer;">
+              <input type="radio" name="vr-input-mode" value="hands" onchange="setVRInputMode('hands')">
+              <span><strong>🖐️ Optical Hand Tracking Only</strong> — Force bare-hand pinch &amp; laser reticle navigation</span>
+            </label>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn-secondary compact" onclick="toggleVRInputMode()">
+              ⚡ Cycle Mode Now
+            </button>
+          </div>
+        </div>
+
         <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.2); padding:24px; border-radius:var(--radius-lg);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
             <h3 style="font-size:1.05rem; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">

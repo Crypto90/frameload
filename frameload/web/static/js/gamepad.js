@@ -303,6 +303,16 @@ class SpatialGamepadNavigator {
     }, 5500);
   }
 
+  updateHUDHandsMode(isHands) {
+    const handsItem = document.getElementById("vr-hud-hands-item");
+    if (handsItem) {
+      handsItem.innerHTML = isHands
+        ? `<span class="vr-hud-key" style="border-color:#00ff88; color:#00ff88; box-shadow:0 0 10px rgba(0,255,136,0.4);">🖐️ Active</span> Pinch / Drag`
+        : `<span class="vr-hud-key">🖐️ Pinch</span> Select / Drag`;
+    }
+    this.showHUD();
+  }
+
   bindEvents() {
     window.addEventListener("gamepadconnected", (e) => {
       console.log(`[FrameLoad VR] Gamepad/Controller connected: ${e.gamepad.id}`);
@@ -647,12 +657,25 @@ class SpatialGamepadNavigator {
   }
 
   handleGamepad(gp, gpIndex) {
+    // If user locked mode to hands, ignore controller buttons and sticks
+    if (window.vrInputManager && window.vrInputManager.mode === "hands") {
+      return;
+    }
+
     const now = Date.now();
     const gpKey = `${gpIndex}_${gp.id || ""}`;
     if (!this.lastButtonStates[gpKey]) {
       this.lastButtonStates[gpKey] = {};
     }
     const prev = this.lastButtonStates[gpKey];
+
+    // Auto wake-up: if in auto mode and hands are currently active, any button/stick movement restores Knuckles mode
+    const stickMoved = gp.axes && gp.axes.some(a => Math.abs(a) > 0.22);
+    const anyButtonPressed = gp.buttons && gp.buttons.some(b => b.pressed);
+    if ((stickMoved || anyButtonPressed) && window.vrInputManager && window.vrInputManager.mode === "auto" && window.vrInputManager.activeType === "hands") {
+      window.vrInputManager.switchActiveType("controllers", "🎮 Knuckles active (Wake-up)");
+      window.vrInputManager.syncUI();
+    }
 
     const hand = (gp.hand || "").toLowerCase();
     const id = (gp.id || "").toLowerCase();
@@ -945,6 +968,10 @@ class VRHandTrackingEngine {
 
   updateFromXRFrame(frame, refSpace) {
     if (!frame || !this.activeSession) return;
+    if (window.vrInputManager && window.vrInputManager.activeType === "controllers") {
+      this.hideReticles();
+      return;
+    }
     const session = this.activeSession;
     const space = refSpace || this.refSpace;
     if (!space) return;
@@ -1128,11 +1155,161 @@ class VRHandTrackingEngine {
   }
 }
 
+/* ==========================================================================
+   4. VR Input Coordinator & Automatic Hand Tracking Fallback Manager
+   ========================================================================== */
+class VRInputManager {
+  constructor() {
+    this.mode = localStorage.getItem("frameload_vr_input_mode") || "auto"; // 'auto', 'controllers', 'hands'
+    this.activeType = "controllers";
+    this.activeControllersCount = 0;
+    this.init();
+  }
+
+  init() {
+    this.updateActiveState(false);
+    this.bindEvents();
+    this.syncUI();
+    // Periodic check for controller state changes
+    setInterval(() => this.pollControllersState(), 1200);
+  }
+
+  bindEvents() {
+    window.addEventListener("gamepadconnected", (e) => {
+      this.pollControllersState(true);
+    });
+
+    window.addEventListener("gamepaddisconnected", () => {
+      setTimeout(() => this.pollControllersState(true), 200);
+    });
+  }
+
+  pollControllersState(isEvent = false) {
+    const rawGps = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+    const count = rawGps.length;
+    const previousCount = this.activeControllersCount;
+    this.activeControllersCount = count;
+
+    if (this.mode === "auto") {
+      if (count > 0 && (previousCount === 0 || isEvent)) {
+        this.switchActiveType("controllers", `🎮 Knuckles active (${count} connected)`);
+      } else if (count === 0 && (previousCount > 0 || this.activeType !== "hands")) {
+        this.switchActiveType("hands", "🖐️ Controllers off — Switched to Optical Hand Tracking");
+      }
+    }
+    this.syncUI();
+  }
+
+  setMode(mode, showNotice = true) {
+    if (!["auto", "controllers", "hands"].includes(mode)) return;
+    this.mode = mode;
+    localStorage.setItem("frameload_vr_input_mode", mode);
+
+    if (mode === "auto") {
+      this.pollControllersState(true);
+      if (showNotice && typeof showToast === "function") {
+        showToast(`🔄 Auto-Switch Mode Enabled (${this.activeType === "controllers" ? "Knuckles Active" : "Hand Tracking Active"})`, "info");
+      }
+    } else if (mode === "controllers") {
+      this.switchActiveType("controllers", showNotice ? "🎮 Motion Controllers Mode (Forced)" : "");
+    } else if (mode === "hands") {
+      this.switchActiveType("hands", showNotice ? "🖐️ Optical Hand Tracking Mode (Forced)" : "");
+    }
+    this.syncUI();
+  }
+
+  toggleMode() {
+    const next = this.mode === "auto" ? "controllers" : (this.mode === "controllers" ? "hands" : "auto");
+    this.setMode(next, true);
+  }
+
+  switchActiveType(type, toastMessage = "") {
+    this.activeType = type;
+    if (toastMessage && typeof showToast === "function") {
+      showToast(toastMessage, "info");
+    }
+
+    if (type === "hands") {
+      window.vrControllerEngine?.updateHUDHandsMode?.(true);
+    } else {
+      window.vrHandEngine?.hideReticles?.();
+      window.vrControllerEngine?.updateHUDHandsMode?.(false);
+    }
+  }
+
+  updateActiveState() {
+    const rawGps = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+    this.activeControllersCount = rawGps.length;
+    if (this.mode === "auto") {
+      this.activeType = this.activeControllersCount > 0 ? "controllers" : "hands";
+    } else {
+      this.activeType = this.mode;
+    }
+  }
+
+  syncUI() {
+    const headerChip = document.getElementById("header-input-mode");
+    const headerLabel = document.getElementById("header-input-label");
+    const dot = headerChip?.querySelector(".pulse-dot");
+
+    if (headerLabel) {
+      if (this.mode === "auto") {
+        if (this.activeType === "controllers") {
+          headerLabel.textContent = `🎮 Knuckles (${this.activeControllersCount || 1})`;
+          if (dot) dot.style.background = "var(--accent-cyan)";
+        } else {
+          headerLabel.textContent = "🖐️ Hand Tracking";
+          if (dot) dot.style.background = "#00ff88";
+        }
+      } else if (this.mode === "controllers") {
+        headerLabel.textContent = "🎮 Knuckles (Locked)";
+        if (dot) dot.style.background = "var(--accent-amber)";
+      } else {
+        headerLabel.textContent = "🖐️ Hands (Locked)";
+        if (dot) dot.style.background = "#00ff88";
+      }
+    }
+
+    // Update radios in System tab
+    const radios = document.querySelectorAll('input[name="vr-input-mode"]');
+    radios.forEach(r => {
+      r.checked = (r.value === this.mode);
+    });
+
+    const sysBadge = document.getElementById("sys-input-badge");
+    if (sysBadge) {
+      if (this.mode === "auto") {
+        sysBadge.textContent = this.activeType === "controllers" ? "Auto (Knuckles Active)" : "Auto (Hand Tracking Fallback)";
+        sysBadge.style.background = "rgba(0, 242, 254, 0.15)";
+        sysBadge.style.color = "var(--accent-cyan)";
+      } else if (this.mode === "controllers") {
+        sysBadge.textContent = "Controllers Forced";
+        sysBadge.style.background = "rgba(255, 184, 0, 0.15)";
+        sysBadge.style.color = "var(--accent-amber)";
+      } else {
+        sysBadge.textContent = "Hand Tracking Forced";
+        sysBadge.style.background = "rgba(0, 255, 136, 0.15)";
+        sysBadge.style.color = "#00ff88";
+      }
+    }
+  }
+}
+
+// Window global helper functions
+window.setVRInputMode = function(mode) {
+  window.vrInputManager?.setMode(mode);
+};
+
+window.toggleVRInputMode = function() {
+  window.vrInputManager?.toggleMode();
+};
+
 // Global initialization
 document.addEventListener("DOMContentLoaded", () => {
   window.vrLaserDragEngine = new VRLaserDragEngine();
   window.vrControllerEngine = new SpatialGamepadNavigator();
   window.vrHandEngine = new VRHandTrackingEngine();
+  window.vrInputManager = new VRInputManager();
   // Backward compatibility alias for any existing references
   window.gamepadNav = window.vrControllerEngine;
 });

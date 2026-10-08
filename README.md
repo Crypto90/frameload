@@ -49,6 +49,7 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - **26-Joint Meta Quest & OpenXR Topology:** Full skeletal mapping (`Wrist_Root` to `Pinky_Tip`) matching Meta OVRPlugin (`ovrp_GetSkeleton`), OpenXR `XR_EXT_hand_tracking`, and `XR_FB_hand_tracking_aim`.
   - **Synthetic Hand Tracking (Roy Capacitive Synthesis):** Synthesizes natural 26-joint hand poses, finger curls, and pinches directly from Valve Roy controller capacitive touch sensors without requiring external camera tracking or latency.
   - **Optical Camera Bridge:** IPC bridge support for Monado Mercury Hand Tracking and MediaPipe reading headset cameras.
+  - **Seamless Input Switcher & Auto-Fallback:** Interactive header chip (`🎮 Knuckles` ↔ `🖐️ Hand Tracking`) and System & Diagnostics control; automatically falls back to optical bare-hand tracking with toast and HUD feedback when controllers disconnect or power down, and instantly wakes up Knuckles mode on any button press or analog stick movement.
   - **WebXR Dashboard Hand & Pinch Navigation:** Browse FrameLoad hands-free in VR with pinch-to-click, pinch drag-to-scroll, and dynamic dual-ring reticle feedback.
 - **🌐 Direct Mirror & Catalog Integration:**
   - Integrated with VRP public mirrors (`meta.7z`, `VRP-GameList.txt`) with instant search, genre filtering, and sorting across 2,900+ titles.
@@ -198,7 +199,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.2.7}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.2.8}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 

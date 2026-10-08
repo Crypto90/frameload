@@ -131,6 +131,37 @@ class TestHandTracking(unittest.TestCase):
         self.assertEqual(report["skeletal_joints"], 26)
         self.assertIn("WebXR Hand Input API", report["supported_runtimes"])
 
+    def test_vr_input_switcher_frontend_assets(self):
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        html_path = os.path.join(root_dir, "frameload/web/templates/index.html")
+        css_path = os.path.join(root_dir, "frameload/web/static/css/style.css")
+        js_path = os.path.join(root_dir, "frameload/web/static/js/gamepad.js")
+
+        self.assertTrue(os.path.isfile(html_path))
+        self.assertTrue(os.path.isfile(css_path))
+        self.assertTrue(os.path.isfile(js_path))
+
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+            self.assertIn("id=\"header-input-mode\"", html)
+            self.assertIn("toggleVRInputMode()", html)
+            self.assertIn("name=\"vr-input-mode\"", html)
+            self.assertIn("value=\"auto\"", html)
+            self.assertIn("value=\"controllers\"", html)
+            self.assertIn("value=\"hands\"", html)
+
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+            self.assertIn(".telemetry-chip.input-mode", css)
+
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+            self.assertIn("class VRInputManager", js)
+            self.assertIn("window.setVRInputMode", js)
+            self.assertIn("window.toggleVRInputMode", js)
+            self.assertIn("updateHUDHandsMode", js)
+            self.assertIn("pollControllersState", js)
+
 
 if __name__ == "__main__":
     unittest.main()
