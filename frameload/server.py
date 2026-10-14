@@ -47,11 +47,13 @@ from .catalog.fdroid import FDroidCatalog
 from .config import ANCHOR_DIR, Config, DATA_DIR
 from .installer.artwork import image_extension
 from .installer import hand_tracking, porting
+from .system import perf, power
 from .installer.lepton_quest import LeptonInstaller
 from .installer.package_loader import PackageLoader
 from .manager import files as file_manager
 from .manager import launchlog
 from .manager.backup import SaveBackupManager
+from .manager.guard import FreezeGuard
 from .manager.installed import InstalledManager
 from .manager.launcher import GameLauncher
 from .manager.mods import ModManager
@@ -190,7 +192,18 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
 
         # Route API calls
         if path == "/api/system":
-            self.send_json(get_system_summary())
+            summary = get_system_summary()
+            summary["guard_event"] = FreezeGuard.events[-1] if FreezeGuard.events else None
+            summary["keep_awake"] = power.KeepAwake.status()
+            self.send_json(summary)
+        elif path == "/api/system/perf":
+            self.send_json(perf.snapshot())
+        elif path == "/api/power":
+            info = power.KeepAwake.status()
+            info["while_busy"] = keep_awake_while_busy()
+            self.send_json(info)
+        elif path == "/api/guard":
+            self.send_json(FreezeGuard.status())
         elif path == "/api/catalog":
             q = params.get("q", [""])[0]
             sort_by = params.get("sort_by", ["date"])[0]
@@ -353,6 +366,22 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             dep = InstalledManager.get_game(pkg)
             anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, pkg)) if dep else os.path.join(ANCHOR_DIR, pkg)
             art_dir = os.path.join(anchor, "artwork")
+            wanted = params.get("slot", [""])[0]
+            if wanted:  # one picture, for the dashboard's artwork drawing
+                if wanted not in ("apk_icon", "poster", "icon", "banner", "hero", "logo") or not is_valid_package(pkg):
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                from .installer.artwork import slot_file
+                f = slot_file(art_dir, wanted)
+                kind = ""
+                if f:
+                    with open(f, "rb") as probe:
+                        kind = image_extension(probe.read(16))
+                if not kind:
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self.serve_file(f, {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}[kind])
+                return
             # 2D apps are recognised by their icon, games by their cover.
             order = ("icon", "poster") if dep and dep.get("kind") == "flat" else ("poster", "icon")
             for name in [f"{slot}{ext}" for slot in order for ext in (".png", ".jpg", ".webp")] + ["poster.svg"]:
@@ -475,6 +504,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/storage":
             device_id = params.get("device", [None])[0]
             self.send_json(StorageManager.get_storage_overview(device_id))
+        elif path == "/api/storage/devices":
+            self.send_json({"devices": StorageManager.get_devices()})
         elif path == "/api/updates":
             try:
                 app_status = UpdateManager.check_app_update(force=params.get("force", [""])[0] == "1")
@@ -544,6 +575,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         path = parsed.path
 
         if not self.request_allowed():
+            self.discard_body()
             self.send_json({"error": "Request refused: it did not come from the FrameLoad dashboard."},
                            status=HTTPStatus.FORBIDDEN)
             return
@@ -801,6 +833,46 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json(res)
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path.startswith("/api/installed/artwork/"):
+            # Pictures the dashboard drew for a game's Steam library entry.
+            pkg = path.rsplit("/", 1)[-1]
+            dep = InstalledManager.get_game(pkg) if is_valid_package(pkg) else None
+            slots = body.get("slots")
+            if not dep or not isinstance(slots, dict):
+                self.send_json({"error": "Game not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            from .installer.artwork import save_composed
+            from .system.shortcuts import refresh_grid_artwork
+            art_dir = os.path.join(dep["anchor"], "artwork")
+            saved, errors = [], {}
+            for slot, url in slots.items():
+                try:
+                    if not isinstance(url, str) or "," not in url:
+                        raise ValueError("not an image")
+                    save_composed(art_dir, str(slot), base64.b64decode(url.split(",", 1)[1], validate=True))
+                    saved.append(slot)
+                except (ValueError, OSError) as e:
+                    errors[str(slot)] = str(e)
+            steam = refresh_grid_artwork(os.path.join(dep["anchor"], "launch.sh"), art_dir) if saved else {}
+            self.send_json({"success": bool(saved), "saved": saved, "errors": errors, "steam_users": list(steam)})
+        elif path == "/api/power/keep-awake":
+            try:
+                power.KeepAwake.set_manual(float(body.get("hours", 0)))
+            except (TypeError, ValueError):
+                self.send_json({"error": "hours must be a number"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            power.KeepAwake.update(power.busy_reason(self.downloader) if keep_awake_while_busy() else "")
+            self.send_json(power.KeepAwake.status())
+        elif path == "/api/power/settings":
+            cfg = Config.get()
+            cfg.raw.setdefault("power", {})["keep_awake_busy"] = bool(body.get("while_busy", True))
+            cfg.save()
+            power.KeepAwake.update(power.busy_reason(self.downloader) if keep_awake_while_busy() else "")
+            self.send_json({"success": True, "while_busy": keep_awake_while_busy(), **power.KeepAwake.status()})
+        elif path == "/api/guard/settings":
+            self.send_json({"success": True, "settings": FreezeGuard.save_settings(body)})
+        elif path == "/api/storage/default":
+            self.send_json(StorageManager.set_default_device(str(body.get("device_id", ""))))
         elif path == "/api/storage/batch-uninstall":
             packages = body.get("packages", [])
             keep_saves = body.get("keep_saves", False)
@@ -1009,6 +1081,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def handle_upload(self, params: Dict[str, Any]) -> None:
         """Receives one file from a paired phone or PC (raw request body) into the uploads folder."""
         if not self.authorized():
+            self.discard_body()
             self.send_json({"error": "pairing_required"}, status=HTTPStatus.UNAUTHORIZED)
             return
         try:
@@ -1017,10 +1090,27 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 params.get("session", [""])[0], params.get("name", [""])[0], length, self.rfile)
             self.send_json(result)
         except ValueError as e:
+            self.discard_body()  # refused before any of it was read
             self.send_json({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
         except OSError as e:
             self.close_connection = True  # part of the body may still be unread
             self.send_json({"error": str(e)}, status=HTTPStatus.INSUFFICIENT_STORAGE)
+
+    def discard_body(self, limit: int = 4 * 1024 * 1024) -> None:
+        """Reads a refused request's body, so the client gets the answer rather than a reset
+        connection (Windows resets one with unread data). Larger bodies stay unread and the
+        connection is closed after the answer."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = 0
+        if 0 < length <= limit:
+            try:
+                self.rfile.read(length)
+            except OSError:
+                pass
+        elif length > limit:
+            self.close_connection = True
 
     def send_json(self, data: Any, status: HTTPStatus = HTTPStatus.OK, headers: Optional[Dict[str, str]] = None) -> None:
         try:
@@ -1060,6 +1150,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         # Suppress noisy standard request logs unless in debug mode
         pass
+
+
+def keep_awake_while_busy() -> bool:
+    return bool(Config.get().get("power", {}).get("keep_awake_busy", True))
 
 
 def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
@@ -1145,6 +1239,18 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
     timer = threading.Timer(30.0, porting_maintenance)
     timer.daemon = True
     timer.start()
+
+    def keep_awake_loop() -> None:
+        while True:
+            try:
+                power.KeepAwake.update(power.busy_reason(downloader) if keep_awake_while_busy() else "")
+            except Exception as e:
+                print(f"[FrameLoad] Keep-awake check failed: {e}")
+            time.sleep(10)
+
+    threading.Thread(target=keep_awake_loop, daemon=True, name="keep-awake").start()
+    if os.path.exists("/proc/locks"):  # Linux: games run here
+        FreezeGuard.start()
 
     server = ThreadingHTTPServer((host, port), FrameLoadApiHandler)
     print(f"{CYAN}============================================================{RESET}")

@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 5
+LAYOUT_VERSION = 6
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (
@@ -69,6 +69,12 @@ def migrate_game(game: Dict[str, Any]) -> List[str]:
                        hand_tracking=analysis.hand_tracking, xr_runtime=analysis.xr_runtime)
         except Exception:
             pass
+        # The app's own icon, which the dashboard draws Steam artwork from.
+        art_dir = os.path.join(dep["anchor"], "artwork")
+        if os.path.isdir(art_dir) and not any(os.path.isfile(os.path.join(art_dir, "apk_icon" + e)) for e in (".png", ".webp", ".jpg")):
+            from ..installer.artwork import extract_apk_icon
+            if extract_apk_icon(os.path.join(base, "lepton-app", "game.apk"), art_dir):
+                changes.append("found the app's icon for its Steam artwork")
         dep["layout_version"] = LAYOUT_VERSION
         with open(os.path.join(dep["anchor"], "deployment.json"), "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in dep.items() if k not in ("device_name", "is_external")}, f, indent=2)

@@ -5,9 +5,42 @@ import glob
 import json
 import os
 import subprocess
+import time
 from typing import Any, Dict, List, Optional
 
 from ..config import ANCHOR_DIR
+from ..installer.artwork import artwork_info
+
+
+def play_stats(base: str, running: bool = False, now: Optional[float] = None) -> Dict[str, int]:
+    """When a game was last played and for how long in total, from what its launch.sh records.
+    A game last played before launchers kept these records counts from its launch log's time."""
+    now = now or time.time()
+    last = 0
+    try:
+        with open(os.path.join(base, ".last_played"), "r", encoding="utf-8") as f:
+            last = int(float(f.read().strip() or 0))
+    except (OSError, ValueError):
+        pass
+    total = 0
+    try:
+        with open(os.path.join(base, ".playtime"), "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    length = int(parts[1]) - int(parts[0])
+                    if 0 < length < 86400:  # a broken clock is not a 3-day session
+                        total += length
+    except OSError:
+        pass
+    if not last:
+        try:
+            last = int(os.path.getmtime(os.path.join(base, "launch.log")))
+        except OSError:
+            pass
+    if running and last and now > last:
+        total += min(int(now - last), 86400)  # the session that is still going
+    return {"last_played": last, "playtime_seconds": total}
 
 
 class InstalledManager:
@@ -120,6 +153,8 @@ class InstalledManager:
                         "port_failed": bool(dep.get("port_failed", False)),
                         "port_error": str(dep.get("port_error", "")),
                         "is_running": is_running,
+                        **play_stats(base, is_running),
+                        "artwork": artwork_info(art_dir, pkg, dep.get("title", pkg)) if os.path.isdir(art_dir) else None,
                         "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
                     })
                 except Exception as e:

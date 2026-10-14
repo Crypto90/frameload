@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.5] - 2026-10-14
+
+### Added
+- **Choose where a game goes.** With more than one drive that can hold games, installing from Browse asks where to install, like Steam does: each drive with its free space, drives that cannot hold games greyed out with the reason, and "Always install here" to make it the default. Updates stay on the drive the game is on.
+- **Recently Played.** The library starts with the last three games you played, with when and for how long, and can be sorted by recently played, name, install date or size. Each game's launcher records its sessions, so games started from Steam count too.
+- **Freeze Guard.** When a game uses up the headset's memory everything stops responding, even the Steam button. FrameLoad now limits each game's memory (SteamVR keeps 2.5 GB), watches memory pressure while a game runs and ends the game before the headset locks up, with a notice saying which game it was. A game that stops drawing frames is reported after 90 seconds; stopping it automatically is a switch, off by default.
+- **Keep Awake.** The headset is kept awake while FrameLoad downloads, installs or ports, and on request for an hour or until switched off.
+- **CPU and memory in the header**, and a live Performance card (CPU, memory, swap, GPU clock, temperatures, memory pressure).
+- **Store pages with screenshots and trailers** for F-Droid apps, from the apps' own metadata; a screenshot opens large.
+- **Thumbnails in Downloads**, and a clear state for each download (Downloading, Unpacking, Installing, Installed, Failed) with time left.
+
+### Changed
+- **Steam artwork is drawn properly.** FrameLoad takes the app's own launcher icon from its APK (the sharpest version; for adaptive icons the foreground layer), and the dashboard draws poster, banner (now 920x430), hero, logo and icon from the icon, any downloaded cover and the title, replacing the plain colour placeholders. Games installed earlier are redrawn too.
+- **Only real drives are listed:** internal storage, the microSD card and USB drives. The Frame's own system partitions no longer show up as storage.
+- The Lepton chip in the header appears only when Lepton is missing.
+
+### Fixed
+- **Scrolling far down the catalog got slower and slower.** Every page load made FrameLoad check thousands of buttons in a way that laid out the whole page each time (12 s at 2,000 cards, now 4 ms), and the cards were one huge grid. The catalog now renders each loaded page as its own block that the browser skips while off screen, closed dialogs are no longer rendered, and the page background no longer repaints on every scrolled frame.
+- **Opening a game's page reflowed the list behind it**: the scroll arrows' gutter disappeared while the dialog was open and the grid changed its column count.
+- **FrameLoad's window could leave Firefox running, or open it a second time.** When the window closed, the launcher tried the next way of opening it. It now opens exactly one window with a Firefox profile of its own, closes it when Steam ends FrameLoad, ends when the window is closed, and does not open a second window while one is up.
+- **Steam showed no artwork for a game whose shortcut was made under an older title:** grid files were named after the new title's id instead of the id the shortcut has.
+- A refused request (for example an upload from a device that is not paired) reached the client as a reset connection instead of the error message.
+- An outdated message after sideloading pointed to a "Set Up Porting" button that no longer exists.
+
+---
+
 ## [v1.3.4] - 2026-10-08
 
 ### Added

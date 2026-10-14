@@ -80,7 +80,8 @@ FrameLoad/
 │   │   └── windows_proton.py # Windows PCVR/flat EXEs via Proton ARM64, FEX-Emu, WineOpenXR
 │   ├── manager/              # High-level management systems
 │   │   ├── backup.py         # Save games backup and restore (~/.local/share/frameload/backups)
-│   │   ├── installed.py      # Installed titles catalog
+│   │   ├── installed.py      # Installed titles catalog, play history (play_stats)
+│   │   ├── guard.py          # Freeze guard: memory limit per game container, memory-pressure watchdog
 │   │   ├── tuning.py         # Per-game settings schema -> launch env + FrameBridge conf keys
 │   │   ├── migrate.py        # One-time upgrade of installs made by older versions (layout_version)
 │   │   ├── files.py          # File browser roots and uploads from paired devices
@@ -100,6 +101,8 @@ FrameLoad/
 │   │   ├── fsutil.py         # Delete/move/inspect Lepton data (podman unshare, filesystem support)
 │   │   ├── steam_session.py  # Which shortcuts the running Steam has loaded; safe Steam restart
 │   │   ├── steam_ui.py       # Hides Steam's menu over a freshly started game (CEF devtools on 127.0.0.1:8080)
+│   │   ├── perf.py           # CPU, memory, PSI, temperatures, GPU clock from /proc and /sys
+│   │   ├── power.py          # Keep-awake via systemd-inhibit while FrameLoad is busy
 │   │   └── steamos.py        # Hardware telemetry (battery, storage, Lepton container, Proton status)
 │   ├── web/                  # Web Dashboard UI & REST API
 │   │   ├── static/           # CSS (style.css), JS (app.js, gamepad.js), and Steam artwork assets
@@ -111,7 +114,7 @@ FrameLoad/
 │   ├── build_release.py      # Builds tarballs, self-extracting installer, SHA256SUMS, and release notes
 │   ├── capture_screenshots.py# Headless Chrome script for automated 1080p README screenshots
 │   └── github_release.py     # Pure Python GitHub REST API release publisher and asset uploader
-├── tests/                    # Unit tests (160 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
+├── tests/                    # Unit tests (178 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
 ├── install.sh                # 1-Click on-device installer script
 ├── run.sh                    # Smart runner for Steam and command-line execution
 └── uninstall.sh              # 1-Click clean uninstaller
@@ -136,8 +139,13 @@ Verified against Valve's Lepton source (`compat_tool/liblepton/*.sh`) and FrameP
 12. **Only loopback is trusted.** Any other client must hold a paired session (`system/access.py`). New API routes inherit this from `do_GET`/`do_POST`; do not add routes that bypass `authorized()`.
 13. **Some apps cannot be ported** because they check their own signing certificate (`SELF_SIGNATURE_CHECK_LIBS` in `apk_analysis.py`). Mark them blocked; never add code that defeats such a check.
 14. **Always offer Stop.** Games FrameLoad launches directly are invisible to Steam's exit; `GameLauncher.stop()` kills the `lepton-steamlaunch-<appid>` container.
-15. **Steam opens its Resume / Exit menu over a game's first frame.** `launch.sh` of a VR game starts `python3 -m frameload.system.steam_ui`, which waits for FrameBridge's first-frame lines in `launch.log` and then calls `SteamClient.OpenVR.VROverlay.HideDashboard()` in Steam's `SharedJSContext` (the approach is FramePort's). It must never close a dashboard the player opened (`toggle_dashboard_action` in `vrwebhelper_systemui.txt`). Any change to `LAUNCH_SCRIPT_TEMPLATE` needs `layout_version` raised in both `lepton_quest.py` and `migrate.py`, or existing games keep the old launcher.
-16. **Dashboard UI rules.** It is used with a laser pointer in a headset: interactive targets are at least 40 px tall; no `confirm()` / `alert()` (use `confirmDialog()` in `app.js`); every scrollable view must work with the scroll arrows (`ScrollAssist` in `gamepad.js`) because not every controller reaches the page as a gamepad; long jobs report steps and a percentage (`JOB_STEPS` / `JOB_MARKERS` in `porting.py`), not raw console output.
+15. **Steam opens its Resume / Exit menu over a game's first frame.** `launch.sh` of a VR game starts `python3 -m frameload.system.steam_ui`, which waits for FrameBridge's first-frame lines in `launch.log` and then calls `SteamClient.OpenVR.VROverlay.HideDashboard()` in Steam's `SharedJSContext` (the approach is FramePort's). It must never close a dashboard the player opened (`toggle_dashboard_action` in `vrwebhelper_systemui.txt`). Any change to `LAUNCH_SCRIPT_TEMPLATE` needs `layout_version` raised in both `lepton_quest.py` and `migrate.py` (currently 6), or existing games keep the old launcher.
+16. **Dashboard UI rules.** It is used with a laser pointer in a headset: interactive targets are at least 40 px tall; no `confirm()` / `alert()` (use `confirmDialog()` in `app.js`); every scrollable view must work with the scroll arrows (`ScrollAssist` in `gamepad.js`) because not every controller reaches the page as a gamepad; long jobs report steps and a percentage (`JOB_STEPS` / `JOB_MARKERS` in `porting.py`), not raw console output. Long lists must stay cheap: the catalog renders one `.catalog-page` grid per loaded page with `content-visibility: auto`, and focus candidates are filtered with `checkVisibility({contentVisibilityAuto: true})`; reading `offsetParent` on every card lays out skipped content (12 s at 2,000 cards). Lists that poll (Downloads) update cards in place instead of rebuilding them.
+17. **Drives are classified by bus, never by device name.** The Frame's UFS storage is `/dev/sd*` with many system partitions. `storage.classify_disk()` reads sysfs: `/usb` in the disk's device path = USB, `mmcblk*` with `device/type` SD = microSD card, `removable` = 1 = USB; everything else is internal and is not offered. Only the home drive, microSD and USB drives appear.
+18. **One app window, owned by run.sh.** `run.sh` decides which browser is available first, then runs exactly one window as its child and waits; it never tries the next browser because a window exited non-zero (a closed Firefox does). Firefox runs with `--no-remote` and a profile inside its Flatpak folder (`~/.var/app/org.mozilla.firefox/frameload-profile`); `flatpak run --die-with-parent`; a lock file keeps a second window from opening.
+19. **Steam artwork pipeline.** At install the APK's launcher icon is extracted (`artwork.extract_apk_icon`), downloaded pictures are kept, and missing slots get a plain placeholder; `artwork.json` records each slot's source. The dashboard (`composeArtwork` in app.js) draws placeholders on a canvas and POSTs them to `/api/installed/artwork/<pkg>`; the server writes them and calls `shortcuts.refresh_grid_artwork()`, which uses the appid stored in each user's shortcut. Never compute grid file names from the title.
+20. **Play history** is written by launch.sh (`.last_played` at start, a `start end` line in `.playtime` at exit). `installed.play_stats()` reads it; games from before layout 6 fall back to their launch.log's time.
+21. **Freeze guard.** Running games are found through `/proc/locks` (the flock launch.sh holds on `.launch.lock`); reading it takes no lock, so it can never make a launch think its game is already starting. Do not probe that lock with flock. Memory is limited with `podman update --memory` (RAM minus 2.5 GB) a few seconds into a session; the watchdog stops games on PSI `full avg10` >= 20 % for 3 samples or < 3 % RAM available with swap full.
 9. **Camera hand tracking does not exist on the Frame yet.** It needs a tracker inside SteamVR; nothing in this repo can provide it. Do not add UI or files that claim otherwise.
 
 ---

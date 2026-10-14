@@ -51,11 +51,6 @@
 body {
   font-family: var(--font-family);
   background-color: var(--bg-primary);
-  background-image: 
-    radial-gradient(circle at 15% 10%, rgba(0, 242, 254, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 80%, rgba(157, 78, 221, 0.08) 0%, transparent 45%),
-    linear-gradient(180deg, #090e1a 0%, #060913 100%);
-  background-attachment: fixed;
   color: var(--text-main);
   min-height: 100vh;
   display: flex;
@@ -63,6 +58,20 @@ body {
   overflow-x: hidden;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/* The glow behind everything sits on its own fixed layer: a fixed body background is repainted
+   on every scrolled frame, which the headset's browser felt on long pages. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 15% 10%, rgba(0, 242, 254, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, rgba(157, 78, 221, 0.08) 0%, transparent 45%),
+    linear-gradient(180deg, #090e1a 0%, #060913 100%);
 }
 
 /* Scrollbars */
@@ -2412,8 +2421,9 @@ input[type="checkbox"]:not(.toggle-switch input) {
   cursor: default;
 }
 .scroll-rail button svg { pointer-events: none; }
-/* Room for the arrows, so they never cover the last column of cards */
-body:has(.scroll-rail.visible:not(.in-dialog)) .main-content { padding-right: 96px; }
+/* Room for the arrows, so they never cover the last column of cards. It follows the page, not
+   the arrows, so opening a dialog does not reflow the grid behind it. */
+body.page-scrolls .main-content { padding-right: 96px; }
 
 /* Empty lists explain what to do next */
 .empty-state {
@@ -2729,4 +2739,395 @@ body:has(.scroll-rail.visible:not(.in-dialog)) .main-content { padding-right: 96
 
 @media (prefers-reduced-motion: reduce) {
   .job-bar-fill::after, .job-icon.running, .job-steps li.active .job-step-mark { animation-duration: 3s; }
+}
+
+/* Install location dialog */
+.drive-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.drive-choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 16px;
+  text-align: left;
+  color: var(--text-main);
+  font: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.drive-choice:hover:not(:disabled) { border-color: rgba(0, 242, 254, 0.45); }
+.drive-choice.selected {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 242, 254, 0.08);
+  box-shadow: 0 0 18px rgba(0, 242, 254, 0.2);
+}
+.drive-choice:disabled { opacity: 0.45; cursor: not-allowed; }
+.drive-choice-kind {
+  flex: none;
+  min-width: 72px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--accent-cyan);
+}
+.drive-choice-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.drive-choice-name { font-weight: 700; overflow-wrap: anywhere; }
+.drive-choice-default {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  background: rgba(0, 245, 212, 0.15);
+  color: var(--accent-emerald);
+}
+.drive-choice-bar {
+  display: block;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.drive-choice-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+}
+.drive-choice-free { font-size: 0.82rem; color: var(--text-muted); }
+.drive-default-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* Long grids: cards off screen are neither laid out nor painted. Without this the catalog got
+   slower the more pages were loaded. */
+.games-grid > .game-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 390px;
+}
+.catalog-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.catalog-page {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1700px;
+}
+.catalog-page > .game-card { content-visibility: visible; }
+html { scrollbar-gutter: stable; }
+
+/* Downloads list */
+.download-item-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.download-thumb {
+  flex: none;
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: #111728;
+  border: 1px solid var(--border-subtle);
+}
+.download-body {
+  flex: 1;
+  min-width: 220px;
+}
+.download-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.download-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.download-state {
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+.download-state.downloading, .download-state.decompressing, .download-state.installing {
+  background: rgba(0, 242, 254, 0.14);
+  color: var(--accent-cyan);
+}
+.download-state.completed { background: rgba(0, 245, 212, 0.15); color: var(--accent-emerald); }
+.download-state.error { background: rgba(255, 51, 102, 0.15); color: #ff8fa8; }
+.download-state.paused { background: rgba(255, 183, 3, 0.15); color: var(--accent-amber); }
+.download-detail {
+  margin: 4px 0 10px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.progress-fill.error { background: var(--accent-danger); }
+.download-item-card .download-actions { flex: none; }
+
+/* Library: Recently Played shelf */
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 4px 2px 14px;
+  letter-spacing: 0.3px;
+}
+.library-recent .section-title:last-child { margin-top: 28px; }
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+.recent-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 170px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: var(--transition-smooth);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.recent-card:hover {
+  border-color: rgba(0, 242, 254, 0.45);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), var(--glow-cyan);
+}
+.recent-backdrop {
+  position: absolute;
+  inset: -20px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(22px) saturate(1.3);
+  opacity: 0.45;
+  pointer-events: none;
+}
+.recent-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(8, 12, 22, 0.35), rgba(8, 12, 22, 0.85));
+  pointer-events: none;
+}
+.recent-cover, .recent-info { position: relative; z-index: 1; }
+.recent-cover {
+  flex: none;
+  width: 124px;
+  height: 124px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.recent-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recent-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-meta { font-size: 0.86rem; color: var(--text-muted); }
+.recent-actions { display: flex; margin-top: 6px; }
+.recent-actions .card-btn { flex: none; min-width: 120px; }
+
+/* Performance card and header chip */
+.telemetry-chip.perf-chip {
+  font: inherit;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+  cursor: pointer;
+}
+.perf-body { display: flex; flex-direction: column; gap: 12px; }
+.perf-row { display: flex; flex-direction: column; gap: 5px; }
+.perf-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+.perf-label strong { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.perf-meter {
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.perf-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  transition: width 0.6s ease;
+}
+.perf-meter.mid span { background: linear-gradient(90deg, #f7b733, var(--accent-amber)); }
+.perf-meter.high span { background: linear-gradient(90deg, #ff6b6b, var(--accent-danger)); }
+.sparkline { width: 100%; height: 34px; }
+.sparkline polyline {
+  fill: none;
+  stroke: var(--accent-cyan);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.75;
+}
+.temp-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.temp-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.temp-chip.warm { background: rgba(255, 183, 3, 0.15); color: var(--accent-amber); }
+.temp-chip.hot { background: rgba(255, 51, 102, 0.18); color: #ff8fa8; }
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.check-row > input { margin-top: 1px; }
+.check-row > span { flex: 1 1 auto; min-width: 0; }
+.check-row .select-styled { margin: 6px 0 0 4px; }
+
+/* Store media in an app's page */
+.modal-media { margin-bottom: 16px; }
+.media-strip {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+}
+.media-tile {
+  position: relative;
+  flex: none;
+  height: 200px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #0b1120;
+  cursor: zoom-in;
+  scroll-snap-align: start;
+}
+.media-tile img { height: 100%; width: auto; display: block; }
+.media-tile:hover { border-color: rgba(0, 242, 254, 0.5); }
+.media-video { cursor: pointer; width: 356px; }
+.media-video img { width: 100%; height: 100%; object-fit: cover; }
+.media-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85);
+}
+.media-play::after {
+  content: "";
+  position: absolute;
+  left: 29px;
+  top: 22px;
+  border-style: solid;
+  border-width: 14px 0 14px 22px;
+  border-color: transparent transparent transparent #fff;
+}
+.media-frame {
+  flex: none;
+  width: 356px;
+  height: 200px;
+  border: 0;
+  border-radius: var(--radius-md);
+}
+.media-viewer {
+  z-index: 260;
+  flex-direction: column;
+}
+.media-viewer img {
+  max-width: calc(100vw - 200px);
+  max-height: calc(100vh - 120px);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+}
+.media-viewer .modal-close { position: fixed; top: 24px; right: 24px; }
+.media-nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(10, 15, 29, 0.85);
+  color: #fff;
+  font-size: 2.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.media-nav.prev { left: 28px; }
+.media-nav.next { right: 28px; }
+.media-count {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Closed dialogs are not rendered at all. Each is a full-screen blur, and fifteen invisible ones
+   (opacity 0, spinners still turning) cost the browser work on every scrolled frame. */
+.modal-backdrop {
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+}
+.modal-backdrop.open {
+  visibility: visible;
+  transition: opacity 0.25s ease, visibility 0s;
 }

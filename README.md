@@ -67,12 +67,13 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - PCVR Games: Compatibility with Proton ARM64, Revive, and WineOpenXR.
 - **🎨 Steam Library Integration:**
   - Pure Python binary `shortcuts.vdf` parser & serializer with automatic backups.
-  - Artwork for every slot Steam shows (portrait `600x900`, banner `460x215`, hero `1920x620`, icon): a real cover or the app's icon where one exists, a generated image in the app's colour otherwise.
+  - Artwork for every slot Steam shows: portrait `600x900`, banner `920x430`, hero `1920x620`, logo and icon. FrameLoad takes the app's own launcher icon from its APK (the sharpest version; for an adaptive icon its foreground), uses a downloaded cover where there is one, and the dashboard draws the rest from icon, cover and title. Grid files are written under the id Steam actually has for the shortcut.
   - **Honest about Steam's limits:** Steam only loads new shortcuts when it starts. FrameLoad tells you which games are waiting, starts them itself in the meantime, and offers a safe one-press Steam restart (stop Steam, write the shortcuts, start it again).
 - **💾 Saves, Logs & Game Management:**
   - Save backup and restore covering both places a Lepton app keeps data (its private storage and shared storage), including files owned by the container.
   - **Launch log with a diagnosis:** each game's last start, with the usual failures explained in plain words (no launcher activity, podman keyring quota, rejected APK, OpenXR 1.1, missing card).
   - Per-game settings editor (hand input, resolution scale, refresh rate, foveated rendering).
+  - **Recently Played** row at the top of the library, with when you last played and for how long (recorded by each game's launcher, also for games started from Steam), and sorting by recently played, name, install date or size.
   - Clean uninstaller: stops the container, removes the game's files and its Steam shortcut.
 - **🎵 Mod & Custom Content Injector:**
   - **Beat Saber Custom Songs:** Drop any custom song `.zip` directly from the Web UI or CLI; FrameLoad extracts it into `CustomSongs/`, repairs container permissions (`0777`), and makes it immediately available in game.
@@ -81,15 +82,16 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - Browse, search and filter by category the free and open-source Android apps from F-Droid that Lepton can run (64-bit ARM, Android API 34 or lower).
   - Offers F-Droid's suggested release, verifies every download against the catalog's SHA-256 before installing, and marks installed apps and available updates.
   - Apps open as a flat window in the headset with Android's navigation bar hidden.
+  - An app's page shows its screenshots (tap one to see it large) and its trailer, from the app's own F-Droid metadata.
 - **🪟 Windows & 🐧 Linux Apps (experimental):**
   - Sideload a Windows `.exe` or a Linux `.AppImage` / ELF binary; FrameLoad writes a launcher and a Steam shortcut.
   - These launchers are not yet verified on a Steam Frame. PC VR titles in particular need FramePort's OpenXR layer; use FramePort for those.
 - **🔗 Install Links (`frameload://`):**
   - `frameload://install?url=https://…/app.apk&title=<title>`, `frameload://sideload?path=<file>&title=<title>`, `frameload://launch?package=<package>`.
   - A link never installs by itself: FrameLoad shows what it is and where it comes from, and waits for you to confirm in the dashboard.
-- **💾 Full MicroSD Card & Multi-Drive Storage:**
-  - **Native MicroSD Detection:** Automatically discovers MicroSD cards mounted by SteamOS, external USB drives, and custom storage paths. Cards formatted as FAT, exFAT or NTFS are shown but refused for games: Lepton data needs a Linux filesystem.
-  - **Selectable Install Location:** Install catalog downloads or sideloaded apps directly to Internal SSD or MicroSD Card.
+- **💾 microSD Card & USB Drive Storage:**
+  - **Only real drives:** the internal storage, a microSD card in the slot and USB drives on the USB-C port. The Frame's own system partitions are not offered (FrameLoad asks the kernel which bus a disk is on, not what it is called). Cards formatted as FAT, exFAT or NTFS are shown but refused for games: Lepton data needs a Linux filesystem.
+  - **Asked like Steam asks:** with more than one drive that can hold games, installing asks where to put the game, shows free space, and can remember the choice as the default. Updates stay on the drive the game is on.
   - **1-Click Game Migration:** Move installed games between Internal Storage and MicroSD Card. The copy is checked before the original is removed, nothing at the destination is overwritten, and the launcher, settings and Steam shortcut follow the game.
   - **Multi-Drive Library Scanning:** Browse all installed games across all connected drives with clear MicroSD badges.
 - **📦 Universal Package & Multi-Format Sideloading:**
@@ -103,6 +105,12 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
   - Multi-selection checkboxes with floating batch action bar and space reclaimed calculation.
   - Safe batch uninstallation with automatic save game archiving.
   - 1-click download cache cleanup and Lepton shader cache reset.
+- **🧊 Freeze Guard:**
+  - A game that uses up the headset's memory makes everything stop, even the Steam button. FrameLoad limits each game's memory so SteamVR keeps 2.5 GB, watches memory pressure while a game runs, and ends the game before the headset locks up. You get a notice saying which game it was.
+  - A game that stops drawing frames is reported; stopping it automatically is a switch (off by default, because taking the headset off pauses games too).
+- **🔋 Keep Awake & Performance:**
+  - The headset is kept awake while FrameLoad downloads, installs or ports (SteamOS's sleep inhibitor), and on request for an hour or until switched off.
+  - CPU and memory use in the header; System → Performance shows CPU, memory, swap, GPU clock and temperatures live.
 - **⚡ In-Headset Updates:**
   - Checks GitHub Releases a few times a day and shows a badge and banner when a new version is out.
   - **Verified updates:** the update package is checked against the release's `SHA256SUMS` before anything is replaced; a mismatch changes nothing.
@@ -186,7 +194,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.4}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.5}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 
@@ -396,6 +404,10 @@ The dashboard answers under an IP address, `localhost` and the headset's own nam
 
 Steam reads its shortcut list only when it starts. After an install, FrameLoad shows which games are waiting. You can start them right away with **Launch** in FrameLoad's library, or press **Restart Steam Now**, which closes FrameLoad's window and any running game, rewrites the shortcuts while Steam is stopped, and starts Steam again.
 
+### When a game freezes
+
+If a game uses up the memory, the headset stops responding entirely. With the **Freeze Guard** on (System tab, on by default), FrameLoad ends the game before that happens and tells you. A game that keeps running but stops drawing is reported after 90 seconds; press **Stop**, or switch on "Also stop games that show no new frame" to have FrameLoad do it. Both only cover games started through FrameLoad's launcher (from FrameLoad or from Steam).
+
 ### Stopping a game
 
 A running game has a **Stop** button on its card and page, and a red **Stop** chip in FrameLoad's header. Use it for any game FrameLoad started itself: Steam only offers "exit" for games it started. From a terminal: `frameload stop` (all running games) or `frameload stop <package>`.
@@ -414,7 +426,7 @@ Open the game in the library and press **Launch Log**. FrameLoad reads the log o
 
 | Directory | Purpose |
 |---|---|
-| `~/Applications/quest-frame/<pkg>/` | Game container anchor, `launch.sh`, `deployment.json`, and artwork |
+| `~/Applications/quest-frame/<pkg>/` | Game container anchor, `launch.sh`, `deployment.json`, artwork, and `.last_played` / `.playtime` (play history) |
 | `~/Applications/quest-frame/<pkg>/lepton-app/` | `game.apk` and `obb/` files |
 | `~/Applications/quest-frame/<pkg>/lepton-data/` | Container storage: `internal/<pkg>` (the app's private data, most saves) and `external/` (shared storage, `Android/data/<pkg>/files/`) |
 | `~/.local/share/frameload/data/` | Mirror catalog metadata (`VRP-GameList.txt`, thumbnails) |

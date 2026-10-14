@@ -247,6 +247,25 @@ def install_grid_artwork(user_id: str, appid: int, artwork_dir: str) -> Dict[str
     return installed
 
 
+def refresh_grid_artwork(launch_script_path: str, artwork_dir: str) -> Dict[str, Dict[str, str]]:
+    """Copies a game's current artwork into every Steam user's grid folder, under the id its
+    shortcut has. Steam shows changed grid files after a restart at the latest."""
+    exe = f'"{launch_script_path}"'
+    done: Dict[str, Dict[str, str]] = {}
+    for user in get_steam_users():
+        vdf_path = os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf")
+        try:
+            with open(vdf_path, "rb") as f:
+                root = vdf_decode(f.read())
+        except (OSError, ValueError):
+            continue
+        for entry in (root.get("shortcuts") or {}).values():
+            if isinstance(entry, dict) and entry.get("Exe") == exe and entry.get("appid"):
+                done[user] = install_grid_artwork(user, int(entry["appid"]) & 0xFFFFFFFF, artwork_dir)
+                break
+    return done
+
+
 def register_game_in_steam(
     title: str,
     launch_script_path: str,
@@ -267,7 +286,9 @@ def register_game_in_steam(
 
     for user in users:
         vdf_path = os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf")
-        upsert_shortcut(
+        # Steam names grid files after the id stored in the shortcut, which keeps the value it got
+        # when the shortcut was first made (an older title gave another id).
+        user_appid = upsert_shortcut(
             vdf_path=vdf_path,
             exe=exe,
             title=title,
@@ -277,10 +298,11 @@ def register_game_in_steam(
             openvr=is_vr,
             launch_options=launch_options
         )
+        user_appid = int(user_appid or appid) & 0xFFFFFFFF
         art = {}
         if artwork_dir and os.path.isdir(artwork_dir):
-            art = install_grid_artwork(user, appid, artwork_dir)
-        results[user] = {"appid": appid, "artwork": art}
+            art = install_grid_artwork(user, user_appid, artwork_dir)
+        results[user] = {"appid": user_appid, "artwork": art}
 
     from . import steam_session
     steam_session.note_written(launch_script_path, title)

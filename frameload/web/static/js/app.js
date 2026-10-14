@@ -258,7 +258,8 @@ function setupTabs() {
       if (targetId === "catalog") loadCatalog();
       else if (targetId === "library") { loadInstalled(); loadSteamStatus(); }
       else if (targetId === "storage") loadStorageOverview();
-      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); }
+      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); }
+      if (targetId === "system") startPerfLive(); else stopPerfLive();
 
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
     });
@@ -422,7 +423,7 @@ function buildGameCardHTML(game, installedPkgs) {
   return `
     <div class="game-card${isFlat ? " app-card" : ""}" data-id="${escapeHtml(game.id)}" draggable="false" onclick="openGameModal(${jsArg(game.id)}, 'catalog')">
       <div class="card-poster">
-        <img src="${escapeHtml(thumbUrl)}" alt="" draggable="false" loading="lazy" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <img src="${escapeHtml(thumbUrl)}" alt="" draggable="false" loading="lazy" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
         <div class="badge-overlay">
           <span class="badge ${isFlat ? "flat" : "vr"}">${isFlat ? "2D" : "VR"}</span>
           ${isInstalled ? '<span class="badge installed">Installed</span>' : ""}
@@ -480,15 +481,14 @@ async function loadCatalog(page = 1, append = false) {
     if (append) {
       state.catalog.items = state.catalog.items.concat(newItems);
       if (newItems.length > 0) {
-        const cardsHtml = newItems.map(game => buildGameCardHTML(game, installedPkgs)).join("");
-        container.insertAdjacentHTML("beforeend", cardsHtml);
+        container.insertAdjacentHTML("beforeend", catalogPageHTML(newItems, installedPkgs));
       }
     } else {
       state.catalog.items = newItems;
       if (newItems.length === 0) {
         container.innerHTML = `<div class="empty-state">${catalogEmptyMessage(data)}</div>`;
       } else {
-        container.innerHTML = newItems.map(game => buildGameCardHTML(game, installedPkgs)).join("");
+        container.innerHTML = catalogPageHTML(newItems, installedPkgs);
       }
     }
 
@@ -523,6 +523,12 @@ async function loadMoreCatalog() {
 
   const nextPage = (state.catalog.page || 1) + 1;
   await loadCatalog(nextPage, true);
+  // The observer only reports changes: when a short page leaves the end of the list in view, keep going.
+  requestAnimationFrame(() => {
+    const sentinel = document.getElementById("catalog-sentinel");
+    if (sentinel && state.activeTab === "catalog" && state.catalog.hasMore
+        && sentinel.getBoundingClientRect().top < window.innerHeight + 350) loadMoreCatalog();
+  });
 }
 
 function initCatalogInfiniteScroll() {
@@ -538,18 +544,20 @@ function initCatalogInfiniteScroll() {
       });
     }, { rootMargin: "350px 0px" });
     observer.observe(sentinel);
+  } else {
+    // Without IntersectionObserver: check once per frame at most (reading the page height on every
+    // scroll event forces a layout of the whole grid).
+    let queued = false;
+    window.addEventListener("scroll", () => {
+      if (queued || state.activeTab !== "catalog") return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        const doc = document.documentElement;
+        if (doc.scrollHeight - (window.scrollY + window.innerHeight) < 450) loadMoreCatalog();
+      });
+    }, { passive: true });
   }
-
-  // Smooth scroll fallback
-  window.addEventListener("scroll", () => {
-    if (state.activeTab !== "catalog") return;
-    const scrollY = window.scrollY || window.pageYOffset;
-    const windowHeight = window.innerHeight;
-    const docHeight = document.documentElement.scrollHeight;
-    if (docHeight - (scrollY + windowHeight) < 450) {
-      loadMoreCatalog();
-    }
-  }, { passive: true });
 }
 
 function renderCatalogGrid() {
@@ -560,8 +568,19 @@ function renderCatalogGrid() {
     return;
   }
   const installedPkgs = new Set((state.installed || []).map(g => g.package));
-  container.innerHTML = state.catalog.items.map(game => buildGameCardHTML(game, installedPkgs)).join("");
+  const pages = [];
+  for (let i = 0; i < state.catalog.items.length; i += 40) {
+    pages.push(catalogPageHTML(state.catalog.items.slice(i, i + 40), installedPkgs));
+  }
+  container.innerHTML = pages.join("");
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+// Each loaded page is a small grid of its own. Pages off screen are skipped whole by the browser
+// (content-visibility), so scrolling stays smooth however many pages are loaded; one big grid of
+// thousands of cards was laid out again as cards came into view.
+function catalogPageHTML(items, installedPkgs) {
+  return `<div class="catalog-page games-grid">${items.map(game => buildGameCardHTML(game, installedPkgs)).join("")}</div>`;
 }
 
 async function syncCatalog() {
@@ -588,12 +607,21 @@ async function syncCatalog() {
 
 // --- Download Queue Controls ---
 async function queueDownload(gameId) {
+  const game = (state.catalog.items || []).find(g => g.id === gameId)
+    || (state.selectedGame && state.selectedGame.id === gameId ? state.selectedGame : null);
+  // An update goes where the game already is; a new game goes where the player says.
+  const installed = game && (state.installed || []).find(g => g.package === game.package_name);
+  let deviceId = installed ? (installed.device_id || "internal") : undefined;
+  if (!installed) {
+    deviceId = await chooseInstallDrive(game ? game.name : "this game", game ? game.size_bytes : 0);
+    if (deviceId === null) return;  // cancelled
+  }
   showToast("Adding game to download queue...", "info");
   try {
     const res = await fetch("/api/downloads/queue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game_id: gameId })
+      body: JSON.stringify(deviceId ? { game_id: gameId, device_id: deviceId } : { game_id: gameId })
     });
     const data = await res.json();
     if (data.success) {
@@ -771,83 +799,134 @@ function renderDownloadsDrawer() {
   }
 }
 
+function formatDuration(seconds) {
+  const sec = Math.max(0, Math.round(Number(seconds) || 0));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, "0")}s`;
+  return `${Math.floor(sec / 3600)}h ${String(Math.floor((sec % 3600) / 60)).padStart(2, "0")}m`;
+}
+
+function downloadState(t) {
+  const percent = t.status === "completed" ? 100 : Math.max(0, Math.min(100, Number(t.progress_percent) || 0));
+  switch (t.status) {
+    case "downloading":
+      return { label: "Downloading", fill: "", percent,
+        detail: `${t.downloaded_formatted} of ${t.total_formatted} · ${t.speed_formatted}${t.eta_seconds ? ` · ${formatDuration(t.eta_seconds)} left` : ""}` };
+    case "decompressing":
+      return { label: "Unpacking", fill: "extracting", percent, detail: t.status_detail || `${percent}%` };
+    case "installing":
+      return { label: "Installing", fill: "installing", percent, detail: t.status_detail || "Setting up the game" };
+    case "completed":
+      return { label: "Installed", fill: "completed", percent, detail: "Ready to play" };
+    case "paused":
+      return { label: "Paused", fill: "", percent, detail: `${t.downloaded_formatted} of ${t.total_formatted}` };
+    case "error":
+      return { label: "Failed", fill: "error", percent, detail: t.error_message || "The download failed" };
+    case "queued":
+      return { label: "Waiting", fill: "", percent, detail: "Starts when the current download is done" };
+    default:
+      return { label: t.status ? t.status.charAt(0).toUpperCase() + t.status.slice(1) : "", fill: "", percent, detail: t.status_detail || "" };
+  }
+}
+
+function downloadActions(t) {
+  const id = jsArg(t.id);
+  if (t.status === "downloading") {
+    return `<button class="btn-secondary compact" onclick="pauseDownload(${id})">Pause</button>
+            <button class="btn-secondary compact" onclick="cancelDownload(${id})">Cancel</button>`;
+  }
+  if (t.status === "paused") {
+    return `<button class="btn-primary compact" onclick="resumeDownload(${id})">Resume</button>
+            <button class="btn-secondary compact" onclick="cancelDownload(${id})">Cancel</button>`;
+  }
+  if (t.status === "completed") {
+    const pkg = (t.game && t.game.package_name) || "";
+    return `${pkg ? `<button class="btn-primary compact" onclick="launchGame(${jsArg(pkg)})">Play</button>` : ""}
+            <button class="btn-secondary compact" onclick="removeDownload(${id})">Dismiss</button>`;
+  }
+  if (t.status === "error") {
+    return `<button class="btn-primary compact" onclick="resumeDownload(${id})">Retry</button>
+            <button class="btn-secondary compact" onclick="removeDownload(${id})">Dismiss</button>`;
+  }
+  return `<button class="btn-secondary compact" onclick="cancelDownload(${id})">Cancel</button>`;
+}
+
+// Cards are updated in place: rebuilding the list on every poll (1.2 s) reloaded each cover and
+// could swallow a click that landed while the button was being replaced.
 function renderDownloadsTab() {
   const container = document.getElementById("downloads-list");
   if (!container) return;
 
   if (state.downloads.length === 0) {
-    container.innerHTML = `<div class="empty-state">No downloads active or queued.</div>`;
+    if (container.dataset.empty !== "1") {
+      container.dataset.empty = "1";
+      container.innerHTML = `
+        <div class="empty-state">
+          <h3>Nothing is downloading</h3>
+          <p>Games and apps you install from Browse show their progress here.</p>
+          <div class="empty-actions"><button class="btn-primary" onclick="goToTab('catalog')">Browse Apps</button></div>
+        </div>`;
+      if (window.gamepadNav) window.gamepadNav.updateFocusables();
+    }
     return;
   }
+  if (container.dataset.empty === "1") {
+    container.innerHTML = "";
+    delete container.dataset.empty;
+  }
 
-  container.innerHTML = state.downloads.map(t => {
-    let statusText = t.status.toUpperCase();
-    let fillClass = "";
-
-    if (t.status === "decompressing") {
-      statusText = `EXTRACTING (${t.status_detail || (t.progress_percent + '%')})`;
-      fillClass = "extracting";
-    } else if (t.status === "installing") {
-      statusText = `INSTALLING (${t.status_detail || 'Configuring container...'})`;
-      fillClass = "installing";
-    } else if (t.status === "completed") {
-      statusText = `INSTALLED &amp; READY TO PLAY`;
-      fillClass = "completed";
-    } else if (t.status === "paused") {
-      statusText = `PAUSED • ${t.downloaded_formatted} / ${t.total_formatted}`;
-    } else if (t.status === "error") {
-      statusText = `ERROR: ${t.error_message || 'Download failed'}`;
-    } else if (t.status === "downloading") {
-      statusText = `DOWNLOADING • ${t.speed_formatted} • ${t.downloaded_formatted} / ${t.total_formatted} • ETA: ${t.eta_seconds}s`;
+  let changed = false;
+  const keep = new Set();
+  state.downloads.forEach((t, index) => {
+    keep.add(t.id);
+    let card = Array.from(container.children).find(c => c.dataset.id === t.id);
+    if (!card) {
+      const pkg = (t.game && t.game.package_name) || "";
+      const thumb = (t.game && t.game.thumbnail_url) || (pkg ? `/api/thumbnail/${encodeURIComponent(pkg)}` : "");
+      card = document.createElement("div");
+      card.className = "download-item-card";
+      card.dataset.id = t.id;
+      card.innerHTML = `
+        <img class="download-thumb" src="${escapeHtml(thumb || "/static/assets/fallback_cover.svg")}" alt="" draggable="false"
+             onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <div class="download-body">
+          <div class="download-head">
+            <h3 class="download-title"></h3>
+            <span class="download-state"></span>
+          </div>
+          <p class="download-detail"></p>
+          <div class="progress-track"><div class="progress-fill"></div></div>
+        </div>
+        <div class="download-actions"></div>`;
+      changed = true;
     }
-
-    let actionsHtml = "";
-    if (t.status === "downloading") {
-      actionsHtml = `
-        <button class="btn-secondary" onclick="pauseDownload('${t.id}')">⏸ Pause</button>
-        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">✖ Cancel</button>
-      `;
-    } else if (t.status === "paused") {
-      actionsHtml = `
-        <button class="btn-primary" onclick="resumeDownload('${t.id}')">▶ Resume</button>
-        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">✖ Cancel</button>
-      `;
-    } else if (t.status === "completed") {
-      const launchPkg = t.game.package_name || (t.game.to_dict && t.game.to_dict().package_name) || "";
-      actionsHtml = `
-        <button class="btn-primary" onclick="launchGame('${launchPkg}')">🚀 Play Now</button>
-        <button class="btn-secondary" onclick="removeDownload('${t.id}')">✖ Dismiss</button>
-      `;
-    } else if (t.status === "error") {
-      actionsHtml = `
-        <button class="btn-primary" onclick="resumeDownload('${t.id}')">🔄 Retry</button>
-        <button class="btn-secondary" onclick="removeDownload('${t.id}')">✖ Dismiss</button>
-      `;
-    } else {
-      actionsHtml = `
-        <button class="btn-secondary" onclick="cancelDownload('${t.id}')">✖ Cancel</button>
-      `;
+    if (container.children[index] !== card) {
+      container.insertBefore(card, container.children[index] || null);
     }
-
-    return `
-      <div class="download-item-card" data-id="${t.id}">
-        <div class="download-info">
-          <h3>${escapeHtml(t.game.name)}</h3>
-          <p>${statusText}</p>
-        </div>
-        <div class="progress-track" style="margin: 12px 0;">
-          <div class="progress-fill ${fillClass}" style="width: ${t.status === 'completed' ? 100 : t.progress_percent}%;"></div>
-        </div>
-        <div class="download-actions">
-          ${actionsHtml}
-        </div>
-      </div>
-    `;
-  }).join("");
+    const st = downloadState(t);
+    card.querySelector(".download-title").textContent = (t.game && t.game.name) || t.id;
+    const badge = card.querySelector(".download-state");
+    badge.textContent = st.label;
+    badge.className = `download-state ${t.status}`;
+    card.querySelector(".download-detail").textContent = st.detail;
+    const fill = card.querySelector(".progress-fill");
+    fill.className = `progress-fill ${st.fill}`;
+    fill.style.width = `${st.percent}%`;
+    if (card.dataset.status !== t.status) {  // the buttons change only with the state
+      card.dataset.status = t.status;
+      card.querySelector(".download-actions").innerHTML = downloadActions(t);
+      changed = true;
+    }
+  });
+  Array.from(container.children).forEach(card => {
+    if (!keep.has(card.dataset.id)) { card.remove(); changed = true; }
+  });
+  if (changed && window.gamepadNav) window.gamepadNav.updateFocusables();
 }
 
 // --- Installed Library API ---
 async function loadInstalled() {
+  setTimeout(() => composePendingArtwork(), 1500);
   const container = document.getElementById("library-grid");
   if (!container) return;
 
@@ -893,6 +972,7 @@ function renderInstalledGrid() {
   }
 
   if (state.installed.length === 0) {
+    renderRecentlyPlayed([]);
     container.innerHTML = `
       <div class="empty-state">
         <h3>Your library is empty</h3>
@@ -912,6 +992,7 @@ function renderInstalledGrid() {
     return words.every(word => text.includes(word));
   });
   if (games.length === 0) {
+    renderRecentlyPlayed([]);
     container.innerHTML = `
       <div class="empty-state">
         <h3>Nothing in your library matches &ldquo;${escapeHtml(state.libraryQuery)}&rdquo;</h3>
@@ -924,21 +1005,22 @@ function renderInstalledGrid() {
     return;
   }
 
+  sortLibrary(games);
+  renderRecentlyPlayed(words.length ? [] : state.installed);
+
   container.innerHTML = games.map(game => {
-    const updateInfo = (state.updates && state.updates.games)
-      ? state.updates.games.find(u => u.package === game.package)
-      : null;
     const pkg = jsArg(game.package);
     const level = (game.compat && game.compat.level) || "";
     const needsAttention = level === "needs_port" || level === "blocked";
+    const updateInfo = libraryUpdateFor(game);
 
     return `
       <div class="game-card" data-package="${escapeHtml(game.package)}" draggable="false" onclick="openGameModal(${pkg}, 'installed')">
         <div class="card-poster">
-          <img src="${escapeHtml(game.thumbnail_url || '/static/assets/fallback_cover.svg')}" alt="" draggable="false" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+          <img src="${escapeHtml(libraryArt(game))}" alt="" draggable="false" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
           <div class="badge-overlay">
             <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
-            ${game.is_external ? '<span class="badge" style="background:#27ae60; color:#fff;" title="Installed on MicroSD Card">MicroSD</span>' : ''}
+            ${game.is_external ? '<span class="badge" style="background:#27ae60; color:#fff;" title="Installed on a microSD card or USB drive">External</span>' : ''}
             ${game.is_running ? '<span class="badge installed" style="background:#00f2fe;">Running</span>' : ''}
             ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
             ${needsAttention ? `<span class="badge compat-${escapeHtml(level)}" title="${escapeHtml(game.compat.label)}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ''}
@@ -947,17 +1029,11 @@ function renderInstalledGrid() {
         <div class="card-body">
           <div class="card-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
           <div class="card-meta">
-            <span>${game.is_external ? '💾 MicroSD' : '💿 Internal'}</span>
-            <span>${escapeHtml(game.engine || "")}</span>
+            <span>${game.is_external ? 'External' : 'Internal'}</span>
+            <span>${escapeHtml(playedLabel(game))}</span>
           </div>
           <div class="card-actions">
-            ${game.is_running
-              ? `<button class="card-btn stop" onclick="event.stopPropagation(); stopGame(${pkg})">Stop</button>`
-              : updateInfo
-              ? `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame(${pkg})">⚡ Update</button>`
-              : level === "needs_port" && game.kind === "quest"
-                ? `<button class="card-btn play" title="Ports the game for the Steam Frame, then starts it" onclick="event.stopPropagation(); ${game.port_failed ? "portGame" : "launchGame"}(${pkg})">${game.port_failed ? "Port Again" : "Port & Play"}</button>`
-                : `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${pkg})">Launch</button>`}
+            ${libraryPrimaryButton(game)}
             <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
           </div>
         </div>
@@ -966,6 +1042,102 @@ function renderInstalledGrid() {
   }).join("");
 
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function libraryUpdateFor(game) {
+  return (state.updates && Array.isArray(state.updates.games))
+    ? state.updates.games.find(u => u.package === game.package) : null;
+}
+
+// The one button a game's card leads with: Stop while it runs, otherwise what starts it.
+function libraryPrimaryButton(game) {
+  const pkg = jsArg(game.package);
+  const level = (game.compat && game.compat.level) || "";
+  if (game.is_running) {
+    return `<button class="card-btn stop" onclick="event.stopPropagation(); stopGame(${pkg})">Stop</button>`;
+  }
+  if (libraryUpdateFor(game)) {
+    return `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame(${pkg})">Update</button>`;
+  }
+  if (level === "needs_port" && game.kind === "quest") {
+    return `<button class="card-btn play" title="Ports the game for the Steam Frame, then starts it" onclick="event.stopPropagation(); ${game.port_failed ? "portGame" : "launchGame"}(${pkg})">${game.port_failed ? "Port Again" : "Port & Play"}</button>`;
+  }
+  return `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${pkg})">Play</button>`;
+}
+
+function timeAgo(epochSeconds) {
+  const seconds = Math.max(0, Date.now() / 1000 - epochSeconds);
+  if (seconds < 90) return "just now";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} minutes ago`;
+  if (seconds < 86400) {
+    const hours = Math.round(seconds / 3600);
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  }
+  const days = Math.floor(seconds / 86400);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(epochSeconds * 1000).toLocaleDateString();
+}
+
+function formatPlaytime(seconds) {
+  const s = Number(seconds) || 0;
+  if (s < 60) return "";
+  if (s < 3600) return `${Math.round(s / 60)} min played`;
+  return `${(s / 3600).toFixed(s < 36000 ? 1 : 0)} h played`;
+}
+
+function playedLabel(game) {
+  if (game.is_running) return "Playing now";
+  return game.last_played ? `Played ${timeAgo(game.last_played)}` : "Not played yet";
+}
+
+state.librarySort = (() => {
+  try { return localStorage.getItem("frameload.librarySort") || "recent"; } catch (e) { return "recent"; }
+})();
+
+function setLibrarySort(value) {
+  state.librarySort = value;
+  try { localStorage.setItem("frameload.librarySort", value); } catch (e) { /* private window */ }
+  renderInstalledGrid();
+}
+window.setLibrarySort = setLibrarySort;
+
+function sortLibrary(games) {
+  const byName = (a, b) => (a.title || a.package).localeCompare(b.title || b.package, undefined, { sensitivity: "base" });
+  const order = {
+    recent: (a, b) => (b.is_running - a.is_running) || ((b.last_played || 0) - (a.last_played || 0)) || byName(a, b),
+    name: byName,
+    installed: (a, b) => ((b.installed_time || 0) - (a.installed_time || 0)) || byName(a, b),
+    size: (a, b) => ((b.apk_size || 0) - (a.apk_size || 0)) || byName(a, b),
+  }[state.librarySort] || byName;
+  const select = document.getElementById("library-sort");
+  if (select && select.value !== state.librarySort) select.value = state.librarySort;
+  return games.sort(order);
+}
+
+// Steam's "Recent games" shelf: the last three games played, with what starts them right there.
+function renderRecentlyPlayed(games) {
+  const section = document.getElementById("library-recent");
+  const grid = document.getElementById("library-recent-grid");
+  if (!section || !grid) return;
+  const recent = games.filter(g => g.last_played || g.is_running)
+    .sort((a, b) => (b.is_running - a.is_running) || (b.last_played - a.last_played))
+    .slice(0, 3);
+  section.style.display = recent.length ? "" : "none";
+  grid.innerHTML = recent.map(game => {
+    const art = escapeHtml(libraryArt(game));
+    const total = formatPlaytime(game.playtime_seconds);
+    return `
+      <div class="recent-card" draggable="false" onclick="openGameModal(${jsArg(game.package)}, 'installed')">
+        <div class="recent-backdrop" style="background-image:url('${art}')"></div>
+        <img class="recent-cover" src="${art}" alt="" draggable="false" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <div class="recent-info">
+          <div class="recent-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
+          <div class="recent-meta">${escapeHtml(playedLabel(game))}${total ? ` · ${escapeHtml(total)}` : ""}</div>
+          <div class="recent-actions">${libraryPrimaryButton(game)}</div>
+        </div>
+      </div>`;
+  }).join("");
 }
 
 async function launchGame(pkg) {
@@ -1095,13 +1267,15 @@ async function loadSystemTelemetry() {
       storageChip.textContent = `💾 ${data.storage.free_gb} GB Free`;
     }
 
+    // The header shows Lepton only when something is wrong with it.
     const lepChip = document.getElementById("header-lepton");
     if (lepChip) {
       const isReady = data.lepton && data.lepton.installed;
-      lepChip.className = `telemetry-chip lepton ${isReady ? 'active' : 'missing'}`;
-      lepChip.textContent = isReady ? 'Lepton Ready' : 'Lepton Not Found';
-      lepChip.title = isReady ? data.lepton.path : "Lepton ships with the Steam Frame. It was not found in any Steam library on this machine.";
+      lepChip.style.display = isReady ? "none" : "";
+      lepChip.textContent = "Lepton Not Found";
+      lepChip.title = "Lepton ships with the Steam Frame. It was not found in any Steam library on this machine.";
     }
+    noteGuardEvent(data.guard_event);
 
     renderSystemTab(data);
   } catch (err) {
@@ -1259,6 +1433,9 @@ function openGameModal(id, mode = "catalog") {
       : (mode === "catalog" ? "N/A" : "Installed");
   }
 
+  const media = document.getElementById("modal-media");
+  if (media) { media.style.display = "none"; media.innerHTML = ""; }
+
   // Release Notes / Instructions section
   const notesSection = document.getElementById("modal-notes-section");
   const notesText = document.getElementById("modal-game-notes");
@@ -1273,7 +1450,9 @@ function openGameModal(id, mode = "catalog") {
       fetch(`/api/catalog/game/${encodeURIComponent(game.id)}`)
         .then(res => res.json())
         .then(data => {
-          if (state.selectedGame !== game || !data.game || !data.game.description) return;
+          if (state.selectedGame !== game || !data.game) return;
+          renderAppMedia(data.game);
+          if (!data.game.description) return;
           // F-Droid descriptions contain simple HTML; show them as plain text.
           const plain = new DOMParser().parseFromString(data.game.description, "text/html").body.textContent || "";
           notesText.textContent = [about, plain.trim()].filter(Boolean).join("\n\n");
@@ -1567,7 +1746,7 @@ function setupSideloadForm() {
             ? "Installed. Getting the porting tools first (one time), then porting it..."
             : "Installed. Porting it for the Steam Frame now...", "info");
         } else if (port.needed && port.reason === "not_set_up") {
-          showToast("Installed. It needs porting before it starts: press Set Up Porting under System & Diagnostics once, and it is ported automatically.", "warning");
+          showToast("Installed. It needs porting before it starts: switch on the automatic tool download under System > Quest Game Porting, or press Set Up Now there.", "warning");
         } else if (level === "needs_port" || level === "blocked") {
           showToast(`Installed, but: ${data.compat.label}. Open it in the library for details.`, "warning");
         } else {
@@ -1844,15 +2023,18 @@ function renderStorageDrives(devices, activeDev) {
   const container = document.getElementById("storage-drives-list");
   if (!container) return;
 
-  // Also populate the Sideload tab's target drive dropdown
+  // Also populate the Install File tab's drive dropdown with the drives that can hold games
   const sideloadSelect = document.getElementById("sideload-target-drive");
   if (sideloadSelect) {
     const currentVal = sideloadSelect.value;
-    sideloadSelect.innerHTML = devices.map(dev => `
-      <option value="${dev.id}" ${dev.id === currentVal ? 'selected' : (dev.is_default ? 'selected' : '')}>
-        ${dev.is_sd_card ? '💾 [MicroSD] ' : '💿 [SSD] '} ${escapeHtml(dev.name)} (${dev.free_formatted} free)
+    const usable = devices.filter(dev => dev.supports_lepton !== false);
+    sideloadSelect.innerHTML = usable.map(dev => `
+      <option value="${escapeHtml(dev.id)}" ${(currentVal ? dev.id === currentVal : dev.is_default) ? 'selected' : ''}>
+        ${escapeHtml(dev.name)} (${escapeHtml(dev.free_formatted)} free)${dev.is_default ? ' - default' : ''}
       </option>
     `).join("");
+    const row = sideloadSelect.closest("div");
+    if (row) row.style.display = usable.length > 1 ? "" : "none";  // one drive: nothing to choose
   }
 
   container.innerHTML = devices.map(dev => {
@@ -3674,3 +3856,591 @@ document.addEventListener("DOMContentLoaded", () => {
   const header = document.querySelector(".app-header");
   if (header && window.ResizeObserver) new ResizeObserver(syncHeaderHeight).observe(header);
 });
+
+// --- Install location: asked like Steam does, but only when there is a real choice ---
+function driveIcon(dev) {
+  return dev.device_type === "microsd" ? "microSD" : dev.device_type === "usb" ? "USB" : "Internal";
+}
+
+// Resolves a drive id, undefined when there is nothing to choose (the server's default applies),
+// or null when the player cancelled.
+async function chooseInstallDrive(title, sizeBytes) {
+  let devices = [];
+  try {
+    devices = (await apiGet("/api/storage/devices")).devices || [];
+  } catch (e) {
+    return undefined;
+  }
+  const need = Number(sizeBytes) || 0;
+  const usable = devices.filter(d => d.supports_lepton !== false && (!need || d.free_bytes > need * 1.1));
+  if (usable.length <= 1) return usable.length ? usable[0].id : undefined;
+
+  const modal = document.getElementById("install-drive-modal");
+  if (!modal) return undefined;
+  const list = document.getElementById("install-drive-list");
+  const makeDefault = document.getElementById("install-drive-default");
+  const ok = document.getElementById("install-drive-ok");
+  const cancel = document.getElementById("install-drive-cancel");
+  document.getElementById("install-drive-title").textContent = `Install ${title}`;
+  document.getElementById("install-drive-size").textContent = need
+    ? `Needs about ${formatBytes(need * 1.1)} including room to unpack.` : "Choose where to install it.";
+  makeDefault.checked = false;
+
+  let chosen = (usable.find(d => d.is_default) || usable[0]).id;
+  list.innerHTML = devices.map(dev => {
+    const unusable = dev.supports_lepton === false ? `Cannot hold games (${escapeHtml(dev.filesystem || "unsupported format")})`
+      : need && dev.free_bytes <= need * 1.1 ? "Not enough free space" : "";
+    const used = Math.min(100, Math.max(0, dev.percent_used || 0));
+    return `
+      <button type="button" class="drive-choice${dev.id === chosen ? " selected" : ""}" role="radio"
+              aria-checked="${dev.id === chosen}" data-drive="${escapeHtml(dev.id)}" ${unusable ? "disabled" : ""}>
+        <span class="drive-choice-kind">${driveIcon(dev)}</span>
+        <span class="drive-choice-main">
+          <span class="drive-choice-name">${escapeHtml(dev.name)}${dev.is_default ? ' <span class="drive-choice-default">Default</span>' : ""}</span>
+          <span class="drive-choice-bar"><span style="width:${used}%"></span></span>
+          <span class="drive-choice-free">${unusable || `${escapeHtml(dev.free_formatted)} free of ${escapeHtml(dev.total_formatted)}`}</span>
+        </span>
+      </button>`;
+  }).join("");
+
+  return new Promise(resolve => {
+    const select = (id) => {
+      chosen = id;
+      list.querySelectorAll(".drive-choice").forEach(b => {
+        const on = b.dataset.drive === id;
+        b.classList.toggle("selected", on);
+        b.setAttribute("aria-checked", on);
+      });
+    };
+    list.onclick = (e) => {
+      const btn = e.target.closest(".drive-choice");
+      if (btn && !btn.disabled) select(btn.dataset.drive);
+    };
+    const finish = async (answer) => {
+      modal.classList.remove("open");
+      list.onclick = ok.onclick = cancel.onclick = modal.onclick = null;
+      if (window.gamepadNav) window.gamepadNav.updateFocusables();
+      if (answer && makeDefault.checked) {
+        try { await apiPost("/api/storage/default", { device_id: answer }); } catch (e) { /* still installs */ }
+      }
+      resolve(answer);
+    };
+    ok.onclick = () => finish(chosen);
+    cancel.onclick = () => finish(null);
+    modal.onclick = (e) => { if (e.target === modal) finish(null); };
+    modal.classList.add("open");
+    if (window.gamepadNav) window.gamepadNav.updateFocusables();
+    ok.focus({ preventScroll: true });
+  });
+}
+window.chooseInstallDrive = chooseInstallDrive;
+
+function formatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Number(bytes) || 0;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+  return `${value.toFixed(value >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// === Performance: CPU, memory, temperatures ===
+state.perf = { history: [], timer: null, chipTimer: null };
+
+function gb(bytes) {
+  return (bytes / 1024 ** 3).toFixed(bytes >= 10 * 1024 ** 3 ? 0 : 1);
+}
+
+function sparkline(values, max = 100) {
+  if (values.length < 2) return "";
+  const w = 240, h = 40;
+  const points = values.map((v, i) => `${(i / (values.length - 1) * w).toFixed(1)},${(h - Math.min(1, v / max) * (h - 2) - 1).toFixed(1)}`).join(" ");
+  return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}"></polyline></svg>`;
+}
+
+function meter(label, percent, text, history) {
+  const p = Math.max(0, Math.min(100, percent || 0));
+  const level = p >= 90 ? "high" : p >= 70 ? "mid" : "";
+  return `
+    <div class="perf-row">
+      <div class="perf-label"><span>${label}</span><strong>${escapeHtml(text)}</strong></div>
+      <div class="perf-meter ${level}"><span style="width:${p}%"></span></div>
+      ${history ? sparkline(history) : ""}
+    </div>`;
+}
+
+function renderPerf(snap) {
+  const chip = document.getElementById("header-perf");
+  const mem = snap.memory;
+  const hasData = snap.cpu_percent !== null && snap.cpu_percent !== undefined && mem;
+  if (chip) {
+    chip.style.display = hasData ? "" : "none";
+    if (hasData) chip.textContent = `CPU ${Math.round(snap.cpu_percent)}% · RAM ${gb(mem.used)}/${gb(mem.total)} GB`;
+  }
+  const body = document.getElementById("perf-body");
+  if (!body) return;
+  if (!hasData) {
+    body.innerHTML = `<p class="tuning-micro-note">This system does not report CPU and memory use.</p>`;
+    return;
+  }
+  const memPct = mem.used / mem.total * 100;
+  state.perf.history.push({ cpu: snap.cpu_percent, mem: memPct });
+  state.perf.history = state.perf.history.slice(-60);
+  const rows = [
+    meter("CPU", snap.cpu_percent, `${Math.round(snap.cpu_percent)}% of ${snap.cores} cores`, state.perf.history.map(h => h.cpu)),
+    meter("Memory", memPct, `${gb(mem.used)} of ${gb(mem.total)} GB`, state.perf.history.map(h => h.mem)),
+  ];
+  if (mem.swap_total) rows.push(meter("Swap", mem.swap_used / mem.swap_total * 100, `${gb(mem.swap_used)} of ${gb(mem.swap_total)} GB`));
+  if (snap.gpu && snap.gpu.mhz) {
+    rows.push(snap.gpu.busy !== undefined
+      ? meter("GPU", snap.gpu.busy, `${snap.gpu.busy}% at ${snap.gpu.mhz} MHz`)
+      : meter("GPU clock", snap.gpu.max_mhz ? snap.gpu.mhz / snap.gpu.max_mhz * 100 : 0, `${snap.gpu.mhz} of ${snap.gpu.max_mhz} MHz`));
+  }
+  const temps = snap.temps || {};
+  const names = { cpu: "CPU", gpu: "GPU", memory: "Memory", battery: "Battery" };
+  const chips = Object.keys(names).filter(k => temps[k] !== undefined)
+    .map(k => `<span class="temp-chip ${temps[k] >= 85 ? "hot" : temps[k] >= 70 ? "warm" : ""}">${names[k]} ${Math.round(temps[k])}°C</span>`).join("");
+  const pressure = snap.pressure && snap.pressure.some !== undefined
+    ? `<p class="tuning-micro-note">Waiting for memory: ${snap.pressure.some.toFixed(1)}% of the last 10 s${snap.pressure.full >= 5 ? " (the headset is short of memory)" : ""}.</p>` : "";
+  body.innerHTML = rows.join("") + (chips ? `<div class="temp-row">${chips}</div>` : "") + pressure;
+}
+
+async function loadPerf() {
+  try {
+    renderPerf(await apiGet("/api/system/perf"));
+  } catch (e) { /* next round */ }
+}
+
+function startPerfLive() {
+  clearInterval(state.perf.timer);
+  loadPerf();
+  state.perf.timer = setInterval(loadPerf, 2000);
+}
+
+function stopPerfLive() {
+  clearInterval(state.perf.timer);
+  state.perf.timer = null;
+}
+
+function openPerformanceCard() {
+  goToTab("system");
+  setTimeout(() => {
+    const card = document.getElementById("perf-card");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 120);
+}
+window.openPerformanceCard = openPerformanceCard;
+
+// === Freeze guard ===
+state.guard = { seen: null };
+
+function noteGuardEvent(event) {
+  if (!event) return;
+  if (state.guard.seen === null) {
+    state.guard.seen = event.id;
+    // Something happened while the dashboard was closed: still worth knowing for a while.
+    if (Date.now() / 1000 - event.time > 600) return;
+  } else if (event.id <= state.guard.seen) {
+    return;
+  }
+  state.guard.seen = event.id;
+  showToast(`${event.title || event.package} ${event.message}`, event.kind === "memory" ? "error" : "warning");
+  refreshRunningGames();
+}
+
+async function loadGuard() {
+  const badge = document.getElementById("guard-badge");
+  if (!badge) return;
+  try {
+    const st = await apiGet("/api/guard");
+    const cfg = st.settings;
+    document.getElementById("guard-enabled").checked = cfg.enabled;
+    document.getElementById("guard-limit").checked = cfg.memory_limit;
+    document.getElementById("guard-frozen").checked = cfg.stop_frozen;
+    document.getElementById("guard-frozen-seconds").value = String(cfg.frozen_seconds);
+    badge.textContent = !cfg.enabled ? "Off" : st.running ? "Watching" : "Not on this system";
+    badge.style.color = cfg.enabled && st.running ? "var(--accent-emerald)" : "var(--text-muted)";
+    const games = document.getElementById("guard-games");
+    games.innerHTML = (st.games || []).map(g => {
+      const frames = g.fps ? `${Math.round(g.fps)} fps${g.frame_age !== null && g.frame_age > 15 ? `, last frame ${g.frame_age} s ago` : ""}` : "no frames yet";
+      const limit = g.memory_limit === "applied" ? "memory limited" : g.memory_limit ? `limit not set: ${g.memory_limit}` : "";
+      return `<div class="doctor-row"><span class="doctor-state ok">RUN</span><span><strong>${escapeHtml(g.title)}</strong> · ${escapeHtml(frames)}${limit ? ` · ${escapeHtml(limit)}` : ""}</span></div>`;
+    }).join("");
+    const events = document.getElementById("guard-events");
+    events.innerHTML = (st.events || []).slice().reverse().slice(0, 4).map(e =>
+      `<div class="log-finding ${e.kind === "memory" ? "error" : "warn"}"><strong>${escapeHtml(e.title || e.package)} · ${escapeHtml(timeAgo(e.time))}</strong><span>${escapeHtml(e.message)}</span></div>`).join("");
+  } catch (e) {
+    badge.textContent = "Unavailable";
+  }
+}
+
+async function saveGuardSettings() {
+  try {
+    await apiPost("/api/guard/settings", {
+      enabled: document.getElementById("guard-enabled").checked,
+      memory_limit: document.getElementById("guard-limit").checked,
+      stop_frozen: document.getElementById("guard-frozen").checked,
+      frozen_seconds: Number(document.getElementById("guard-frozen-seconds").value),
+    });
+    showToast("Freeze guard settings saved.", "success");
+    loadGuard();
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.saveGuardSettings = saveGuardSettings;
+
+// === Keep awake ===
+function renderKeepAwake(st) {
+  const badge = document.getElementById("awake-badge");
+  const text = document.getElementById("awake-status");
+  if (!badge || !text) return;
+  document.getElementById("awake-busy").checked = st.while_busy !== false;
+  document.getElementById("awake-off").style.display = st.manual ? "" : "none";
+  if (!st.available) {
+    badge.textContent = "Not available";
+    text.textContent = "This system has no sleep inhibitor (systemd-inhibit), so FrameLoad cannot keep it awake.";
+    return;
+  }
+  badge.textContent = st.held ? "Awake" : "Sleep allowed";
+  badge.style.color = st.held ? "var(--accent-emerald)" : "var(--text-muted)";
+  text.textContent = st.held
+    ? `Keeping the headset awake: ${st.reason}${st.manual && st.manual_until ? ` (until ${new Date(st.manual_until * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})` : ""}.`
+    : "The headset may sleep as usual. FrameLoad keeps it awake on its own while it downloads, installs or ports.";
+}
+
+async function loadKeepAwake() {
+  try { renderKeepAwake(await apiGet("/api/power")); } catch (e) { /* next round */ }
+}
+
+async function setKeepAwake(hours) {
+  try {
+    const st = await apiPost("/api/power/keep-awake", { hours });
+    renderKeepAwake({ ...st, while_busy: document.getElementById("awake-busy").checked });
+    showToast(hours === 0 ? "The headset may sleep again." : hours < 0 ? "Staying awake until you switch it off." : "Staying awake for an hour.", "success");
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.setKeepAwake = setKeepAwake;
+
+async function setKeepAwakeWhileBusy(enabled) {
+  try {
+    renderKeepAwake(await apiPost("/api/power/settings", { while_busy: !!enabled }));
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+window.setKeepAwakeWhileBusy = setKeepAwakeWhileBusy;
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadPerf();
+  state.perf.chipTimer = setInterval(() => { if (!state.perf.timer) loadPerf(); }, 5000);
+  if (state.activeTab === "system") { startPerfLive(); loadGuard(); loadKeepAwake(); }
+  setInterval(() => { if (state.activeTab === "system") { loadGuard(); loadKeepAwake(); } }, 6000);
+});
+
+// === Steam artwork, drawn by the dashboard ===
+// Python's standard library cannot decode or scale images; a browser can. Every game whose Steam
+// artwork is still a plain placeholder gets a poster, banner, hero, logo and icon drawn here from
+// its own launcher icon, a downloaded cover and its title. The server stores them and copies them
+// into each Steam user's grid folder (Steam shows them after a restart at the latest).
+state.artwork = { done: new Set(), running: false, version: {} };
+
+function libraryArt(game) {
+  const url = game.thumbnail_url || "/static/assets/fallback_cover.svg";
+  const v = state.artwork.version[game.package];
+  return v ? `${url}${url.includes("?") ? "&" : "?"}v=${v}` : url;
+}
+
+function loadArtImage(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => resolve(img.naturalWidth ? img : null);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function drawCover(ctx, img, x, y, w, h) {
+  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const sw = w / scale, sh = h / scale;
+  ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, x, y, w, h);
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function artBackdrop(ctx, w, h, colors, img, blur) {
+  const g = ctx.createLinearGradient(0, 0, w * 0.4, h);
+  g.addColorStop(0, colors[0]);
+  g.addColorStop(1, colors[1]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  if (img) {
+    ctx.save();
+    ctx.filter = `blur(${blur}px) saturate(1.3)`;
+    ctx.globalAlpha = 0.8;
+    drawCover(ctx, img, -blur * 3, -blur * 3, w + blur * 6, h + blur * 6);
+    ctx.restore();
+  }
+  const glow = ctx.createRadialGradient(w * 0.5, h * 0.35, 0, w * 0.5, h * 0.35, Math.max(w, h) * 0.75);
+  glow.addColorStop(0, "rgba(255,255,255,0.10)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, w, h);
+  const shade = ctx.createLinearGradient(0, 0, 0, h);
+  shade.addColorStop(0, "rgba(4,8,18,0.10)");
+  shade.addColorStop(1, "rgba(4,8,18,0.72)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, w, h);
+}
+
+const ART_FONT = 'system-ui, "Segoe UI", "Noto Sans", Roboto, sans-serif';
+
+function wrapLines(ctx, text, maxWidth, maxLines) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || !line) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    let last = lines[maxLines - 1];
+    while (last.length > 1 && ctx.measureText(`${last}…`).width > maxWidth) last = last.slice(0, -1);
+    lines[maxLines - 1] = `${last.trim()}…`;
+  }
+  return lines;
+}
+
+// Draws a title in as large a size as fits; returns the height used.
+function drawTitle(ctx, text, x, y, maxWidth, size, maxLines, align, maxHeight = Infinity) {
+  let lines;
+  for (;; size -= 4) {
+    ctx.font = `800 ${size}px ${ART_FONT}`;
+    lines = wrapLines(ctx, text, maxWidth, maxLines);
+    const fits = lines.every(l => ctx.measureText(l).width <= maxWidth) && lines.length * size * 1.12 <= maxHeight;
+    if (fits || size <= 24) break;
+  }
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = align;
+  ctx.textBaseline = "top";
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.shadowBlur = size * 0.35;
+  ctx.shadowOffsetY = size * 0.06;
+  lines.forEach((l, i) => ctx.fillText(l, x, y + i * size * 1.12));
+  ctx.restore();
+  return lines.length * size * 1.12;
+}
+
+function drawTile(ctx, img, x, y, size, radius) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.5)";
+  ctx.shadowBlur = size * 0.12;
+  ctx.shadowOffsetY = size * 0.04;
+  roundRectPath(ctx, x, y, size, size, radius);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRectPath(ctx, x, y, size, size, radius);
+  ctx.clip();
+  drawCover(ctx, img, x, y, size, size);
+  ctx.restore();
+}
+
+function artCanvas(w, h) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  return [canvas, canvas.getContext("2d")];
+}
+
+async function composeArtwork(game) {
+  const info = game.artwork;
+  if (!info || !info.pending || !info.pending.length) return false;
+  const base = `/api/installed/artwork/${encodeURIComponent(game.package)}`;
+  const icon = info.icon ? (await loadArtImage(`${base}?slot=apk_icon`)) || (await loadArtImage(`${base}?slot=icon`)) : null;
+  const cover = info.cover ? await loadArtImage(`${base}?slot=poster`) : null;
+  const art = cover || icon;
+  const colors = info.colors || ["#123456", "#0a1020"];
+  const title = game.title || game.package;
+  const slots = {};
+
+  for (const slot of info.pending) {
+    if (slot === "poster") {
+      const [c, ctx] = artCanvas(600, 900);
+      artBackdrop(ctx, 600, 900, colors, art, 34);
+      if (icon) drawTile(ctx, icon, 160, 200, 280, 56);
+      drawTitle(ctx, title, 300, icon ? 560 : 330, 520, 60, 3, "center", 260);
+      slots.poster = c.toDataURL("image/jpeg", 0.9);
+    } else if (slot === "banner") {
+      const [c, ctx] = artCanvas(920, 430);
+      artBackdrop(ctx, 920, 430, colors, art, 26);
+      if (art) drawTile(ctx, icon || cover, 64, 80, 270, 48);
+      ctx.font = `800 58px ${ART_FONT}`;
+      const x = art ? 380 : 460, width = art ? 480 : 800;
+      const lines = Math.min(3, wrapLines(ctx, title, width, 3).length);
+      drawTitle(ctx, title, x, 215 - lines * 58 * 0.56, width, 58, 3, art ? "left" : "center", 330);
+      slots.banner = c.toDataURL("image/jpeg", 0.9);
+    } else if (slot === "hero") {
+      const [c, ctx] = artCanvas(1920, 620);
+      artBackdrop(ctx, 1920, 620, colors, art, 50);
+      if (cover) {  // the real cover, sharp on the right, fading into the backdrop
+        const [layer, lctx] = artCanvas(820, 620);
+        drawCover(lctx, cover, 0, 0, 820, 620);
+        lctx.globalCompositeOperation = "destination-in";
+        const fade = lctx.createLinearGradient(0, 0, 420, 0);
+        fade.addColorStop(0, "rgba(0,0,0,0)");
+        fade.addColorStop(1, "rgba(0,0,0,1)");
+        lctx.fillStyle = fade;
+        lctx.fillRect(0, 0, 820, 620);
+        ctx.drawImage(layer, 1100, 0);
+      }
+      slots.hero = c.toDataURL("image/jpeg", 0.88);
+    } else if (slot === "logo") {
+      const [measure] = artCanvas(10, 10);
+      const mctx = measure.getContext("2d");
+      mctx.font = `800 120px ${ART_FONT}`;
+      const lines = wrapLines(mctx, title, 1500, 2);
+      const width = Math.ceil(Math.max(...lines.map(l => mctx.measureText(l).width))) + 60;
+      const [c, ctx] = artCanvas(Math.min(1600, width), Math.ceil(lines.length * 134 + 50));
+      drawTitle(ctx, title, c.width / 2, 25, c.width - 60, 120, 2, "center");
+      slots.logo = c.toDataURL("image/png");
+    } else if (slot === "icon") {
+      const [c, ctx] = artCanvas(256, 256);
+      if (icon) {
+        const scale = Math.min(256 / icon.naturalWidth, 256 / icon.naturalHeight);
+        const w = icon.naturalWidth * scale, h = icon.naturalHeight * scale;
+        ctx.drawImage(icon, (256 - w) / 2, (256 - h) / 2, w, h);
+      } else {
+        roundRectPath(ctx, 8, 8, 240, 240, 52);
+        ctx.save();
+        ctx.clip();
+        artBackdrop(ctx, 256, 256, colors, cover, 0);
+        if (cover) drawCover(ctx, cover, 8, 8, 240, 240);
+        ctx.restore();
+        if (!cover) {
+          const initials = title.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+          drawTitle(ctx, initials || "?", 128, 72, 200, 110, 1, "center");
+        }
+      }
+      slots.icon = c.toDataURL("image/png");
+    }
+  }
+  if (!Object.keys(slots).length) return false;
+  const res = await apiPost(base, { slots });
+  if (res.success) state.artwork.version[game.package] = Date.now();
+  return !!res.success;
+}
+
+// One game at a time, quietly in the background, once per game per session.
+async function composePendingArtwork() {
+  if (state.artwork.running) return;
+  state.artwork.running = true;
+  let changed = false;
+  try {
+    for (const game of state.installed || []) {
+      const pending = game.artwork && game.artwork.pending && game.artwork.pending.length;
+      if (!pending || state.artwork.done.has(game.package)) continue;
+      state.artwork.done.add(game.package);
+      try {
+        if (await composeArtwork(game)) changed = true;
+      } catch (e) {
+        console.warn("Could not draw artwork for", game.package, e);
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+  } finally {
+    state.artwork.running = false;
+  }
+  if (changed) renderInstalledGrid();
+}
+
+// === Store media: screenshots and a trailer from the app's own F-Droid metadata ===
+state.media = { shots: [], index: 0 };
+
+function youtubeId(url) {
+  const m = String(url || "").match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : "";
+}
+
+function renderAppMedia(game) {
+  const box = document.getElementById("modal-media");
+  if (!box) return;
+  const shots = (game.screenshots || []).filter(u => /^https:\/\//.test(u));
+  const video = youtubeId(game.video);
+  state.media.shots = shots;
+  if (!shots.length && !video) {
+    box.style.display = "none";
+    return;
+  }
+  const videoTile = video ? `
+    <button type="button" class="media-tile media-video" onclick="playAppVideo(this, ${jsArg(video)})" aria-label="Play the trailer">
+      <img src="https://i.ytimg.com/vi/${video}/hqdefault.jpg" alt="" loading="lazy" draggable="false">
+      <span class="media-play" aria-hidden="true"></span>
+    </button>` : "";
+  box.innerHTML = `
+    <div class="media-strip">
+      ${videoTile}
+      ${shots.map((url, i) => `
+        <button type="button" class="media-tile" onclick="openMediaViewer(${i})" aria-label="Screenshot ${i + 1}">
+          <img src="${escapeHtml(url)}" alt="" loading="lazy" draggable="false" onerror="this.closest('.media-tile').remove()">
+        </button>`).join("")}
+    </div>`;
+  box.style.display = "";
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function playAppVideo(tile, id) {
+  const frame = document.createElement("iframe");
+  frame.className = "media-frame";
+  frame.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+  frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+  frame.allowFullscreen = true;
+  frame.title = "Trailer";
+  tile.replaceWith(frame);
+}
+window.playAppVideo = playAppVideo;
+
+function openMediaViewer(index) {
+  const viewer = document.getElementById("media-viewer");
+  if (!viewer || !state.media.shots.length) return;
+  state.media.index = index;
+  stepMediaViewer(0);
+  viewer.classList.add("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+window.openMediaViewer = openMediaViewer;
+
+function stepMediaViewer(delta) {
+  const shots = state.media.shots;
+  if (!shots.length) return;
+  state.media.index = (state.media.index + delta + shots.length) % shots.length;
+  document.getElementById("media-viewer-img").src = shots[state.media.index];
+  document.getElementById("media-viewer-count").textContent = `${state.media.index + 1} / ${shots.length}`;
+}
+window.stepMediaViewer = stepMediaViewer;
+
+function closeMediaViewer() {
+  const viewer = document.getElementById("media-viewer");
+  if (viewer) viewer.classList.remove("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+window.closeMediaViewer = closeMediaViewer;

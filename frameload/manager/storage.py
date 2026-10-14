@@ -57,6 +57,69 @@ def get_dir_size(path: str) -> int:
     return total
 
 
+# Drives a person would pick: the internal storage the home folder is on, microSD cards and USB
+# drives. The Frame's UFS storage appears as /dev/sd* with many system partitions, so the device
+# name says nothing; which bus a disk hangs on (sysfs) does.
+DRIVE_FILESYSTEMS = {"ext4", "ext3", "btrfs", "f2fs", "xfs", "vfat", "exfat", "ntfs", "ntfs3", "fuseblk"}
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def classify_disk(dev_node: str, sys_root: str = "/sys") -> str:
+    """'sd' for a microSD card, 'usb' for a USB drive, '' for internal storage or anything unknown."""
+    if not dev_node.startswith("/dev/"):
+        return ""
+    name = os.path.basename(os.path.realpath(dev_node))
+    block = os.path.join(sys_root, "class", "block", name)
+    if not os.path.exists(block):
+        return ""
+    real = os.path.realpath(block)
+    disk = os.path.dirname(real) if os.path.exists(os.path.join(real, "partition")) else real
+    if "/usb" in disk.replace(os.sep, "/"):
+        return "usb"
+    if os.path.basename(disk).startswith("mmcblk"):
+        # The SD slot's host reports SD; soldered eMMC storage reports MMC.
+        return "sd" if _read_text(os.path.join(disk, "device", "type")) == "SD" else ""
+    return "usb" if _read_text(os.path.join(disk, "removable")) == "1" else ""
+
+
+def external_mounts(mounts_file: str = "/proc/mounts", sys_root: str = "/sys") -> List[Dict[str, str]]:
+    """microSD cards and USB drives that are mounted, one entry per drive."""
+    found: List[Dict[str, str]] = []
+    seen = set()
+    try:
+        with open(mounts_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return found
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        dev_node, mount_point, fs_type = parts[0], parts[1].replace("\\040", " "), parts[2]
+        if fs_type not in DRIVE_FILESYSTEMS or dev_node in seen:
+            continue  # a drive mounted twice (bind mounts, btrfs subvolumes) is listed once
+        kind = classify_disk(dev_node, sys_root)
+        if kind:
+            seen.add(dev_node)
+            found.append({"path": mount_point, "dev_node": dev_node, "fs_type": fs_type, "kind": kind})
+    return found
+
+
+def default_device_id() -> str:
+    try:
+        from ..config import Config
+        return Config.get().get("storage", {}).get("default_device_id") or "internal"
+    except Exception:
+        return "internal"
+
+
 class StorageManager:
     @staticmethod
     def get_devices() -> List[Dict[str, Any]]:
@@ -91,53 +154,21 @@ class StorageManager:
 
         candidate_mounts: List[Dict[str, Any]] = []
 
-        # 2. Check /proc/mounts on Linux for mmcblk and sd devices
-        if os.path.isfile("/proc/mounts"):
-            try:
-                with open("/proc/mounts", "r", encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        parts = line.strip().split()
-                        if len(parts) >= 3:
-                            dev_node, mount_point, fs_type = parts[0], parts[1], parts[2]
-                            if fs_type in ("ext4", "btrfs", "vfat", "exfat", "f2fs", "ntfs", "fuseblk"):
-                                if (dev_node.startswith("/dev/mmcblk") or
-                                        dev_node.startswith("/dev/sd") or
-                                        "/run/media/" in mount_point or
-                                        "/media/" in mount_point):
-                                    candidate_mounts.append({
-                                        "path": mount_point,
-                                        "dev_node": dev_node,
-                                        "fs_type": fs_type,
-                                        "is_sd": "/dev/mmcblk" in dev_node or "mmc" in mount_point.lower() or "sd" in mount_point.lower()
-                                    })
-            except OSError:
-                pass
-
-        # 3. Standard search roots
-        search_roots = [
-            "/run/media/deck",
-            f"/run/media/{os.getenv('USER', 'deck')}",
-            "/run/media",
-            "/media",
-            "/media/deck",
-            "/mnt",
-            "/Volumes",  # macOS dev compatibility
-        ]
-
-        for root in search_roots:
-            if not os.path.isdir(root):
-                continue
-            try:
-                for entry in os.scandir(root):
-                    if entry.is_dir(follow_symlinks=False):
-                        candidate_mounts.append({
-                            "path": entry.path,
-                            "dev_node": "",
-                            "fs_type": "",
-                            "is_sd": "sd" in entry.name.lower() or "mmc" in entry.name.lower()
-                        })
-            except OSError:
-                continue
+        # 2. microSD cards and USB drives
+        if os.path.isdir("/sys/class/block"):
+            for m in external_mounts():
+                candidate_mounts.append({"path": m["path"], "dev_node": m["dev_node"], "fs_type": m["fs_type"],
+                                         "is_sd": m["kind"] == "sd"})
+        elif os.path.isdir("/run/media"):
+            # No sysfs (a container): what SteamOS mounts for removable media lives here.
+            for root in ("/run/media", f"/run/media/{os.getenv('USER', 'deck')}"):
+                try:
+                    for entry in os.scandir(root):
+                        if entry.is_dir(follow_symlinks=False) and os.path.ismount(entry.path):
+                            candidate_mounts.append({"path": entry.path, "dev_node": "", "fs_type": "",
+                                                     "is_sd": "mmc" in entry.name.lower()})
+                except OSError:
+                    continue
 
         # 4. Custom paths from config
         try:
@@ -173,9 +204,9 @@ class StorageManager:
                     continue
 
                 name = os.path.basename(p.rstrip("/"))
-                is_sd = c.get("is_sd", False) or "/run/media/" in p or "mmc" in name.lower() or "sd" in name.lower()
+                is_sd = bool(c.get("is_sd"))
                 dev_type = "microsd" if is_sd else "usb"
-                label = f"MicroSD Card ({name})" if is_sd else f"External Drive ({name})"
+                label = f"microSD Card ({name})" if is_sd else f"USB Drive ({name})"
                 dev_id = f"ext_{name.replace(' ', '_').replace('-', '_')}"
 
                 # Check if Steam library or quest-frame folder exists
@@ -209,7 +240,26 @@ class StorageManager:
             except OSError:
                 continue
 
+        # The drive new games go to: the one chosen as default while it is connected, else internal.
+        wanted = default_device_id()
+        if not any(d["id"] == wanted for d in devices):
+            wanted = "internal"
+        for d in devices:
+            d["is_default"] = d["id"] == wanted
         return devices
+
+    @staticmethod
+    def set_default_device(device_id: str) -> Dict[str, Any]:
+        dev = next((d for d in StorageManager.get_devices() if d["id"] == device_id), None)
+        if not dev:
+            return {"success": False, "error": "That drive is not connected."}
+        if not dev.get("supports_lepton", True):
+            return {"success": False, "error": f"{dev['name']} cannot hold games ({dev.get('filesystem')})."}
+        from ..config import Config
+        cfg = Config.get()
+        cfg.raw.setdefault("storage", {})["default_device_id"] = device_id
+        cfg.save()
+        return {"success": True, "device_id": device_id}
 
     @staticmethod
     def resolve_anchor(device_id: Optional[str] = None) -> str:

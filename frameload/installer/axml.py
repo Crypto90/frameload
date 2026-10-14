@@ -27,6 +27,7 @@ UTF8_FLAG = 0x100
 # Release builds often strip attribute names from the string pool and keep only these framework ids.
 ATTR_IDS = {
     0x01010001: "label",
+    0x01010002: "icon",
     0x01010003: "name",
     0x0101000E: "enabled",
     0x01010024: "value",
@@ -38,6 +39,7 @@ ATTR_IDS = {
     0x01010270: "targetSdkVersion",
     0x0101028E: "required",
     0x01010591: "isSplitRequired",
+    0x01010199: "drawable",
 }
 
 ACTION_MAIN = "android.intent.action.MAIN"
@@ -179,6 +181,8 @@ class ManifestInfo:
     target_sdk: int = 0
     label: str = ""
     label_ref: int = 0
+    icon_ref: int = 0           # @mipmap/... of the launcher icon
+    icon_path: str = ""         # rare: a literal file path instead of a resource
     launch_activity: str = ""   # the activity Lepton starts: a real activity with MAIN + LAUNCHER
     alias_launcher: str = ""    # LAUNCHER exists only on an <activity-alias>, which Lepton ignores
     info_activity: str = ""     # MAIN + INFO, the usual Quest store layout
@@ -250,6 +254,11 @@ def read_manifest(data: bytes) -> ManifestInfo:
         info.label_ref = int(label)
     elif label:
         info.label = str(label)
+    icon = app.attrs.get("icon")
+    if isinstance(icon, ResRef):
+        info.icon_ref = int(icon)
+    elif isinstance(icon, str):
+        info.icon_path = icon
 
     def collect_meta(el: Element) -> None:
         for md in el.find_all("meta-data"):
@@ -321,6 +330,61 @@ def resolve_string_resource(arsc: bytes, res_id: int, _depth: int = 0) -> str:
     except (struct.error, IndexError):
         pass
     return ""
+
+
+# ResTable_config.density values that are not a pixel density
+DENSITY_ANY = 0xFFFE   # vector / adaptive icon XML
+DENSITY_NONE = 0xFFFF  # nodpi: drawn at its own size
+
+
+def resource_files(arsc: bytes, res_id: int, _depth: int = 0) -> List[tuple]:
+    """Every file a resource points to, as (density, path), the sharpest first. Used for icons,
+    which have one file per screen density (mdpi 160 ... xxxhdpi 640) plus maybe an adaptive XML."""
+    if _depth > 4 or len(arsc) < 12:
+        return []
+    found: List[tuple] = []
+    try:
+        ttype, thsize, _ = struct.unpack_from("<HHI", arsc, 0)
+        if ttype != RES_TABLE:
+            return []
+        want_pkg, want_type, want_entry = res_id >> 24, (res_id >> 16) & 0xFF, res_id & 0xFFFF
+        global_pool = -1
+        refs: List[int] = []
+        off = thsize
+        while off + 8 <= len(arsc):
+            ctype, hsize, size = struct.unpack_from("<HHI", arsc, off)
+            if size < 8 or hsize < 8 or off + size > len(arsc):
+                break
+            if ctype == RES_STRING_POOL and global_pool < 0:
+                global_pool = off
+            elif ctype == RES_TABLE_PACKAGE and struct.unpack_from("<I", arsc, off + 8)[0] == want_pkg:
+                inner, pkg_end = off + hsize, off + size
+                while inner + 8 <= pkg_end:
+                    itype, ihsize, isize = struct.unpack_from("<HHI", arsc, inner)
+                    if isize < 8 or ihsize < 8 or inner + isize > pkg_end:
+                        break
+                    if itype == RES_TABLE_TYPE and arsc[inner + 8] == want_type and ihsize >= 36:
+                        value = _type_chunk_entry(arsc, inner, ihsize, isize, want_entry)
+                        if value is not None:
+                            density = struct.unpack_from("<H", arsc, inner + 34)[0]  # ResTable_config.density
+                            if value[0] == TYPE_STRING and global_pool >= 0:
+                                found.append((density, _pool_string(arsc, global_pool, value[1])))
+                            elif value[0] == TYPE_REFERENCE and value[1] != res_id:
+                                refs.append(value[1])
+                    inner += isize
+            off += size
+        for ref in refs:
+            found.extend(resource_files(arsc, ref, _depth + 1))
+    except (struct.error, IndexError):
+        return found
+
+    def sharpness(item: tuple) -> int:
+        density = item[0]
+        if density == DENSITY_ANY:
+            return -1
+        return 10000 if density == DENSITY_NONE else density
+
+    return sorted(set(found), key=sharpness, reverse=True)
 
 
 def _type_chunk_entry(arsc: bytes, off: int, hsize: int, size: int, entry: int) -> Optional[tuple]:

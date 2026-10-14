@@ -43,9 +43,8 @@
       <div id="header-storage" class="telemetry-chip clickable" onclick="openStorageTab()" title="Open Steam Storage Manager">
         💾 -- GB Free
       </div>
-      <div id="header-lepton" class="telemetry-chip lepton missing">
-        Lepton Checking...
-      </div>
+      <div id="header-lepton" class="telemetry-chip lepton missing" style="display:none;"></div>
+      <button id="header-perf" class="telemetry-chip perf-chip" style="display:none;" onclick="openPerformanceCard()" title="CPU and memory use"></button>
       <button id="header-stop-game" class="telemetry-chip stop-chip" style="display:none;" onclick="stopRunningGames()" title="Stop the running game"></button>
       <button id="header-porting" class="telemetry-chip porting-chip" style="display:none;" onclick="openPortingModal()" title="Show porting progress"></button>
       <div id="header-update-alert" class="telemetry-chip update-alert clickable" style="display:none;" onclick="openUpdateModal()" title="FrameLoad Update Available!">
@@ -212,7 +211,7 @@
       </div>
 
       <!-- Games Grid -->
-      <div id="catalog-grid" class="games-grid"></div>
+      <div id="catalog-grid" class="catalog-pages"></div>
 
       <!-- Infinite Progressive Loading Sentinel & Spinner -->
       <div id="catalog-infinite-loader" style="display:none; justify-content:center; align-items:center; gap:12px; margin-top:32px; padding:16px; color:var(--text-muted); font-size:0.9rem;">
@@ -246,9 +245,20 @@
             </svg>
             Check for Updates
           </button>
+          <select id="library-sort" class="select-styled compact" aria-label="Sort the library" onchange="setLibrarySort(this.value)">
+            <option value="recent">Recently played</option>
+            <option value="name">Name</option>
+            <option value="installed">Recently installed</option>
+            <option value="size">Size</option>
+          </select>
           <button class="btn-secondary compact" onclick="loadInstalled()">Refresh List</button>
         </div>
       </div>
+      <section id="library-recent" class="library-recent" style="display:none;" aria-labelledby="library-recent-title">
+        <h2 id="library-recent-title" class="section-title">Recently Played</h2>
+        <div id="library-recent-grid" class="recent-grid"></div>
+        <h2 class="section-title">All Games</h2>
+      </section>
       <div id="library-grid" class="games-grid"></div>
     </section>
 
@@ -344,6 +354,15 @@
           <button class="btn-secondary" onclick="fixKeyring()">Apply Podman Keyring Leak Fix</button>
         </div>
 
+        <!-- CPU, memory, temperatures -->
+        <div id="perf-card" style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Performance</h3>
+            <span id="perf-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Live</span>
+          </div>
+          <div id="perf-body" class="perf-body"><p class="tuning-micro-note">Reading...</p></div>
+        </div>
+
         <!-- Quest game porting -->
         <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -368,6 +387,42 @@
             <button id="btn-porting-setup" class="btn-primary compact" onclick="startPortingSetup()">Set Up Now</button>
             <button id="btn-porting-log" class="btn-secondary compact" style="display:none;" onclick="openPortingModal()">Show Progress</button>
           </div>
+        </div>
+
+        <!-- Freeze guard -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Freeze Guard</h3>
+            <span id="guard-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Checking...</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            When a game uses up the headset's memory, everything stops responding, even the Steam button. FrameLoad watches running games and ends one before that happens.
+          </p>
+          <label class="check-row"><input type="checkbox" id="guard-enabled" onchange="saveGuardSettings()"> <span>Stop a game before it runs the headset out of memory</span></label>
+          <label class="check-row"><input type="checkbox" id="guard-limit" onchange="saveGuardSettings()"> <span>Limit each game's memory so SteamVR keeps <span id="guard-reserve">2.5 GB</span></span></label>
+          <label class="check-row"><input type="checkbox" id="guard-frozen" onchange="saveGuardSettings()"> <span>Also stop games that show no new frame for
+            <select id="guard-frozen-seconds" class="select-styled compact" onchange="saveGuardSettings()" onclick="event.stopPropagation()">
+              <option value="60">1 minute</option><option value="90">90 seconds</option><option value="120">2 minutes</option><option value="180">3 minutes</option>
+            </select></span></label>
+          <p class="tuning-micro-note" style="margin-bottom:10px;">Off by default: a headset you take off pauses the game too. Without it, FrameLoad tells you and you choose whether to press Stop.</p>
+          <div id="guard-games"></div>
+          <div id="guard-events"></div>
+        </div>
+
+        <!-- Keep awake -->
+        <div style="background:var(--bg-card); border:1px solid rgba(0, 242, 254, 0.25); padding:24px; border-radius:var(--radius-lg);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Keep Awake</h3>
+            <span id="awake-badge" class="badge" style="background:rgba(255,255,255,0.08); color:var(--text-muted);">Checking...</span>
+          </div>
+          <p id="awake-status" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;"></p>
+          <label class="check-row"><input type="checkbox" id="awake-busy" onchange="setKeepAwakeWhileBusy(this.checked)"> <span>Stay awake while downloading, installing or porting</span></label>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+            <button class="btn-secondary compact" onclick="setKeepAwake(1)">Stay Awake 1 Hour</button>
+            <button class="btn-secondary compact" onclick="setKeepAwake(-1)">Until I Switch It Off</button>
+            <button id="awake-off" class="btn-secondary compact" style="display:none;" onclick="setKeepAwake(0)">Allow Sleep</button>
+          </div>
+          <p class="tuning-micro-note" style="margin-top:10px;">Uses SteamOS's sleep inhibitor. The displays still turn off when you take the headset off.</p>
         </div>
 
         <!-- Hand tracking status -->
@@ -717,6 +772,7 @@
       <!-- What you can do with it comes first: no scrolling to reach Play in the headset -->
       <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;"></div>
       <div id="modal-compat" style="display:none; margin-bottom:16px;"></div>
+      <div id="modal-media" class="modal-media" style="display:none;"></div>
       
       <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.84rem;">
         <div><strong>Size:</strong> <span id="modal-game-size" style="color:var(--text-primary);">--</span></div>
@@ -1040,6 +1096,32 @@
         <button type="button" id="porting-modal-close" class="btn-primary" data-back onclick="closePortingModal()">Close</button>
       </div>
     </div>
+  </div>
+
+  <!-- Where a new game goes, when there is more than one drive (like Steam's install dialog) -->
+  <div id="install-drive-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:560px;" role="dialog" aria-labelledby="install-drive-title">
+      <h2 id="install-drive-title" style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:6px;">Install</h2>
+      <p id="install-drive-size" style="font-size:0.9rem; color:var(--text-muted); margin-bottom:16px;"></p>
+      <div id="install-drive-list" class="drive-choices" role="radiogroup" aria-label="Install location"></div>
+      <label class="drive-default-row">
+        <input type="checkbox" id="install-drive-default">
+        <span>Always install here (make it the default drive)</span>
+      </label>
+      <div style="display:flex; justify-content:flex-end; gap:12px; flex-wrap:wrap; margin-top:18px;">
+        <button type="button" id="install-drive-cancel" class="btn-secondary" data-back>Cancel</button>
+        <button type="button" id="install-drive-ok" class="btn-primary">Install</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Store screenshots, large -->
+  <div id="media-viewer" class="modal-backdrop media-viewer" onclick="if (event.target === this) closeMediaViewer()">
+    <button class="modal-close" onclick="closeMediaViewer()" aria-label="Close" data-back>&times;</button>
+    <button class="media-nav prev" onclick="stepMediaViewer(-1)" aria-label="Previous screenshot">&#8249;</button>
+    <img id="media-viewer-img" alt="">
+    <button class="media-nav next" onclick="stepMediaViewer(1)" aria-label="Next screenshot">&#8250;</button>
+    <div id="media-viewer-count" class="media-count"></div>
   </div>
 
   <!-- Yes / no questions. The browser's own dialog is tiny and awkward to hit with a VR pointer. -->

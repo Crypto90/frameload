@@ -53,6 +53,8 @@ class CatalogGame:
     sha256: str = ""  # expected checksum of a direct download
     source: str = ""  # catalog the entry came from, e.g. "fdroid"
     update_available: bool = False
+    screenshots: List[str] = field(default_factory=list)  # store pictures (F-Droid's own metadata)
+    video: str = ""  # a trailer link from the same metadata, usually YouTube
 
     def __post_init__(self) -> None:
         if not self.id:

@@ -19,6 +19,7 @@ FDROID_REPO = "https://f-droid.org/repo"
 FDROID_INDEX_JAR = f"{FDROID_REPO}/index-v1.jar"
 FDROID_CACHE_JSON = os.path.join(DATA_DIR, "fdroid_cache.json")
 CACHE_VERSION = 2
+CACHE_FIELDS = 3  # 3: screenshots and video
 MAX_INDEX_BYTES = 96 * 1024 * 1024
 # Lepton runs 64-bit ARM apps only, on Android images up to API 34.
 LEPTON_ABI = "arm64-v8a"
@@ -74,6 +75,22 @@ def _icon_url(app: Dict[str, Any], pkg: str) -> str:
     return f"{FDROID_REPO}/icons-640/{app['icon']}" if app.get("icon") else ""
 
 
+SCREENSHOT_KINDS = ("phoneScreenshots", "sevenInchScreenshots", "tenInchScreenshots")
+MAX_SCREENSHOTS = 10
+
+
+def _screenshots(app: Dict[str, Any], pkg: str) -> List[str]:
+    """Screenshot addresses from the first locale that has any (they live under the repo by locale)."""
+    loc = app.get("localized") or {}
+    for name in LOCALES:
+        entry = loc.get(name) or {}
+        found = [f"{FDROID_REPO}/{pkg}/{name}/{kind}/{file}"
+                 for kind in SCREENSHOT_KINDS for file in (entry.get(kind) or []) if isinstance(file, str)]
+        if found:
+            return found[:MAX_SCREENSHOTS]
+    return []
+
+
 def parse_index(index: Dict[str, Any]) -> List[CatalogGame]:
     """Turns an F-Droid index-v1 document into catalog entries Lepton can install."""
     packages = index.get("packages") or {}
@@ -103,6 +120,8 @@ def parse_index(index: Dict[str, Any]) -> List[CatalogGame]:
             categories=[str(c) for c in (app.get("categories") or [])],
             license=str(app.get("license") or ""),
             anti_features=[str(a) for a in (app.get("antiFeatures") or [])],
+            screenshots=_screenshots(app, pkg),
+            video=_localized(app, "video") if _localized(app, "video").startswith("https://") else "",
             source="fdroid",
         ))
     return games
@@ -145,7 +164,9 @@ class FDroidCatalog:
             if data.get("version") != CACHE_VERSION:
                 return  # older caches hold wrong icon URLs and no checksums: sync again
             self.last_sync = data.get("last_sync", "")
-            self.etag = data.get("etag", "")
+            # A cache from before screenshots were kept is re-downloaded at the next sync, even if
+            # F-Droid says the index has not changed.
+            self.etag = data.get("etag", "") if data.get("fields", 0) >= CACHE_FIELDS else ""
             self._set_games([
                 CatalogGame(**{k: v for k, v in item.items() if k in _GAME_FIELDS})
                 for item in data.get("games", [])
@@ -158,6 +179,7 @@ class FDroidCatalog:
             os.makedirs(DATA_DIR, exist_ok=True)
             data = {
                 "version": CACHE_VERSION,
+                "fields": CACHE_FIELDS,
                 "last_sync": self.last_sync,
                 "etag": self.etag,
                 "games": [g.to_dict() for g in self.games],
@@ -311,6 +333,7 @@ class FDroidCatalog:
         for g in page_items:
             d = g.to_dict()
             d.pop("description", None)  # long; served by /api/catalog/game/<id>
+            d.pop("screenshots", None)  # likewise
             if g.package_name in installed:
                 d["is_installed"] = True
                 d["installed_version"] = installed[g.package_name]

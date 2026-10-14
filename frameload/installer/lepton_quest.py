@@ -79,8 +79,11 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 export IS_PARENT=true
 {extra_env}
 child=''
+started=''
 stop() {{
     trap - EXIT INT TERM
+    # One line per session (start end) for FrameLoad's "last played" and play time.
+    [[ -n "$started" ]] && printf '%s %s\n' "$started" "$(date +%s)" >> "$app_dir/.playtime" 2>/dev/null || true
     kill $permfix 2>/dev/null || true
     [[ -n "$child" ]] && kill -TERM -- "-$child" 2>/dev/null || true
     podman kill "lepton-steamlaunch-$SteamAppId" >/dev/null 2>&1 || true
@@ -89,6 +92,8 @@ trap stop EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+started=$(date +%s)
+echo "$started" > "$app_dir/.last_played" 2>/dev/null || true
 setsid "$lepton" start >"$app_dir/launch.log" 2>&1 &
 child=$!
 {dashboard}
@@ -228,6 +233,8 @@ class LeptonInstaller:
         for sub in ("files", "cache"):
             os.makedirs(os.path.join(data_dir, "external/Android/data", package_name, sub), exist_ok=True)
 
+        from .artwork import extract_apk_icon
+        extract_apk_icon(dest_apk, art_dir)
         ArtworkManager.ensure_artwork(package_name, title, art_dir, icon_url=icon_url)
 
         launch_script = os.path.join(anchor, "launch.sh")
@@ -265,7 +272,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 5,
+            "layout_version": 6,
             "time": time.time(),
         }
         with open(dep_path, "w", encoding="utf-8") as f:
@@ -278,7 +285,7 @@ class LeptonInstaller:
             title=title,
             launch_script_path=launch_script,
             anchor_dir=anchor,
-            icon_path=os.path.join(art_dir, "icon.png"),
+            icon_path=os.path.join(art_dir, "icon.png"),  # the dashboard redraws it as a PNG
             artwork_dir=art_dir,
             is_vr=is_vr,
         )

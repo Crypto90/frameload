@@ -18,7 +18,9 @@ INDEX = {
         {
             "packageName": "org.example.notes", "suggestedVersionCode": "20", "icon": "org.example.notes.20.png",
             "categories": ["Writing"], "license": "GPL-3.0-only", "lastUpdated": 1750000000000,
-            "localized": {"en-US": {"name": "Pocket Notes", "summary": "Plain text notes", "description": "Long text"}},
+            "localized": {"en-US": {"name": "Pocket Notes", "summary": "Plain text notes", "description": "Long text",
+                                    "phoneScreenshots": ["1.png", "2.png"], "tenInchScreenshots": ["t.png"],
+                                    "video": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}},
         },
         {
             "packageName": "org.example.game", "suggestedVersionCode": "5", "categories": ["Games"],
@@ -79,6 +81,11 @@ class TestIndexParsing(unittest.TestCase):
         self.assertEqual(notes.thumbnail_url, f"{FDROID_REPO}/icons-640/org.example.notes.20.png")
         self.assertEqual(game.thumbnail_url, f"{FDROID_REPO}/org.example.game/en-US/icon.png")
         self.assertEqual(game.anti_features, ["NonFreeNet"])
+        shots = f"{FDROID_REPO}/org.example.notes/en-US"
+        self.assertEqual(notes.screenshots, [f"{shots}/phoneScreenshots/1.png", f"{shots}/phoneScreenshots/2.png",
+                                             f"{shots}/tenInchScreenshots/t.png"])
+        self.assertEqual(notes.video, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        self.assertEqual((game.screenshots, game.video), ([], ""))
 
     def test_pick_release_without_usable_candidates(self):
         self.assertIsNone(pick_release({}, []))
@@ -117,6 +124,18 @@ class TestCatalogSearch(unittest.TestCase):
         self.assertEqual(len(reloaded.games), 2)
         self.assertEqual(reloaded.get_game("org.example.notes").sha256, "a" * 64)
         self.assertEqual(reloaded.get_game(reloaded.games[0].id).package_name, reloaded.games[0].package_name)
+        self.assertEqual(len(reloaded.get_game("org.example.notes").screenshots), 3)
+
+        # A cache from before screenshots: its ETag is dropped, so the next sync downloads the index again.
+        import json
+        from frameload.catalog import fdroid
+        with open(fdroid.FDROID_CACHE_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+        data.pop("fields")
+        data["etag"] = "W/old"
+        with open(fdroid.FDROID_CACHE_JSON, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        self.assertEqual(FDroidCatalog().etag, "")
 
 
 class TestVerifiedDownload(unittest.TestCase):

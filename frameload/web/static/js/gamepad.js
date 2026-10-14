@@ -436,6 +436,12 @@ class SpatialGamepadNavigator {
 
     const elements = Array.from(root.querySelectorAll(selector));
 
+    // Cards far off screen are not rendered (content-visibility). checkVisibility answers without
+    // laying them out; offsetParent would lay out every one of them on each call, which made the
+    // catalog slower the further it was scrolled.
+    if (elements.length && typeof elements[0].checkVisibility === "function") {
+      return elements.filter((el) => el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }));
+    }
     return elements.filter((el) => {
       if (el.offsetParent === null) return false;
       const style = window.getComputedStyle(el);
@@ -960,7 +966,13 @@ class ScrollAssist {
       e.preventDefault();
     });
 
-    window.addEventListener("scroll", () => this.update(), { passive: true, capture: true });
+    // At most one update per frame, however many scroll events arrive.
+    let queued = false;
+    window.addEventListener("scroll", () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; this.update(); });
+    }, { passive: true, capture: true });
     window.addEventListener("resize", () => this.update());
     // Content arrives after loads and tab changes; reacting in the same frame keeps the
     // card grid from jumping when the arrows appear.
@@ -1014,6 +1026,10 @@ class ScrollAssist {
   }
 
   update() {
+    // The page keeps the arrows' gutter while a dialog is open, so the card grid behind the dialog
+    // never reflows (it used to change its column count when a game's page opened).
+    const doc = document.scrollingElement || document.documentElement;
+    document.body.classList.toggle("page-scrolls", doc.scrollHeight - window.innerHeight > 40);
     const { top, max } = this.metrics();
     this.rail.classList.toggle("visible", max > 40);
     this.rail.classList.toggle("in-dialog", this.scroller() !== window);

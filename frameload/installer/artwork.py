@@ -1,19 +1,25 @@
 """Steam library artwork for installed apps.
 
-Steam shows PNG or JPEG files in four shapes (portrait capsule, landscape banner, wide hero, square
-icon). Without an image library FrameLoad cannot resize a cover, so each slot gets either a real
-image in its own format (a downloaded cover or the app's icon) or a generated PNG in the app's colour.
+Steam shows PNG or JPEG files in five slots (portrait capsule, landscape banner, wide hero, logo,
+square icon). Python's standard library cannot decode or resize images, so at install each slot gets
+a real picture (a downloaded cover or icon) or a plain placeholder in the app's colour, and the app's
+own launcher icon is taken from its APK. The dashboard, which has image decoders and a canvas, then
+draws the placeholders properly from the icon, the cover and the title (see composeArtwork in app.js).
 """
 from __future__ import annotations
 
+import glob
 import hashlib
+import json
 import os
+import re
 import struct
 import time
 import urllib.parse
 import urllib.request
+import zipfile
 import zlib
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import DATA_DIR
 
@@ -21,7 +27,13 @@ THUMB_DIR = os.path.join(DATA_DIR, ".meta/thumbnails")
 MISS_TTL = 7 * 24 * 3600
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 # name -> (width, height); logo is left out: a full cover used as a logo hides the hero image
-SLOTS = {"poster": (600, 900), "banner": (460, 215), "hero": (1920, 620), "icon": (256, 256)}
+SLOTS = {"poster": (600, 900), "banner": (920, 430), "hero": (1920, 620), "icon": (256, 256)}
+# Slots the dashboard can draw (it has the image decoders and a canvas that Python's standard
+# library lacks): poster, banner, hero and logo from the app's icon or cover and its title.
+COMPOSED_SLOTS = ("poster", "banner", "hero", "logo", "icon")
+STATE_FILE = "artwork.json"  # slot -> "downloaded" | "generated" | "composed"
+ICON_NAMES = re.compile(r"^res/(?:mipmap|drawable)[^/]*/(?:ic_launcher|app_icon|icon|ic_launcher_foreground)[^/]*\.(?:png|webp)$")
+MAX_ICON_BYTES = 8 * 1024 * 1024
 _misses: Dict[str, float] = {}
 
 
@@ -63,6 +75,159 @@ def gradient_png(width: int, height: int, top: Tuple[int, int, int], bottom: Tup
         rows += b"\x00" + pixel * width
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(bytes(rows), 6)) + chunk(b"IEND", b"")
+
+
+def read_state(output_dir: str) -> Dict[str, str]:
+    try:
+        with open(os.path.join(output_dir, STATE_FILE), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {k: str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_state(output_dir: str, changes: Dict[str, str]) -> None:
+    state = read_state(output_dir)
+    state.update(changes)
+    try:
+        with open(os.path.join(output_dir, STATE_FILE), "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=1)
+    except OSError:
+        pass
+
+
+def slot_file(output_dir: str, slot: str) -> Optional[str]:
+    for ext in (".png", ".jpg", ".webp"):
+        path = os.path.join(output_dir, slot + ext)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def slot_sources(output_dir: str, package_name: str, title: str = "") -> Dict[str, str]:
+    """Where each slot's picture came from. Installs from before artwork.json existed are told
+    apart by comparing a slot with the plain gradient FrameLoad would have generated for it."""
+    state = read_state(output_dir)
+    sizes = {slot: [size] for slot, size in SLOTS.items()}
+    sizes["banner"].append((460, 215))  # the banner size before v1.3.5
+    keys = {k for k in (package_name or title, title) if k}
+    changed: Dict[str, str] = {}
+    for slot, options in sizes.items():
+        path = slot_file(output_dir, slot)
+        if slot in state or not path:
+            continue
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+        # Only a PNG of exactly a placeholder's size can be one; anything else is a real picture.
+        dims = struct.unpack(">II", data[16:24]) if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) > 24 else None
+        generated = dims in options and any(data == gradient_png(w, h, *app_colours(key))
+                                            for (w, h) in options if (w, h) == dims for key in keys)
+        if not image_extension(data):
+            generated = True  # e.g. an SVG saved as .png by old versions: Steam cannot show it either
+        state[slot] = "generated" if generated else "downloaded"
+        changed[slot] = state[slot]
+    if changed:
+        write_state(output_dir, changed)  # decided once; the comparison is not repeated
+    return state
+
+
+def extract_apk_icon(apk_path: str, output_dir: str) -> Optional[str]:
+    """Saves the app's own launcher icon from its APK as apk_icon.png/.webp (the sharpest raster
+    version; for an adaptive icon its foreground layer). None when the APK has no usable icon."""
+    from .axml import parse_axml, read_manifest, resource_files, ResRef
+    try:
+        with zipfile.ZipFile(apk_path) as zf:
+            names = set(zf.namelist())
+            arsc = zf.read("resources.arsc") if "resources.arsc" in names else b""
+            manifest = read_manifest(zf.read("AndroidManifest.xml"))
+            paths: List[str] = []
+            if manifest.icon_ref and arsc:
+                paths = [p for _, p in resource_files(arsc, manifest.icon_ref)]
+            elif manifest.icon_path:
+                paths = [manifest.icon_path]
+
+            def raster(candidates: List[str]) -> Optional[str]:
+                for p in candidates:
+                    if p in names and p.lower().endswith((".png", ".webp", ".jpg")):
+                        return p
+                return None
+
+            best = raster(paths)
+            if not best and arsc:
+                for xml in (p for p in paths if p.endswith(".xml") and p in names):
+                    try:
+                        root = parse_axml(zf.read(xml))
+                    except ValueError:
+                        continue
+                    layer = root.find("foreground")
+                    drawable = layer.attrs.get("drawable") if layer is not None else None
+                    if isinstance(drawable, ResRef):
+                        best = raster([p for _, p in resource_files(arsc, int(drawable))])
+                    if best:
+                        break
+            if not best:  # no resource table, or an icon that is only a vector drawing
+                matches = [n for n in names if ICON_NAMES.match(n)]
+                best = max(matches, key=lambda n: zf.getinfo(n).file_size, default=None)
+            if not best or zf.getinfo(best).file_size > MAX_ICON_BYTES:
+                return None
+            data = zf.read(best)
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return None
+    ext = image_extension(data)
+    if ext not in (".png", ".webp", ".jpg"):
+        return None
+    os.makedirs(output_dir, exist_ok=True)
+    for old in glob.glob(os.path.join(output_dir, "apk_icon.*")):
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+    path = os.path.join(output_dir, "apk_icon" + ext)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+
+def artwork_info(output_dir: str, package_name: str, title: str = "") -> Dict[str, Any]:
+    """What the dashboard needs to draw better artwork: which slots still hold placeholders and
+    which pictures it can draw them from."""
+    sources = slot_sources(output_dir, package_name, title)
+    pending = [slot for slot in COMPOSED_SLOTS
+               if sources.get(slot) == "generated" or (slot == "logo" and "logo" not in sources)
+               or (slot != "logo" and not slot_file(output_dir, slot))]
+    has = lambda name: bool(slot_file(output_dir, name))  # noqa: E731
+    top, bottom = app_colours(package_name or title)
+    return {
+        "pending": pending if os.path.isdir(output_dir) else [],
+        "cover": sources.get("poster") == "downloaded",
+        "icon": has("apk_icon") or sources.get("icon") == "downloaded",
+        "colors": ["#%02x%02x%02x" % top, "#%02x%02x%02x" % bottom],
+    }
+
+
+def save_composed(output_dir: str, slot: str, data: bytes) -> str:
+    """Stores one picture drawn by the dashboard. Only PNG and JPEG, and only known slots."""
+    if slot not in COMPOSED_SLOTS:
+        raise ValueError(f"unknown artwork slot {slot!r}")
+    ext = image_extension(data)
+    if ext not in (".png", ".jpg"):
+        raise ValueError("artwork must be a PNG or JPEG image")
+    if slot in ("icon", "logo") and ext != ".png":
+        raise ValueError("icons and logos need a PNG (transparency)")
+    os.makedirs(output_dir, exist_ok=True)
+    for old in glob.glob(os.path.join(output_dir, slot + ".*")):
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+    path = os.path.join(output_dir, slot + ext)
+    with open(path, "wb") as f:
+        f.write(data)
+    write_state(output_dir, {slot: "composed"})
+    return path
 
 
 def _download(url: str, timeout: float = 4.0) -> Optional[bytes]:
@@ -109,10 +274,12 @@ class ArtworkManager:
 
         art: Dict[str, str] = {slot: path for slot in SLOTS for path in [existing(slot)] if path}
 
+        state: Dict[str, str] = {}
         if "icon" not in art and icon_url.startswith("https://"):
             icon = _download(icon_url)
             if icon:
                 art["icon"] = write("icon", icon)
+                state["icon"] = "downloaded"
 
         if "poster" not in art:
             cover_path = ArtworkManager._local_thumbnail(package_name) or ArtworkManager._fetch_cover_art(
@@ -122,12 +289,18 @@ class ArtworkManager:
                     cover = f.read()
                 if image_extension(cover):
                     art["poster"] = write("poster", cover)
-                    art.setdefault("icon", write("icon", cover))
+                    state["poster"] = "downloaded"
+                    if "icon" not in art:
+                        art["icon"] = write("icon", cover)
+                        state["icon"] = "downloaded"
 
         top, bottom = app_colours(package_name or title)
         for slot, (width, height) in SLOTS.items():
             if slot not in art:
                 art[slot] = write(slot, gradient_png(width, height, top, bottom))
+                state[slot] = "generated"  # a placeholder until the dashboard draws a real one
+        if state:
+            write_state(output_dir, state)
         return {os.path.basename(path): path for path in art.values()}
 
     @staticmethod

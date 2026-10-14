@@ -75,7 +75,7 @@ class TestFrameLoadCore(unittest.TestCase):
             art = ArtworkManager.ensure_artwork("com.test.app", "Test App Title", tmp_dir)
             # Every slot Steam shows gets a real PNG of the right size (SVG is not displayed by Steam).
             import struct
-            for name, size in (("poster.png", (600, 900)), ("banner.png", (460, 215)),
+            for name, size in (("poster.png", (600, 900)), ("banner.png", (920, 430)),
                                ("hero.png", (1920, 620)), ("icon.png", (256, 256))):
                 with open(os.path.join(tmp_dir, name), "rb") as f:
                     data = f.read(24)

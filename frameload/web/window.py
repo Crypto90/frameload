@@ -151,13 +151,43 @@ def try_pywebview(url: str, fullscreen: bool = False, width: int = 1280, height:
     sys.exit(0)
 
 
+def available_backend() -> str:
+    """Name of the first native window toolkit that can be imported, '' when there is none."""
+    import importlib.util
+    for package in ("PyQt6", "PySide6", "PyQt5", "PySide2"):
+        try:
+            if importlib.util.find_spec(package) and importlib.util.find_spec(f"{package}.QtWebEngineWidgets"):
+                return package
+        except (ImportError, ValueError):
+            continue
+    try:
+        import gi
+        for version in ("4.0", "4.1"):
+            try:
+                gi.require_version("WebKit2", version)
+                return "webkit2gtk"
+            except ValueError:
+                continue
+    except ImportError:
+        pass
+    try:
+        if importlib.util.find_spec("webview"):
+            return "pywebview"
+    except (ImportError, ValueError):
+        pass
+    return ""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="FrameLoad Standalone Window Launcher")
     parser.add_argument("--url", default="http://127.0.0.1:5050", help="URL to display")
     parser.add_argument("--fullscreen", action="store_true", help="Launch in fullscreen mode")
     parser.add_argument("--width", type=int, default=1280, help="Window width")
     parser.add_argument("--height", type=int, default=800, help="Window height")
+    parser.add_argument("--check", action="store_true", help="Exit 0 when a native window can be opened, 2 otherwise")
     args = parser.parse_args()
+    if args.check:
+        sys.exit(0 if available_backend() else 2)
 
     # Attempt native backends in priority order
     if try_qt(args.url, args.fullscreen, args.width, args.height):

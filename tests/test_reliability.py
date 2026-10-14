@@ -326,6 +326,55 @@ class TestFsAndStorage(TempCase):
             with self.assertRaises(FileNotFoundError):
                 StorageManager.resolve_anchor("ext_REMOVED")  # no silent switch to internal storage
 
+    @unittest.skipIf(os.name == "nt", "sysfs is a tree of symlinks")
+    def test_only_microsd_cards_and_usb_drives_are_offered(self):
+        from frameload.manager import storage
+        sys_root = os.path.join(self.tmp, "sys")
+        os.makedirs(os.path.join(sys_root, "class", "block"))
+
+        def disk(bus_path, name, parts, removable="0", mmc_type=None):
+            path = os.path.join(sys_root, "devices", bus_path, "block", name)
+            self.write(os.path.relpath(os.path.join(path, "removable"), self.tmp), data=removable)
+            if mmc_type:
+                self.write(os.path.relpath(os.path.join(path, "device", "type"), self.tmp), data=mmc_type + "\n")
+            os.symlink(path, os.path.join(sys_root, "class", "block", name))
+            for part in parts:
+                self.write(os.path.relpath(os.path.join(path, part, "partition"), self.tmp), data="1")
+                os.symlink(os.path.join(path, part), os.path.join(sys_root, "class", "block", part))
+
+        # The Frame's UFS storage is /dev/sd* too, with its system partitions.
+        disk("platform/1d84000.ufshc/host0/target0:0:0/0:0:0:0", "sda", ["sda2", "sda5", "sda8"])
+        disk("platform/a600000.usb/xhci-hcd/usb1/1-1/1-1:1.0/host1/target1:0:0/1:0:0:0", "sdb", ["sdb1"], removable="1")
+        disk("platform/8804000.mmc/mmc_host/mmc0/mmc0:aaaa", "mmcblk0", ["mmcblk0p1"], mmc_type="SD")
+        disk("platform/7c4000.mmc/mmc_host/mmc1/mmc1:0001", "mmcblk1", ["mmcblk1p1"], mmc_type="MMC")
+        mounts = self.write("mounts", data="\n".join([
+            "/dev/sda5 / btrfs ro 0 0", "/dev/sda8 /home ext4 rw 0 0", "/dev/sda2 /efi vfat rw 0 0",
+            "/dev/sda8 /var ext4 rw 0 0", "tmpfs /run tmpfs rw 0 0",
+            "/dev/sdb1 /run/media/deck/My\\040Stick exfat rw 0 0",
+            "/dev/mmcblk0p1 /run/media/deck/SDCARD ext4 rw 0 0",
+            "/dev/mmcblk0p1 /var/lib/flatpak-sd ext4 rw 0 0",  # the same card again
+            "/dev/mmcblk1p1 /mnt/emmc ext4 rw 0 0", ""]))
+
+        found = storage.external_mounts(mounts, sys_root)
+        self.assertEqual([(m["path"], m["kind"]) for m in found],
+                         [("/run/media/deck/My Stick", "usb"), ("/run/media/deck/SDCARD", "sd")])
+
+    def test_default_drive_is_remembered_and_must_hold_games(self):
+        from frameload.config import Config
+        self.patch(Config, "save")
+        devices = [{"id": "internal", "name": "Internal", "supports_lepton": True},
+                   {"id": "ext_SD", "name": "microSD Card (SD)", "supports_lepton": True},
+                   {"id": "ext_STICK", "name": "USB Drive (STICK)", "supports_lepton": False, "filesystem": "exfat"}]
+        cfg = Config.get()
+        before = dict(cfg.raw.get("storage", {}))
+        self.addCleanup(lambda: cfg.raw.__setitem__("storage", before))
+        with patch.object(StorageManager, "get_devices", return_value=devices):
+            self.assertTrue(StorageManager.set_default_device("ext_SD")["success"])
+            self.assertEqual(cfg.raw["storage"]["default_device_id"], "ext_SD")
+            self.assertFalse(StorageManager.set_default_device("ext_STICK")["success"])
+            self.assertFalse(StorageManager.set_default_device("ext_GONE")["success"])
+        self.assertEqual(cfg.raw["storage"]["default_device_id"], "ext_SD")
+
 
 class TestAccess(TempCase):
     def setUp(self):

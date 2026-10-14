@@ -112,67 +112,128 @@ if [[ "${1:-}" == frameload://* ]]; then
 fi
 
 # Launch UI window (SteamOS Gaming Mode & Standalone VR compatible)
-# In Gaming Mode, gamescope requires a graphic window to be attached to the shortcut PID
+# Exactly one window is opened and this script lives exactly as long as it: Steam follows this
+# process, so closing FrameLoad in Steam closes the window, and closing the window ends the app.
+# A window that ran and was closed can exit non-zero, so a failed exit is never a reason to try the
+# next browser (that retry used to reopen Firefox behind the closed window).
+WINDOW_LOCK="$DATA_DIR/window.lock"
+BROWSER_PID=""
+
+close_window() {
+    trap - TERM INT HUP
+    if [[ -n "$BROWSER_PID" ]]; then
+        kill -TERM "$BROWSER_PID" 2>/dev/null || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$BROWSER_PID" 2>/dev/null || break
+            sleep 0.3
+        done
+        kill -KILL "$BROWSER_PID" 2>/dev/null || true
+    fi
+    exit 0
+}
+
+run_window() {
+    "$@" &
+    BROWSER_PID=$!
+    trap close_window TERM INT HUP
+    wait "$BROWSER_PID" || true
+    BROWSER_PID=""
+    exit 0
+}
+
+# Fullscreen without browser controls in Gaming Mode and in the headset; a normal window on a desktop.
+use_kiosk() {
+    case "${FRAMELOAD_WINDOW:-}" in
+        kiosk) return 0 ;;
+        normal) return 1 ;;
+    esac
+    case "${XDG_CURRENT_DESKTOP:-}" in
+        *KDE*|*GNOME*|*XFCE*) return 1 ;;
+    esac
+    return 0
+}
+
+# A profile of FrameLoad's own: the window never attaches to another Firefox (which would keep the
+# dashboard open after FrameLoad closes) and never shows first-run pages or session restore.
+firefox_profile() {
+    mkdir -p "$1"
+    cat > "$1/user.js" <<'PREFS'
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("datareporting.healthreport.uploadEnabled", false);
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("browser.sessionstore.max_resumed_crashes", 0);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("browser.warnOnQuit", false);
+user_pref("browser.translations.automaticallyPopup", false);
+user_pref("signon.rememberSignons", false);
+user_pref("app.update.auto", false);
+PREFS
+}
+
+flatpak_has() {
+    which flatpak >/dev/null 2>&1 && flatpak info "$1" >/dev/null 2>&1
+}
+
 launch_app_window() {
-    # Method 1: Native Standalone Python Window (PyQt6 / WebKit2GTK / pywebview)
-    # Launches as a 100% native desktop application with ZERO external browser chrome
-    if /usr/bin/python3 -m frameload.web.window --url "$URL" 2>/dev/null; then
-        exit 0
-    elif python3 -m frameload.web.window --url "$URL" 2>/dev/null; then
+    # One FrameLoad window at a time: a frameload:// link opened while it is up is handled by the
+    # running dashboard instead of a second window.
+    exec 8>"$WINDOW_LOCK"
+    if ! flock -n 8; then
+        echo "FrameLoad's window is already open."
         exit 0
     fi
 
-    # Method 2: Native or Flatpak Chromium / Chrome in standalone App Mode
+    local flatpak_args=()
+    if which flatpak >/dev/null 2>&1 && flatpak run --help 2>/dev/null | grep -q -- "--die-with-parent"; then
+        flatpak_args=(--die-with-parent)  # ends the sandboxed browser together with this script
+    fi
+
+    # Method 1: a native window (Qt WebEngine, WebKit2GTK or pywebview), when one is installed
+    if /usr/bin/python3 -m frameload.web.window --check >/dev/null 2>&1; then
+        run_window /usr/bin/python3 -m frameload.web.window --url "$URL"
+    fi
+
+    # Method 2: Chromium / Chrome app window with a profile of its own
     for BROWSER in google-chrome-stable google-chrome chromium-browser chromium; do
         if which "$BROWSER" >/dev/null 2>&1; then
-            exec "$BROWSER" \
-                --app="$URL" \
-                --class="FrameLoad" \
-                --window-size=1280,800 \
-                --no-first-run \
-                --no-default-browser-check \
-                --disable-features=TranslateUI \
-                --enable-features=OverlayScrollbar
+            run_window "$BROWSER" --app="$URL" --class="FrameLoad" --window-size=1280,800 \
+                --user-data-dir="$DATA_DIR/chromium-profile" --no-first-run --no-default-browser-check \
+                --disable-features=TranslateUI --enable-features=OverlayScrollbar
+        fi
+    done
+    for APP in org.chromium.Chromium com.google.Chrome; do
+        if flatpak_has "$APP"; then
+            run_window flatpak run "${flatpak_args[@]}" "$APP" --app="$URL" --class="FrameLoad" \
+                --window-size=1280,800 --user-data-dir="$HOME/.var/app/$APP/frameload-profile" \
+                --no-first-run --no-default-browser-check
         fi
     done
 
-    if which flatpak >/dev/null 2>&1; then
-        if flatpak info org.chromium.Chromium >/dev/null 2>&1; then
-            exec flatpak run org.chromium.Chromium --app="$URL" --class="FrameLoad" --window-size=1280,800
-        elif flatpak info com.google.Chrome >/dev/null 2>&1; then
-            exec flatpak run com.google.Chrome --app="$URL" --class="FrameLoad" --window-size=1280,800
-        fi
+    # Method 3: Firefox (SteamOS ships it as the org.mozilla.firefox Flatpak). The sandbox can only
+    # read profiles inside its own ~/.var/app folder.
+    local mode=()
+    if use_kiosk; then mode=(--kiosk); fi
+    if flatpak_has org.mozilla.firefox; then
+        local profile="$HOME/.var/app/org.mozilla.firefox/frameload-profile"
+        firefox_profile "$profile"
+        run_window flatpak run "${flatpak_args[@]}" org.mozilla.firefox --no-remote --profile "$profile" "${mode[@]}" "$URL"
+    fi
+    if which firefox >/dev/null 2>&1; then
+        firefox_profile "$DATA_DIR/firefox-profile"
+        run_window firefox --no-remote --profile "$DATA_DIR/firefox-profile" "${mode[@]}" "$URL"
     fi
 
-    # Method 3: Kiosk-Mode / Standalone Window for Firefox (SteamOS Default)
-    # SteamOS installs Firefox as a Flatpak (org.mozilla.firefox).
-    # Passing an external --profile path outside the Flatpak sandbox triggers:
-    # "Your Firefox profile cannot be loaded. It may be missing or inaccessible."
-    # We clean any invalid profile artifacts and launch directly in kiosk mode or new window.
-    rm -rf "$DATA_DIR/browser_profile" 2>/dev/null || true
-
-    if which flatpak >/dev/null 2>&1 && flatpak info org.mozilla.firefox >/dev/null 2>&1; then
-        if flatpak run org.mozilla.firefox --kiosk "$URL" 2>/dev/null; then
-            exit 0
-        elif flatpak run org.mozilla.firefox --new-window "$URL" 2>/dev/null; then
-            exit 0
-        fi
-    elif which firefox >/dev/null 2>&1; then
-        if firefox --kiosk "$URL" 2>/dev/null; then
-            exit 0
-        elif firefox --new-window "$URL" 2>/dev/null; then
-            exit 0
-        fi
-    fi
-
-    # Method 4: Standard xdg-open / python webbrowser fallback
+    # Method 4: whatever opens web pages on this system. That browser is not ours to close, so stay
+    # alive while the server runs to keep Steam's session.
     if which xdg-open >/dev/null 2>&1; then
         xdg-open "$URL" >/dev/null 2>&1 || true
     else
         python3 -m webbrowser "$URL" >/dev/null 2>&1 || true
     fi
-
-    # Keep script alive while server is up so Steam tracks game session
     while is_server_alive; do
         sleep 2
     done
