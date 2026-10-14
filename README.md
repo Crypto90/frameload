@@ -32,6 +32,7 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 - **📲 Upload From a Phone or PC, or Pick Files in the Headset:**
   - On another device, open the dashboard, choose an APK (and its OBB files) and it is sent straight to the headset and installed.
   - In the headset, a file browser covers the home folder, Downloads and any microSD card or USB drive, so nobody has to type a path with a VR keyboard.
+- **🎨 Six Looks:** Big Picture (default), Spatial, Showcase, Neon, Command Center and Daylight (light and dark). Switch under System → Appearance; each arranges the library its own way.
 - **🕹️ Dual Input Engine (VR Laser Pointer + Gamepad Navigation):**
   - Built-in HTML5 Gamepad & VR Pointer API navigator (`gamepad.js`):
     - **Momentum Drag-to-Scroll:** Grab and flick lists, catalog grids, and modal dialogs with realistic inertial physics friction.
@@ -120,22 +121,26 @@ Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the 
 
 ---
 
-## 📸 App Screenshots
+## 🎨 Six Looks
 
-| 🌐 Browse | 🎮 Library |
-|:---:|:---:|
-| [![Browse Catalog](docs/images/screenshot_catalog.png)](docs/images/screenshot_catalog.png) | [![Installed Library](docs/images/screenshot_library.png)](docs/images/screenshot_library.png) |
-| *Browse, search, and queue VR titles with live Ko-fi chip, battery, storage & Lepton telemetry* | *Manage installed games, launch in VR, and configure FrameBridge per-title settings* |
+FrameLoad comes in six looks. Pick one under **System → Appearance**; it changes at once and is remembered on the headset. **Big Picture** is the default. Each look arranges the library its own way, and every other screen follows its colours and type.
 
-| 📊 Steam-Style Storage Manager | 📥 Sideload |
+| A · Big Picture (default) | B · Spatial |
 |:---:|:---:|
-| [![Steam Storage Manager](docs/images/screenshot_storage.png)](docs/images/screenshot_storage.png) | [![Sideloading Hub](docs/images/screenshot_sideload.png)](docs/images/screenshot_sideload.png) |
-| *Segmented storage visualizer, multi-drive mover (Internal SSD & MicroSD), and cache cleanup* | *Sideload Quest APKs, Windows Proton EXEs, Linux apps, and toggle flat theater presets* |
+| [![Big Picture](docs/images/looks/look-a.jpg)](docs/images/looks/look-a.jpg) | [![Spatial](docs/images/looks/look-b.jpg)](docs/images/looks/look-b.jpg) |
+| *Looks like SteamOS: tabs on top, Steam covers, the controller's buttons along the bottom* | *A floating glass window with the navigation beside it; the largest targets* |
 
-| 🛠️ System | 🎵 Game Details & Custom Songs / Mods |
+| C · Showcase | D · Neon |
 |:---:|:---:|
-| [![System & Diagnostics](docs/images/screenshot_system.png)](docs/images/screenshot_system.png) | [![Game Details & Mods](docs/images/screenshot_modal.png)](docs/images/screenshot_modal.png) |
-| *Live telemetry (Lepton VR, FEX-Emu Proton ARM64), OTA updates, and Support on Ko-fi card* | *Per-game settings, drive migration, and Beat Saber custom songs & mod injector* |
+| [![Showcase](docs/images/looks/look-c.jpg)](docs/images/looks/look-c.jpg) | [![Neon](docs/images/looks/look-d.jpg)](docs/images/looks/look-d.jpg) |
+| *Your last game fills the screen with one big Play button; the library sits in one row* | *The original FrameLoad look, refined* |
+
+| E · Command Center | F · Daylight |
+|:---:|:---:|
+| [![Command Center](docs/images/looks/look-e.jpg)](docs/images/looks/look-e.jpg) | [![Daylight](docs/images/looks/look-f.jpg)](docs/images/looks/look-f.jpg) |
+| *A sortable list beside a detail panel, for big libraries and managing them* | *Calm and very legible, in a light and a [dark](docs/images/looks/look-f-dark.jpg) version* |
+
+The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `frameload/web/static/fonts/OFL.txt`), so they work without a network. Game titles and covers in these pictures are examples.
 
 ---
 
@@ -194,7 +199,7 @@ If you prefer downloading a single pre-built installer package without needing `
 ```bash
 # Grep latest release tag and download the standalone installer:
 TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.5}/frameload-installer.sh"
+curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.6}/frameload-installer.sh"
 bash frameload-installer.sh
 ```
 

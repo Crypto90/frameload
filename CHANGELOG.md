@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.6] - 2026-10-14
+
+### Added
+- **Six looks for the whole dashboard**, chosen under System → Appearance and remembered on the headset:
+  - **Big Picture** (the new default): looks like SteamOS, with tabs on top, Steam covers, a wide card for the game you are playing and the controller's buttons along the bottom.
+  - **Spatial**: a floating glass window with the navigation beside it, the largest targets and a status bar underneath.
+  - **Showcase**: the game you played last fills the screen with one big Play or Resume button; the library sits in one row below it.
+  - **Neon**: the original FrameLoad look, refined.
+  - **Command Center**: a sortable list of everything installed beside a detail panel, with recent games, activity and device status in a side bar.
+  - **Daylight**: light and very legible, with a dark version.
+  Each look arranges the library its own way; Browse, Install File, Downloads, Storage, System and every dialog follow its colours and type. The page opens directly in the saved look.
+- **Fonts are bundled** with FrameLoad (about 400 KB, SIL Open Font License), so the looks work without a network.
+- The storage menu (clean the download cache, reset shader caches, repair the keyring) can now be reached with the controller.
+
+### Changed
+- An installed game's page shows its wide artwork at the top, and downloads of an installed game show its own icon.
+- Plain wording instead of emoji in buttons and messages (they clashed with the new looks).
+- The storage sort control has one label, "Sort", and plain option names.
+
+### Fixed
+- The web server queues up to 64 waiting connections instead of 5, so a browser opening the page with a dozen parallel requests is not turned away.
+- The drawn Steam artwork kept working: its canvas colours are now literal values (canvas cannot read the page's colour variables).
+
+---
+
 ## [v1.3.5] - 2026-10-14
 
 ### Added

@@ -133,11 +133,11 @@ window.SteamOSK = {
     if (badge) {
       if (this.enabled) {
         badge.textContent = "Auto-Trigger Active";
-        badge.style.background = "rgba(0, 245, 212, 0.15)";
+        badge.style.background = "rgb(var(--ok-rgb) / 0.15)";
         badge.style.color = "var(--accent-emerald)";
       } else {
         badge.textContent = "Manual Only (Steam + X)";
-        badge.style.background = "rgba(255, 255, 255, 0.1)";
+        badge.style.background = "rgb(var(--fg-rgb) / 0.1)";
         badge.style.color = "var(--text-muted)";
       }
     }
@@ -411,7 +411,7 @@ function buildGameCardHTML(game, installedPkgs) {
   const isInstalled = game.is_installed || installedPkgs.has(game.package_name);
   const thumbUrl = game.thumbnail_url || `/api/thumbnail/${encodeURIComponent(game.package_name)}`;
   const version = game.version_name || (game.version_code ? "v" + game.version_code : "");
-  const meta = game.downloads ? "📥 " + Number(game.downloads).toLocaleString() : version;
+  const meta = game.downloads ? `${Number(game.downloads).toLocaleString()} downloads` : version;
 
   let action = `<button class="card-btn download" onclick="event.stopPropagation(); queueDownload(${jsArg(game.id)})">${isFlat ? "Install" : "Download"}</button>`;
   if (isInstalled && game.update_available) {
@@ -587,12 +587,12 @@ async function syncCatalog() {
   const btn = document.getElementById("sync-catalog-btn");
   const isFlat = state.catalog.kind === "flat";
   if (btn) { btn.classList.add("spinning"); btn.disabled = true; }
-  showToast(isFlat ? "Downloading the F-Droid app catalog..." : "🔄 Syncing VR catalog metadata from mirror...", "info");
+  showToast(isFlat ? "Downloading the F-Droid app catalog..." : "Syncing the VR catalog from the mirror...", "info");
 
   try {
     const data = await apiPost("/api/catalog/sync", { kind: state.catalog.kind });
     if (data.success) {
-      showToast(isFlat ? (data.message || `${data.total_games} apps available.`) : `✅ Catalog synced! ${data.total_games} games available.`, "success");
+      showToast(isFlat ? (data.message || `${data.total_games} apps available.`) : `Catalog synced: ${data.total_games} games available.`, "success");
       if (isFlat) loadCatalogCategories();
       loadCatalog(1, false);
     } else {
@@ -625,7 +625,7 @@ async function queueDownload(gameId) {
     });
     const data = await res.json();
     if (data.success) {
-      showToast("🚀 Download queued!", "success");
+      showToast("Download queued.", "success");
       pollDownloadsOnce();
     } else {
       showToast(data.error || "Failed to queue download", "error");
@@ -656,7 +656,7 @@ async function pauseDownload(taskId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ task_id: taskId })
     });
-    showToast("⏸ Download paused", "info");
+    showToast("Download paused.", "info");
     pollDownloadsOnce();
   } catch (err) {
     console.error(err);
@@ -670,7 +670,7 @@ async function resumeDownload(taskId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ task_id: taskId })
     });
-    showToast("▶ Download resumed", "info");
+    showToast("Download resumed.", "info");
     pollDownloadsOnce();
   } catch (err) {
     console.error(err);
@@ -694,7 +694,7 @@ async function clearCompletedDownloads() {
   try {
     const res = await fetch("/api/downloads/clear", { method: "POST" });
     const data = await res.json();
-    showToast(`🧹 Cleared ${data.cleared || 0} completed tasks`, "info");
+    showToast(`Cleared ${data.cleared || 0} finished downloads.`, "info");
     pollDownloadsOnce();
   } catch (err) {
     console.error(err);
@@ -722,6 +722,7 @@ async function pollDownloadsOnce() {
     const res = await fetch("/api/downloads");
     const data = await res.json();
     state.downloads = data.tasks || [];
+    noteDownloadActivity();
     renderDownloadsBadge();
     notePortingJob(data.porting_job);
     renderDownloadsDrawer();
@@ -787,11 +788,11 @@ function renderDownloadsDrawer() {
   if (pauseBtn) {
     if (activeTask.status === "downloading") {
       pauseBtn.style.display = "inline-flex";
-      pauseBtn.textContent = "⏸ Pause";
+      pauseBtn.textContent = "Pause";
       pauseBtn.onclick = () => pauseDownload(activeTask.id);
     } else if (activeTask.status === "paused") {
       pauseBtn.style.display = "inline-flex";
-      pauseBtn.textContent = "▶ Resume";
+      pauseBtn.textContent = "Resume";
       pauseBtn.onclick = () => resumeDownload(activeTask.id);
     } else {
       pauseBtn.style.display = "none";
@@ -882,7 +883,8 @@ function renderDownloadsTab() {
     let card = Array.from(container.children).find(c => c.dataset.id === t.id);
     if (!card) {
       const pkg = (t.game && t.game.package_name) || "";
-      const thumb = (t.game && t.game.thumbnail_url) || (pkg ? `/api/thumbnail/${encodeURIComponent(pkg)}` : "");
+      const owned = pkg && (state.installed || []).find(g => g.package === pkg);
+      const thumb = owned ? artUrl(owned, "icon") : (t.game && t.game.thumbnail_url) || (pkg ? `/api/thumbnail/${encodeURIComponent(pkg)}` : "");
       card = document.createElement("div");
       card.className = "download-item-card";
       card.dataset.id = t.id;
@@ -927,7 +929,7 @@ function renderDownloadsTab() {
 // --- Installed Library API ---
 async function loadInstalled() {
   setTimeout(() => composePendingArtwork(), 1500);
-  const container = document.getElementById("library-grid");
+  const container = document.getElementById("library-view");
   if (!container) return;
 
   try {
@@ -944,7 +946,7 @@ async function loadInstalled() {
     container.innerHTML = `
       <div class="error-state" style="padding:40px; text-align:center;">
         <p style="margin-bottom:12px; font-weight:600;">Failed to load installed library: ${err.message}</p>
-        <button class="btn-primary compact" onclick="loadInstalled()">🔄 Retry Now</button>
+        <button class="btn-primary compact" onclick="loadInstalled()">Try Again</button>
       </div>
     `;
   }
@@ -962,8 +964,8 @@ window.loadMoreCatalog = loadMoreCatalog;
 window.loadInstalled = loadInstalled;
 
 function renderInstalledGrid() {
-  const container = document.getElementById("library-grid");
-  if (!container) return;
+  const view = document.getElementById("library-view");
+  if (!view) return;
 
   const count = document.getElementById("library-count");
   if (count) {
@@ -971,9 +973,17 @@ function renderInstalledGrid() {
     count.style.display = state.installed.length ? "" : "none";
   }
 
+  const words = (state.libraryQuery || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const games = state.installed.filter(game => {
+    const text = `${game.title || ""} ${game.package || ""}`.toLowerCase();
+    return words.every(word => text.includes(word));
+  });
+  sortLibrary(games);
+  const ctx = Object.assign(skinContext(), { games, query: state.libraryQuery || "", recent: recentGames(words.length ? [] : state.installed) });
+  const skin = SKIN_VIEWS[currentSkin()];
+
   if (state.installed.length === 0) {
-    renderRecentlyPlayed([]);
-    container.innerHTML = `
+    view.innerHTML = skin && skin.empty ? skin.empty(ctx) : `
       <div class="empty-state">
         <h3>Your library is empty</h3>
         <p>Install something from Browse, or a file you already have. Everything you install appears here and in your Steam library.</p>
@@ -982,18 +992,8 @@ function renderInstalledGrid() {
           <button class="btn-secondary" onclick="goToTab('sideload')">Install a File</button>
         </div>
       </div>`;
-    if (window.gamepadNav) window.gamepadNav.updateFocusables();
-    return;
-  }
-
-  const words = (state.libraryQuery || "").toLowerCase().split(/\s+/).filter(Boolean);
-  const games = state.installed.filter(game => {
-    const text = `${game.title || ""} ${game.package || ""}`.toLowerCase();
-    return words.every(word => text.includes(word));
-  });
-  if (games.length === 0) {
-    renderRecentlyPlayed([]);
-    container.innerHTML = `
+  } else if (games.length === 0) {
+    view.innerHTML = skin && skin.noMatch ? skin.noMatch(ctx) : `
       <div class="empty-state">
         <h3>Nothing in your library matches &ldquo;${escapeHtml(state.libraryQuery)}&rdquo;</h3>
         <div class="empty-actions">
@@ -1001,47 +1001,78 @@ function renderInstalledGrid() {
           <button class="btn-primary" onclick="searchCatalogInstead()">Search Browse Instead</button>
         </div>
       </div>`;
-    if (window.gamepadNav) window.gamepadNav.updateFocusables();
-    return;
+  } else if (skin && skin.library) {
+    skin.library(ctx);
+  } else {
+    defaultLibraryView(ctx);
   }
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
 
-  sortLibrary(games);
-  renderRecentlyPlayed(words.length ? [] : state.installed);
+// The neon look's library (also used by any look that does not draw its own): a Recently Played
+// shelf and a grid of cards.
+function defaultLibraryView(ctx) {
+  ctx.root.innerHTML = `
+    ${ctx.recent.length ? `
+      <section class="library-recent" aria-label="Recently played">
+        <h2 class="section-title">Recently Played</h2>
+        <div class="recent-grid">${ctx.recent.map(recentCardHtml).join("")}</div>
+        <h2 class="section-title">All Games</h2>
+      </section>` : ""}
+    <div id="library-grid" class="games-grid">${ctx.games.map(libraryCardHtml).join("")}</div>`;
+}
 
-  container.innerHTML = games.map(game => {
-    const pkg = jsArg(game.package);
-    const level = (game.compat && game.compat.level) || "";
-    const needsAttention = level === "needs_port" || level === "blocked";
-    const updateInfo = libraryUpdateFor(game);
-
-    return `
-      <div class="game-card" data-package="${escapeHtml(game.package)}" draggable="false" onclick="openGameModal(${pkg}, 'installed')">
-        <div class="card-poster">
-          <img src="${escapeHtml(libraryArt(game))}" alt="" draggable="false" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
-          <div class="badge-overlay">
-            <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
-            ${game.is_external ? '<span class="badge" style="background:#27ae60; color:#fff;" title="Installed on a microSD card or USB drive">External</span>' : ''}
-            ${game.is_running ? '<span class="badge installed" style="background:#00f2fe;">Running</span>' : ''}
-            ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
-            ${needsAttention ? `<span class="badge compat-${escapeHtml(level)}" title="${escapeHtml(game.compat.label)}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ''}
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
-          <div class="card-meta">
-            <span>${game.is_external ? 'External' : 'Internal'}</span>
-            <span>${escapeHtml(playedLabel(game))}</span>
-          </div>
-          <div class="card-actions">
-            ${libraryPrimaryButton(game)}
-            <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
-          </div>
+function libraryCardHtml(game) {
+  const pkg = jsArg(game.package);
+  const level = (game.compat && game.compat.level) || "";
+  const needsAttention = level === "needs_port" || level === "blocked";
+  const updateInfo = libraryUpdateFor(game);
+  return `
+    <div class="game-card" data-package="${escapeHtml(game.package)}" draggable="false" onclick="openGameModal(${pkg}, 'installed')">
+      <div class="card-poster">
+        <img src="${escapeHtml(libraryArt(game))}" alt="" draggable="false" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+        <div class="badge-overlay">
+          <span class="badge ${game.is_vr ? 'vr' : 'flat'}">${game.is_vr ? 'VR' : '2D'}</span>
+          ${game.is_external ? '<span class="badge badge-external" title="Installed on a microSD card or USB drive">External</span>' : ''}
+          ${game.is_running ? '<span class="badge installed">Running</span>' : ''}
+          ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
+          ${needsAttention ? `<span class="badge compat-${escapeHtml(level)}" title="${escapeHtml(game.compat.label)}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ''}
         </div>
       </div>
-    `;
-  }).join("");
+      <div class="card-body">
+        <div class="card-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
+        <div class="card-meta">
+          <span>${game.is_external ? 'External' : 'Internal'}</span>
+          <span>${escapeHtml(playedLabel(game))}</span>
+        </div>
+        <div class="card-actions">
+          ${libraryPrimaryButton(game)}
+          <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
+        </div>
+      </div>
+    </div>`;
+}
 
-  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+function recentCardHtml(game) {
+  const art = escapeHtml(libraryArt(game));
+  const total = formatPlaytime(game.playtime_seconds);
+  return `
+    <div class="recent-card" draggable="false" onclick="openGameModal(${jsArg(game.package)}, 'installed')">
+      <div class="recent-backdrop" style="background-image:url('${art}')"></div>
+      <img class="recent-cover" src="${art}" alt="" draggable="false" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
+      <div class="recent-info">
+        <div class="recent-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
+        <div class="recent-meta">${escapeHtml(playedLabel(game))}${total ? ` · ${escapeHtml(total)}` : ""}</div>
+        <div class="recent-actions">${libraryPrimaryButton(game)}</div>
+      </div>
+    </div>`;
+}
+
+// The last games played, the running one first.
+function recentGames(games, n = 3) {
+  return games.filter(g => g.last_played || g.is_running)
+    .sort((a, b) => (b.is_running - a.is_running) || (b.last_played - a.last_played))
+    .slice(0, n);
 }
 
 function libraryUpdateFor(game) {
@@ -1115,30 +1146,6 @@ function sortLibrary(games) {
   return games.sort(order);
 }
 
-// Steam's "Recent games" shelf: the last three games played, with what starts them right there.
-function renderRecentlyPlayed(games) {
-  const section = document.getElementById("library-recent");
-  const grid = document.getElementById("library-recent-grid");
-  if (!section || !grid) return;
-  const recent = games.filter(g => g.last_played || g.is_running)
-    .sort((a, b) => (b.is_running - a.is_running) || (b.last_played - a.last_played))
-    .slice(0, 3);
-  section.style.display = recent.length ? "" : "none";
-  grid.innerHTML = recent.map(game => {
-    const art = escapeHtml(libraryArt(game));
-    const total = formatPlaytime(game.playtime_seconds);
-    return `
-      <div class="recent-card" draggable="false" onclick="openGameModal(${jsArg(game.package)}, 'installed')">
-        <div class="recent-backdrop" style="background-image:url('${art}')"></div>
-        <img class="recent-cover" src="${art}" alt="" draggable="false" decoding="async" onerror="this.onerror=null; this.src='/static/assets/fallback_cover.svg';">
-        <div class="recent-info">
-          <div class="recent-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
-          <div class="recent-meta">${escapeHtml(playedLabel(game))}${total ? ` · ${escapeHtml(total)}` : ""}</div>
-          <div class="recent-actions">${libraryPrimaryButton(game)}</div>
-        </div>
-      </div>`;
-  }).join("");
-}
 
 async function launchGame(pkg) {
   const game = (state.installed || []).find(g => g.package === pkg);
@@ -1259,12 +1266,12 @@ async function loadSystemTelemetry() {
     // Header chips
     const batChip = document.getElementById("header-battery");
     if (batChip && data.battery) {
-      batChip.innerHTML = `<span class="pulse-dot"></span> ${data.battery.percent}% ${data.battery.plugged ? '⚡' : ''}`;
+      batChip.innerHTML = `<span class="pulse-dot"></span> ${data.battery.percent}%${data.battery.plugged ? ' charging' : ''}`;
     }
 
     const storageChip = document.getElementById("header-storage");
     if (storageChip && data.storage) {
-      storageChip.textContent = `💾 ${data.storage.free_gb} GB Free`;
+      storageChip.textContent = `${data.storage.free_gb} GB free`;
     }
 
     // The header shows Lepton only when something is wrong with it.
@@ -1278,6 +1285,7 @@ async function loadSystemTelemetry() {
     noteGuardEvent(data.guard_event);
 
     renderSystemTab(data);
+    renderShellStatus();
   } catch (err) {
     console.error("Telemetry error", err);
   }
@@ -1381,13 +1389,19 @@ function openGameModal(id, mode = "catalog") {
 
   const pkg = game.package_name || game.package;
   const thumbUrl = game.thumbnail_url || `/api/thumbnail/${pkg}`;
+  const installedGame = (state.installed || []).find(g => g.package === pkg);
 
-  // Cover image banner
+  // Picture strip: an installed game's wide hero art (made for this shape), then its cover.
   const coverEl = document.getElementById("modal-game-cover");
   if (coverEl) {
-    // Armed again for every game: the handler removes itself after its first use.
-    coverEl.onerror = () => { coverEl.onerror = null; coverEl.src = "/static/assets/fallback_cover.svg"; };
-    coverEl.src = thumbUrl;
+    const chain = [installedGame ? artUrl(installedGame, "hero") : null, thumbUrl, "/static/assets/fallback_cover.svg"].filter(Boolean);
+    let step = 0;
+    coverEl.onerror = () => {
+      step += 1;
+      if (step < chain.length) coverEl.src = chain[step];
+      else coverEl.onerror = null;
+    };
+    coverEl.src = chain[0];
   }
 
   // Badges: Kind & Installed
@@ -1792,9 +1806,9 @@ async function loadModalMods(pkg) {
     }
 
     container.innerHTML = mods.map(m => `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid rgb(var(--fg-rgb) / 0.05);">
         <div>
-          <span style="font-weight:600; color:#fff;">${escapeHtml(m.name)}</span>
+          <span style="font-weight:600; color:var(--text-strong);">${escapeHtml(m.name)}</span>
           <span style="font-size:0.75rem; color:var(--text-muted); margin-left:6px;">(${m.type === 'custom_song' ? '🎵 Song' : '📦 Mod'} • ${m.size_formatted})</span>
         </div>
         <button class="btn-secondary compact" style="color:var(--accent-danger); font-size:0.75rem; padding:2px 8px;" onclick="deleteModalMod('${pkg}', '${m.id}')">Delete</button>
@@ -2041,8 +2055,8 @@ function renderStorageDrives(devices, activeDev) {
     const isActive = activeDev && activeDev.id === dev.id;
     const isSd = dev.is_sd_card;
     const badgeHtml = isSd 
-      ? `<span class="badge" style="background:#27ae60; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">MicroSD</span>`
-      : `<span class="badge" style="background:rgba(255,255,255,0.1); color:#ccc; font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">SSD</span>`;
+      ? `<span class="badge" style="background:#27ae60; color:var(--text-strong); font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">MicroSD</span>`
+      : `<span class="badge" style="background:rgb(var(--fg-rgb) / 0.1); color:#ccc; font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">SSD</span>`;
     return `
       <div class="storage-drive-card ${isActive ? 'active' : ''}" onclick="selectStorageDrive('${dev.id}')">
         <div class="drive-icon-box">
@@ -2118,7 +2132,7 @@ function renderStorageGames() {
   if (games.length === 0) {
     container.innerHTML = `
       <div style="text-align:center; padding:48px 20px; color:var(--text-muted); background:var(--bg-card); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
-        <p style="font-size:1.05rem; font-weight:600; color:#fff; margin-bottom:6px;">No installed games match your search</p>
+        <p style="font-size:1.05rem; font-weight:600; color:var(--text-strong); margin-bottom:6px;">No installed games match your search</p>
         <p style="font-size:0.85rem;">Clear search filter or install games from the Catalog tab.</p>
       </div>
     `;
@@ -2262,7 +2276,7 @@ function updateStorageBatchBar() {
     if (otherDevices.length > 0 && count > 0) {
       moveGroup.style.display = "inline-flex";
       moveSelect.innerHTML = otherDevices.map(d => `
-        <option value="${d.id}">${d.is_sd_card ? '💾 ' : '💿 '} Move to ${d.name}</option>
+        <option value="${d.id}">Move to ${d.name}</option>
       `).join("");
     } else {
       moveGroup.style.display = "none";
@@ -2505,7 +2519,7 @@ async function checkForUpdates(userTriggered = false) {
         }
       }
       if (sysBadge) {
-        sysBadge.style.background = "rgba(255, 183, 3, 0.15)";
+        sysBadge.style.background = "rgb(var(--warn-rgb) / 0.15)";
         sysBadge.style.color = "var(--accent-amber)";
         sysBadge.textContent = `Update: v${appUpdate.latest_version}`;
       }
@@ -2514,7 +2528,7 @@ async function checkForUpdates(userTriggered = false) {
       if (alertChip) alertChip.style.display = "none";
       if (topBanner) topBanner.style.display = "none";
       if (sysBadge) {
-        sysBadge.style.background = "rgba(0, 245, 212, 0.15)";
+        sysBadge.style.background = "rgb(var(--ok-rgb) / 0.15)";
         sysBadge.style.color = "var(--accent-emerald)";
         sysBadge.textContent = "Up to Date";
       }
@@ -2626,11 +2640,11 @@ async function triggerAppUpdate() {
       showToast(data.error || "Update failed. Check system logs.", "error");
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "⚡ Update & Restart Service (1-Click)";
+        btn.textContent = "Update and Restart";
       }
       if (sysBtn) {
         sysBtn.disabled = false;
-        sysBtn.textContent = "⚡ 1-Click Update";
+        sysBtn.textContent = "Update Now";
       }
     }
   } catch (err) {
@@ -2730,14 +2744,14 @@ async function executeUninstallApp() {
     const data = await res.json();
     if (data.success) {
       document.body.innerHTML = `
-        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#040915; color:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:var(--accent-ink); color:var(--text-strong); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
           <div style="font-size:3.5rem; margin-bottom:16px;">✨</div>
-          <h1 style="color:#00f5d4; font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
+          <h1 style="color:var(--ok); font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
           <p style="color:#94a3b8; max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
             All system integrations have been removed from your Steam Frame: background systemd service stopped, desktop launcher deleted, Steam shortcuts &amp; grid artwork removed, and caches cleared.
           </p>
-          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:16px 24px; color:#cbd5e1; font-size:0.9rem; margin-bottom:20px;">
-            ${keepBackups ? "💾 Save game backups preserved in <code>~/.local/share/frameload/backups</code>" : "🗑️ All data and caches have been purged."}
+          <div style="background:rgb(var(--fg-rgb) / 0.04); border:1px solid rgb(var(--fg-rgb) / 0.1); border-radius:12px; padding:16px 24px; color:#cbd5e1; font-size:0.9rem; margin-bottom:20px;">
+            ${keepBackups ? "Save game backups were kept in <code>~/.local/share/frameload/backups</code>." : "All data and caches were removed."}
           </div>
           <p style="color:#64748b; font-size:0.85rem;">You may now safely close this browser window.</p>
         </div>
@@ -2752,9 +2766,9 @@ async function executeUninstallApp() {
   } catch (err) {
     // Daemon exited normally as part of uninstallation
     document.body.innerHTML = `
-      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#040915; color:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:var(--accent-ink); color:var(--text-strong); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
         <div style="font-size:3.5rem; margin-bottom:16px;">✨</div>
-        <h1 style="color:#00f5d4; font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
+        <h1 style="color:var(--ok); font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
         <p style="color:#94a3b8; max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
           The background daemon has shut down and all system integrations have been cleanly removed from your Steam Frame.
         </p>
@@ -2781,9 +2795,9 @@ async function loadMirrorStatus() {
     if (data.active_base_url) {
       if (badge) {
         badge.textContent = "vrSrc Mirror";
-        badge.style.background = "rgba(0,242,254,0.12)";
+        badge.style.background = "rgb(var(--accent-rgb) / 0.12)";
         badge.style.color = "var(--accent-cyan)";
-        badge.style.border = "1px solid rgba(0,242,254,0.3)";
+        badge.style.border = "1px solid rgb(var(--accent-rgb) / 0.3)";
       }
       if (text) text.textContent = `Mirror configured: ${data.active_base_url}`;
       if (url) url.textContent = data.active_base_url;
@@ -2791,7 +2805,7 @@ async function loadMirrorStatus() {
     } else {
       if (badge) {
         badge.textContent = "Built-in Catalog";
-        badge.style.background = "rgba(255,255,255,0.08)";
+        badge.style.background = "rgb(var(--fg-rgb) / 0.08)";
         badge.style.color = "var(--text-muted)";
         badge.style.border = "none";
       }
@@ -2828,10 +2842,10 @@ async function checkRcloneStatus() {
     const data = await apiGet("/api/mirrors");
     // We'll call a lightweight test to see if rclone is installed
     // For now just show ready state - rclone will be auto-installed on first sync
-    if (statusText) statusText.textContent = "✅ rclone: Ready (auto-installs on first sync)";
+    if (statusText) statusText.textContent = "rclone: ready (installs itself on the first sync)";
     if (bar) {
-      bar.style.background = "rgba(0,242,254,0.05)";
-      bar.style.borderColor = "rgba(0,242,254,0.15)";
+      bar.style.background = "rgb(var(--accent-rgb) / 0.05)";
+      bar.style.borderColor = "rgb(var(--accent-rgb) / 0.15)";
       statusText.style.color = "var(--accent-cyan)";
     }
     if (installBtn) installBtn.style.display = "none";
@@ -2849,7 +2863,7 @@ async function installRclone() {
   try {
     const data = await apiPost("/api/mirrors/install-rclone", {});
     if (data.success) {
-      if (statusText) statusText.textContent = "✅ rclone installed!";
+      if (statusText) statusText.textContent = "rclone installed.";
       if (btn) btn.style.display = "none";
       showToast("rclone installed successfully", "success");
     } else {
@@ -2893,18 +2907,18 @@ async function applyMirrorConfig() {
       showToast(`Mirror configured: ${data.base_url}`, "success");
       if (resultEl) {
         resultEl.style.display = "block";
-        resultEl.style.background = "rgba(0,242,254,0.08)";
-        resultEl.style.border = "1px solid rgba(0,242,254,0.3)";
+        resultEl.style.background = "rgb(var(--accent-rgb) / 0.08)";
+        resultEl.style.border = "1px solid rgb(var(--accent-rgb) / 0.3)";
         resultEl.style.color = "var(--accent-cyan)";
-        resultEl.textContent = `✅ ${data.message} — Click Sync Catalog in the Catalog tab to load games.`;
+        resultEl.textContent = `${data.message} Press Sync Catalog in Browse to load the games.`;
       }
       loadMirrorStatus();
     } else {
       showToast(data.error || "Failed to apply config", "error");
       if (resultEl) {
         resultEl.style.display = "block";
-        resultEl.style.background = "rgba(255,80,80,0.08)";
-        resultEl.style.border = "1px solid rgba(255,80,80,0.3)";
+        resultEl.style.background = "rgb(var(--danger-rgb) / 0.08)";
+        resultEl.style.border = "1px solid rgb(var(--danger-rgb) / 0.3)";
         resultEl.style.color = "#ff8080";
         resultEl.textContent = `❌ ${data.error}`;
       }
@@ -2920,22 +2934,22 @@ async function testMirrorFromModal() {
   const resultEl = document.getElementById("mirror-test-result");
   const btn = document.getElementById("btn-modal-test");
   if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
-  if (resultEl) { resultEl.style.display = "block"; resultEl.textContent = "⌛ Connecting..."; resultEl.style.background = "rgba(255,183,3,0.06)"; resultEl.style.border = "1px solid rgba(255,183,3,0.2)"; resultEl.style.color = "var(--accent-amber)"; }
+  if (resultEl) { resultEl.style.display = "block"; resultEl.textContent = "⌛ Connecting..."; resultEl.style.background = "rgb(var(--warn-rgb) / 0.06)"; resultEl.style.border = "1px solid rgb(var(--warn-rgb) / 0.2)"; resultEl.style.color = "var(--accent-amber)"; }
 
   try {
     const data = await apiPost("/api/mirrors/test", {});
     if (data.success) {
       if (resultEl) {
-        resultEl.style.background = "rgba(0,242,254,0.08)";
-        resultEl.style.border = "1px solid rgba(0,242,254,0.3)";
+        resultEl.style.background = "rgb(var(--accent-rgb) / 0.08)";
+        resultEl.style.border = "1px solid rgb(var(--accent-rgb) / 0.3)";
         resultEl.style.color = "var(--accent-cyan)";
-        resultEl.textContent = `✅ ${data.message}`;
+        resultEl.textContent = data.message;
       }
       showToast("Mirror connection OK!", "success");
     } else {
       if (resultEl) {
-        resultEl.style.background = "rgba(255,80,80,0.08)";
-        resultEl.style.border = "1px solid rgba(255,80,80,0.3)";
+        resultEl.style.background = "rgb(var(--danger-rgb) / 0.08)";
+        resultEl.style.border = "1px solid rgb(var(--danger-rgb) / 0.3)";
         resultEl.style.color = "#ff8080";
         resultEl.textContent = `❌ ${data.error}`;
       }
@@ -2954,7 +2968,7 @@ async function testMirrorConnection() {
   if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
   try {
     const data = await apiPost("/api/mirrors/test", {});
-    showToast(data.success ? `✅ ${data.message}` : `❌ ${data.error}`, data.success ? "success" : "error");
+    showToast(data.success ? data.message : data.error, data.success ? "success" : "error");
   } catch (e) {
     showToast(`Error: ${e.message}`, "error");
   } finally {
@@ -3277,6 +3291,12 @@ function renderPortingJob(job) {
   const active = job.status === "running" || job.status === "queued";
   const percent = job.status === "done" ? 100 : Math.max(0, Math.min(99, job.progress || 0));
   const title = portingJobTitle(job);
+
+  state.activity.port = active ? {
+    label: `${job.kind === "port" ? "Porting" : "Getting porting tools"}${job.kind === "port" && job.package ? " " + ((state.installed || []).find(g => g.package === job.package) || {}).title || "" : ""}`.trim(),
+    percent, queued: job.status === "queued",
+  } : null;
+  renderShellStatus();
 
   // The header chip shows the job while the dialog is closed.
   const chip = document.getElementById("header-porting");
@@ -3982,6 +4002,8 @@ function renderPerf(snap) {
     body.innerHTML = `<p class="tuning-micro-note">This system does not report CPU and memory use.</p>`;
     return;
   }
+  state.perf.last = snap;
+  renderShellStatus();
   const memPct = mem.used / mem.total * 100;
   state.perf.history.push({ cpu: snap.cpu_percent, mem: memPct });
   state.perf.history = state.perf.history.slice(-60);
@@ -4444,3 +4466,225 @@ function closeMediaViewer() {
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
 }
 window.closeMediaViewer = closeMediaViewer;
+
+// ==========================================================================
+// Looks (System > Appearance). A look is a stylesheet, static/css/skins/<id>.css, plus, where it
+// arranges things differently, a view registered by static/js/skins/<id>.js. The server writes the
+// saved look into <html data-skin> so the page paints in it; ?skin=<id> previews one without saving.
+// ==========================================================================
+const SKINS = [
+  { id: "a", name: "Big Picture", note: "Looks like SteamOS: tabs on top, Steam covers, button hints." },
+  { id: "b", name: "Spatial", note: "A floating glass window with the navigation beside it." },
+  { id: "c", name: "Showcase", note: "Your last game fills the screen, the library sits in one row." },
+  { id: "d", name: "Neon", note: "The original FrameLoad look, refined." },
+  { id: "e", name: "Command Center", note: "A sortable list beside a detail panel, for big libraries." },
+  { id: "f", name: "Daylight", note: "Calm and very legible, in a light and a dark version." },
+];
+const SKIN_VIEWS = {};
+state.activity = { port: null, download: null };
+
+function currentSkin() {
+  const id = document.documentElement.getAttribute("data-skin");
+  return SKINS.some(k => k.id === id) ? id : "a";
+}
+
+function currentMode() {
+  return document.documentElement.getAttribute("data-mode") === "dark" ? "dark" : "light";
+}
+
+// Called by each static/js/skins/<id>.js. A view may have: library(ctx), empty(ctx),
+// status(ctx) (after device or activity changes), mount(ctx) and unmount() (on switching looks).
+function registerSkin(id, view) {
+  SKIN_VIEWS[id] = view || {};
+  if (id === currentSkin()) {
+    if (view && view.mount) view.mount(skinContext());
+    if (state.installed) renderInstalledGrid();
+    renderShellStatus();
+  }
+}
+window.registerSkin = registerSkin;
+
+const ICONS = {
+  battery: '<rect x="2.5" y="7" width="17" height="10" rx="2.5"/><path d="M22 10.5v3"/><rect x="5" y="9.5" width="10" height="5" rx="1" fill="currentColor" stroke="none"/>',
+  drive: '<rect x="3" y="4.5" width="18" height="6.5" rx="2"/><rect x="3" y="13" width="18" height="6.5" rx="2"/><path d="M7 7.75h.01M7 16.25h.01"/>',
+  cpu: '<rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9.5 2.5v3M14.5 2.5v3M9.5 18.5v3M14.5 18.5v3M2.5 9.5h3M2.5 14.5h3M18.5 9.5h3M18.5 14.5h3"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 19.5h16"/>',
+  port: '<path d="M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5"/>',
+  play: '<path d="M8 5.2v13.6L19 12z" fill="currentColor" stroke="none"/>',
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" stroke="none"/>',
+  settings: '<path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/>',
+  dots: '<circle cx="5.5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  chevron: '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  update: '<path d="M12 20V9M7 13.5l5-5 5 5M5 4.5h14"/>',
+  wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.8 12.6a9.2 9.2 0 0 1 12.4 0M9 16.1a4.5 4.5 0 0 1 6 0"/><circle cx="12" cy="19.4" r="1.1" fill="currentColor" stroke="none"/>',
+};
+function icon(name, cls = "") {
+  return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+}
+window.icon = icon;
+
+// A specific artwork slot of an installed game: poster, banner, hero, logo, icon or apk_icon.
+function artUrl(game, slot = "poster") {
+  const base = `/api/installed/artwork/${encodeURIComponent(game.package)}`;
+  const v = state.artwork && state.artwork.version[game.package];
+  return slot === "poster" ? libraryArt(game) : `${base}?slot=${slot}${v ? `&v=${v}` : ""}`;
+}
+
+function deviceStatus() {
+  const sys = state.system || {};
+  const perf = (state.perf && state.perf.last) || {};
+  const mem = perf.memory;
+  return {
+    battery: sys.battery ? sys.battery.percent : null,
+    plugged: !!(sys.battery && sys.battery.plugged),
+    freeGb: sys.storage ? sys.storage.free_gb : null,
+    cpu: typeof perf.cpu_percent === "number" ? Math.round(perf.cpu_percent) : null,
+    ramUsedGb: mem ? +(mem.used / 1024 ** 3).toFixed(1) : null,
+    ramTotalGb: mem ? Math.round(mem.total / 1024 ** 3) : null,
+  };
+}
+
+// Everything a look's view needs, so looks never reach into app.js's internals.
+function skinContext() {
+  return {
+    state,
+    root: document.getElementById("library-view"),
+    navExtra: document.getElementById("nav-extra"),
+    skin: currentSkin(),
+    mode: currentMode(),
+    games: state.installed || [],
+    recent: recentGames(state.installed || []),
+    activity: state.activity,
+    device: deviceStatus(),
+    esc: escapeHtml,
+    arg: jsArg,
+    icon,
+    art: artUrl,
+    played: playedLabel,
+    playtime: formatPlaytime,
+    ago: timeAgo,
+    primaryButton: libraryPrimaryButton,
+    updateFor: libraryUpdateFor,
+    cardHtml: libraryCardHtml,
+    sortSelect: () => {
+      const options = [["recent", "Recently played"], ["name", "Name"], ["installed", "Recently installed"], ["size", "Size"]];
+      return `<select class="select-styled compact library-sort-select" aria-label="Sort the library" onchange="setLibrarySort(this.value)">${options.map(([v, l]) => `<option value="${v}"${state.librarySort === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+    },
+  };
+}
+
+function skinName(id) {
+  return (SKINS.find(k => k.id === id) || SKINS[0]).name;
+}
+
+function applySkin(skin, mode) {
+  const root = document.documentElement;
+  const before = root.getAttribute("data-skin");
+  root.setAttribute("data-skin", skin);
+  root.setAttribute("data-mode", mode);
+  const link = document.getElementById("skin-css");
+  const href = `/static/css/skins/${skin}.css`;
+  if (link && link.getAttribute("href") !== href) link.setAttribute("href", href);
+  if (before !== skin) {
+    const old = SKIN_VIEWS[before];
+    if (old && old.unmount) old.unmount();
+    const nav = document.getElementById("nav-extra");
+    if (nav) nav.innerHTML = "";
+    const view = SKIN_VIEWS[skin];
+    if (view && view.mount) view.mount(skinContext());
+  }
+  if (state.installed) renderInstalledGrid();
+  renderShellStatus();
+  renderAppearance();
+  if (typeof syncHeaderHeight === "function") setTimeout(syncHeaderHeight, 60);
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+async function saveAppearance(skin, mode, message) {
+  if (document.documentElement.getAttribute("data-preview") === "1") {
+    showToast("Previewing. Remove ?skin= from the address to keep a look.", "info");
+    return;
+  }
+  try {
+    await apiPost("/api/ui/appearance", { skin, daylight: mode });
+    showToast(message, "success");
+  } catch (e) {
+    showToast(`Could not save the look: ${e.message}`, "error");
+  }
+}
+
+function chooseSkin(skin) {
+  if (skin === currentSkin()) return;
+  applySkin(skin, currentMode());
+  saveAppearance(skin, currentMode(), `${skinName(skin)} is now FrameLoad's look.`);
+}
+window.chooseSkin = chooseSkin;
+
+function chooseDaylight(mode) {
+  applySkin(currentSkin(), mode);
+  saveAppearance(currentSkin(), mode, mode === "dark" ? "Daylight now uses its dark version." : "Daylight now uses its light version.");
+}
+window.chooseDaylight = chooseDaylight;
+
+function renderAppearance() {
+  const box = document.getElementById("appearance-options");
+  if (!box) return;
+  const cur = currentSkin();
+  box.innerHTML = SKINS.map(k => `
+    <button type="button" class="skin-tile${k.id === cur ? " on" : ""}" role="radio" aria-checked="${k.id === cur}" onclick="chooseSkin('${k.id}')">
+      <span class="skin-thumb skin-thumb-${k.id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="skin-text">
+        <span class="skin-name">${escapeHtml(k.name)}${k.id === "a" ? '<em>Default</em>' : ""}</span>
+        <span class="skin-note">${escapeHtml(k.note)}</span>
+      </span>
+    </button>`).join("");
+  const modes = document.getElementById("daylight-mode");
+  if (modes) {
+    modes.hidden = cur !== "f";
+    modes.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.mode === currentMode()));
+  }
+}
+
+function noteDownloadActivity() {
+  const active = (state.downloads || []).find(t => ["downloading", "decompressing", "installing"].includes(t.status));
+  state.activity.download = active ? {
+    label: `${active.status === "installing" ? "Installing" : active.status === "decompressing" ? "Unpacking" : "Downloading"} ${(active.game && active.game.name) || ""}`.trim(),
+    percent: Math.max(0, Math.min(100, Number(active.progress_percent) || 0)),
+    detail: active.status === "downloading" ? active.speed_formatted : "",
+  } : null;
+  renderShellStatus();
+}
+
+// The status dock and the controller-hint bar, filled for every look; the look decides whether and
+// where they show. A look with its own status area gets status(ctx).
+function renderShellStatus() {
+  const dev = deviceStatus();
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set("dock-battery", dev.battery == null ? "" : `${icon("battery")}<span>${dev.battery}%${dev.plugged ? " charging" : ""}</span>`);
+  set("dock-storage", dev.freeGb == null ? "" : `${icon("drive")}<span>${dev.freeGb} GB free</span>`);
+  set("dock-cpu", dev.cpu == null ? "" : `${icon("cpu")}<span>CPU ${dev.cpu}%</span>`);
+  const act = state.activity.port || state.activity.download;
+  const actHtml = act ? `${icon(state.activity.port ? "port" : "download", "act-icon")}<span class="act-label">${escapeHtml(act.label)}</span><span class="act-bar"><i style="width:${act.queued ? 100 : act.percent}%"></i></span><span class="act-pct">${act.queued ? "Waiting" : act.percent + "%"}</span>` : "";
+  ["dock-activity", "hint-activity"].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.hidden = !act;
+    el.innerHTML = actHtml;
+  });
+  const view = SKIN_VIEWS[currentSkin()];
+  if (view && view.status) view.status(skinContext());
+}
+
+function openActivity() {
+  if (state.activity.port) openPortingModal();
+  else goToTab("downloads");
+}
+window.openActivity = openActivity;
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderAppearance();
+  renderShellStatus();
+});

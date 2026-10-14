@@ -106,6 +106,9 @@ FrameLoad/
 │   │   └── steamos.py        # Hardware telemetry (battery, storage, Lepton container, Proton status)
 │   ├── web/                  # Web Dashboard UI & REST API
 │   │   ├── static/           # CSS (style.css), JS (app.js, gamepad.js), and Steam artwork assets
+│   │   │   ├── css/skins/    # One stylesheet per look (a-f), loaded only while that look is active
+│   │   │   ├── js/skins/     # One view per look (a-f): how it draws the library, registered with registerSkin()
+│   │   │   └── fonts/        # Bundled Latin fonts of the looks (fonts.css, OFL.txt)
 │   │   └── templates/        # HTML (index.html)
 │   ├── cli.py                # Command-line interface and deep-link dispatcher
 │   ├── config.py             # Global paths (HOME, STEAM_DIR, ANCHOR_DIR, FRAMELOAD_DIR)
@@ -114,7 +117,7 @@ FrameLoad/
 │   ├── build_release.py      # Builds tarballs, self-extracting installer, SHA256SUMS, and release notes
 │   ├── capture_screenshots.py# Headless Chrome script for automated 1080p README screenshots
 │   └── github_release.py     # Pure Python GitHub REST API release publisher and asset uploader
-├── tests/                    # Unit tests (178 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
+├── tests/                    # Unit tests (182 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
 ├── install.sh                # 1-Click on-device installer script
 ├── run.sh                    # Smart runner for Steam and command-line execution
 └── uninstall.sh              # 1-Click clean uninstaller
@@ -146,6 +149,7 @@ Verified against Valve's Lepton source (`compat_tool/liblepton/*.sh`) and FrameP
 19. **Steam artwork pipeline.** At install the APK's launcher icon is extracted (`artwork.extract_apk_icon`), downloaded pictures are kept, and missing slots get a plain placeholder; `artwork.json` records each slot's source. The dashboard (`composeArtwork` in app.js) draws placeholders on a canvas and POSTs them to `/api/installed/artwork/<pkg>`; the server writes them and calls `shortcuts.refresh_grid_artwork()`, which uses the appid stored in each user's shortcut. Never compute grid file names from the title.
 20. **Play history** is written by launch.sh (`.last_played` at start, a `start end` line in `.playtime` at exit). `installed.play_stats()` reads it; games from before layout 6 fall back to their launch.log's time.
 21. **Freeze guard.** Running games are found through `/proc/locks` (the flock launch.sh holds on `.launch.lock`); reading it takes no lock, so it can never make a launch think its game is already starting. Do not probe that lock with flock. Memory is limited with `podman update --memory` (RAM minus 2.5 GB) a few seconds into a session; the watchdog stops games on PSI `full avg10` >= 20 % for 3 samples or < 3 % RAM available with swap full.
+22. **Looks (skins).** The dashboard has six looks: a Big Picture (default), b Spatial, c Showcase, d Neon, e Command Center, f Daylight (light/dark via `data-mode`). The saved look lives in config `ui.skin` / `ui.daylight`; `server.serve_index()` writes it into `<html data-skin data-mode>` and the skin stylesheet link, `?skin=x` previews one without saving. style.css is the neon base and defines every colour, font and radius as a token (`--bg`, `--surface`, `--text`, `--accent`, `--accent-rgb`, `--fg-rgb` …); never write a literal colour into style.css, index.html or app.js markup, use a token (canvas code is the exception: canvas cannot read CSS variables). A look owns `static/css/skins/<id>.css` and `static/js/skins/<id>.js`; the view API (`registerSkin(id, {library, empty, noMatch, status, mount, unmount})` and the `ctx` it gets) is in app.js under "Looks". Shared markup changes must be checked in all six looks (and both Daylight modes); the dev tools under `scripts/` do not cover this yet, so screenshot each look.
 9. **Camera hand tracking does not exist on the Frame yet.** It needs a tracker inside SteamVR; nothing in this repo can provide it. Do not add UI or files that claim otherwise.
 
 ---

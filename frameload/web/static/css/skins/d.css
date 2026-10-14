@@ -1,0 +1,613 @@
+/* Look D: Neon. Loaded only while this look is active; builds on style.css's tokens.
+   The original FrameLoad look, refined: Lexend throughout, deep navy with soft cyan and violet
+   glows, a calmer cyan accent, 40 px targets, and no backdrop blur (the headset pays for it on
+   every frame; translucent fills over the painted background stand in for glass). */
+
+:root {
+  --bg-rgb: 8 12 23;
+  --bg: #080c17;
+  --bg-image:
+    radial-gradient(900px 520px at 6% 0%, rgb(57 213 255 / 0.12), rgb(57 213 255 / 0) 62%),
+    radial-gradient(1000px 640px at 100% 100%, rgb(140 92 255 / 0.12), rgb(140 92 255 / 0) 62%),
+    #080c17;
+  --surface: rgb(16 23 40 / 0.82);
+  --surface-2: rgb(22 32 54 / 0.92);
+  --surface-solid: #101728;
+  --modal-bg: #0d1324;
+  --header-bg: #090e1b;  /* solid: without blur, a see-through bar shows artwork scrolling under it */
+  --fg-rgb: 255 255 255;
+  --shade-rgb: 0 0 0;
+  --line: rgb(255 255 255 / 0.08);
+  --text: #e8f0fb;
+  --text-strong: #ffffff;
+  --text-muted: #97a3b9;
+  --text-dim: #74819a;
+  --accent-rgb: 57 213 255;
+  --accent: #39d5ff;
+  --accent-end: #4f8dff;
+  --accent-ink: #06101e;
+  --accent-2-rgb: 140 92 255;
+  --accent-2: #8c5cff;
+  --ok-rgb: 46 230 182;
+  --ok: #2ee6b6;
+  --warn-rgb: 255 181 71;
+  --warn: #ffb547;
+  --danger-rgb: 255 79 123;
+  --danger: #ff4f7b;
+  --focus: #39d5ff;
+  --glow: 0 0 26px rgb(57 213 255 / 0.28);
+
+  --font-ui: "Lexend", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Lexend", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, Consolas, monospace;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-full: 9999px;
+  --shadow-card: 0 10px 28px rgb(0 0 0 / 0.38);
+
+  --nd-chip-text: #c3cde0;
+  --nd-fill: rgb(255 255 255 / 0.05);
+  --nd-edge: rgb(255 255 255 / 0.09);
+  --nd-violet-soft: #a98bff;
+  /* style.css colours runtime names and links with this; #8c5cff is 4.1:1 on the dialog, too dim as text. */
+  --accent-purple: #a98bff;
+  color-scheme: dark;  /* native checkboxes, selects and scrollbars draw dark */
+}
+
+/* Lexend is wide; 16 px keeps the headset sizes while fitting the 1280 px window. */
+html { font-size: 16px; scroll-padding-bottom: 96px; }  /* focus never lands under the downloads bar */
+body { font-family: var(--font-ui); background-color: var(--bg); color: var(--text); font-weight: 400; }
+button, input, select, textarea { font-family: inherit; }
+code, pre, .job-log { font-family: var(--font-mono); }
+option { background: var(--surface-solid); color: var(--text); }
+input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent); }
+h1, h2, h3, strong, b { font-weight: 500; }
+
+/* No backdrop blur anywhere in this look. */
+.app-header, .nav-tabs, .control-bar, .badge, .downloads-drawer, .modal-backdrop, .modal-close,
+.dropdown-menu, .storage-visualizer-card, .storage-batch-bar, .app-update-banner, .vr-controller-hud {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ---------------------------------------------------------------- focus ring
+   One ring for the laser and the controller: 3 px cyan with a dark gap and a soft glow. No lift,
+   so it never slides under the edge of a row; every row it lives in leaves room for it. */
+:focus-visible, .gamepad-focused {
+  outline: 3px solid var(--focus) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 3px rgb(8 12 23 / 0.9), 0 0 26px rgb(57 213 255 / 0.4) !important;
+  transform: none;
+  transition: outline-color 0.15s ease, box-shadow 0.15s ease !important;
+  z-index: 20;
+}
+.search-input:focus-visible, .search-input.gamepad-focused { outline-offset: 2px !important; }
+.game-card.gamepad-focused, .game-card:focus-visible { transform: translateY(-4px); }
+/* Catalog pages skip off-screen work (content-visibility), which also clips what pokes out of
+   them: padding gives the ring and the hover lift room, the negative margin keeps the layout. */
+.catalog-page { padding: 12px; margin: -12px; }
+.catalog-pages { gap: 0; }
+
+/* ---------------------------------------------------------------- header */
+.app-header {
+  min-height: 68px;
+  padding: 12px 30px;
+  gap: 22px;
+  flex-wrap: nowrap;
+  background: var(--header-bg);
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+.brand-section { gap: 11px; flex: none; }
+.brand-logo {
+  width: 38px; height: 38px; border-radius: 11px;
+  background: linear-gradient(135deg, #39d5ff, #8c5cff);
+  box-shadow: 0 0 20px rgb(57 213 255 / 0.22);
+}
+.brand-title { font-size: 21px; font-weight: 600; letter-spacing: 0; }
+.brand-title .title-frame { color: var(--text-strong); text-shadow: none; }
+.brand-title .title-load { color: var(--accent); text-shadow: 0 0 14px rgb(57 213 255 / 0.35); margin-left: 0; }
+/* The mockup's header is logo, search, chips; the badge would push the chips onto a second row. */
+.brand-badge { display: none !important; }
+.brand-badge {
+  font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: 0;
+  padding: 2px 9px; margin-left: 8px; vertical-align: 3px;
+  background: rgb(57 213 255 / 0.1); border-color: rgb(57 213 255 / 0.25); color: var(--accent);
+}
+
+.search-wrapper { flex: 1 1 360px; min-width: 176px; max-width: 360px; }
+.search-input {
+  height: 46px;
+  border-radius: 23px;
+  padding: 0 52px 0 44px;
+  font-size: 15px;
+  font-weight: 300;
+  text-overflow: ellipsis;  /* a narrow field shows "Search you..." rather than a cut word */
+  background: var(--nd-fill);
+  border: 1px solid var(--nd-edge);
+  color: var(--text-strong);
+}
+.search-input::placeholder { color: #7f8ba3; opacity: 1; }
+.search-input:focus { border-color: rgb(57 213 255 / 0.6); background: rgb(57 213 255 / 0.05); box-shadow: none; }
+.search-icon { left: 16px; color: #7f8ba3; width: 18px; height: 18px; }
+/* The keyboard button: a drawn keyboard instead of the emoji, 40 px square inside the field. */
+.search-osk-btn {
+  right: 3px; width: 40px; height: 40px; padding: 0; font-size: 0; color: #9aa6bc;
+  border-radius: 50%; background: transparent; border: 1px solid transparent;
+}
+.search-osk-btn::before {
+  content: ""; width: 22px; height: 22px; background: currentColor;
+  -webkit-mask: var(--nd-ic-keyboard) center / contain no-repeat; mask: var(--nd-ic-keyboard) center / contain no-repeat;
+}
+.search-osk-btn:hover, .search-osk-btn.active {
+  transform: translateY(-50%); color: var(--accent);
+  background: rgb(57 213 255 / 0.12); border-color: rgb(57 213 255 / 0.35); box-shadow: none;
+}
+
+/* The chips keep their width so the search narrows first; they wrap only when what is left after
+   the logo and a 176 px search (390 px with the gaps) is too little. */
+.telemetry-bar { flex: 0 0 auto; max-width: calc(100% - 390px); min-width: 0; gap: 8px; justify-content: flex-end; margin-left: auto; }
+.telemetry-chip {
+  height: 40px; min-height: 40px; padding: 0 12px; gap: 7px;
+  border-radius: 20px; white-space: nowrap;
+  background: var(--nd-fill); border: 1px solid rgb(255 255 255 / 0.08);
+  font-size: 13px; font-weight: 400; color: var(--nd-chip-text);
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.telemetry-chip .ic { width: 18px; height: 18px; color: #8f9bb3; }
+button.telemetry-chip, a.telemetry-chip { font: inherit; font-size: 13px; }
+.telemetry-chip.clickable:hover, button.telemetry-chip:hover {
+  transform: none; background: rgb(255 255 255 / 0.09); border-color: rgb(255 255 255 / 0.16); color: var(--text-strong);
+}
+.telemetry-chip.battery { color: var(--nd-chip-text); border-color: rgb(255 255 255 / 0.08); }
+.telemetry-chip.battery .ic { color: var(--ok); }
+.telemetry-chip.battery.nd-low, .telemetry-chip.battery.nd-low .ic { color: var(--warn); }
+.telemetry-chip.battery .pulse-dot { display: none; }
+.telemetry-chip .nd-plug { color: var(--warn); margin-left: -3px; }
+.telemetry-chip.lepton.missing { color: var(--warn); border-color: rgb(255 181 71 / 0.35); background: rgb(255 181 71 / 0.06); }
+.telemetry-chip.perf-chip::before, .telemetry-chip.stop-chip::before, .telemetry-chip.porting-chip::before, .telemetry-chip.update-alert::before {
+  content: ""; flex: none; width: 17px; height: 17px; background: currentColor; border: 0; border-radius: 0; animation: none;
+  -webkit-mask: var(--nd-mask) center / contain no-repeat; mask: var(--nd-mask) center / contain no-repeat;
+}
+.telemetry-chip.perf-chip { --nd-mask: var(--nd-ic-cpu); color: var(--nd-chip-text); }
+.telemetry-chip.perf-chip::before { color: #8f9bb3; background: #8f9bb3; }
+.telemetry-chip.stop-chip {
+  --nd-mask: var(--nd-ic-stop); font-weight: 500;
+  color: #ffd1dc; background: rgb(255 79 123 / 0.14); border-color: rgb(255 79 123 / 0.55);
+}
+/* A long title is cut short instead of pushing the chips onto a second row. */
+.telemetry-chip.stop-chip {
+  display: block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; line-height: 38px;
+}
+.telemetry-chip.stop-chip::before { display: inline-block; vertical-align: -3px; margin-right: 7px; }
+.telemetry-chip.stop-chip:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+.telemetry-chip.porting-chip {
+  --nd-mask: var(--nd-ic-port); font-weight: 500;
+  color: var(--accent); background: rgb(57 213 255 / 0.08); border-color: rgb(57 213 255 / 0.45);
+}
+.telemetry-chip.porting-chip:hover { background: rgb(57 213 255 / 0.16); color: var(--accent); }
+/* Update: 40 px, icon + "Update v1.3.6"; the emoji text node is hidden by the zero font size. */
+.telemetry-chip.update-alert {
+  --nd-mask: var(--nd-ic-update);
+  font-size: 0; gap: 0; padding: 0 16px; font-weight: 500; animation: none; box-shadow: none;
+  color: var(--accent); background: rgb(57 213 255 / 0.08); border-color: rgb(57 213 255 / 0.55);
+}
+.telemetry-chip.update-alert::before { margin-right: 8px; }
+.telemetry-chip.update-alert #header-update-tag {
+  font-size: 13px; font-weight: 500; margin-left: 0 !important; color: var(--accent) !important;
+}
+.telemetry-chip.update-alert #header-update-tag::before { content: "Update "; }
+.telemetry-chip.update-alert:hover { background: rgb(57 213 255 / 0.16); }
+.telemetry-chip.kofi-chip {
+  color: #ff8a87; background: rgb(255 94 91 / 0.08); border-color: rgb(255 94 91 / 0.35); font-weight: 500;
+}
+.telemetry-chip.kofi-chip:hover { background: #ff5e5b; border-color: #ff5e5b; color: #fff; box-shadow: none; transform: none; }
+.telemetry-chip.kofi-chip svg { width: 16px; height: 16px; }
+
+/* ---------------------------------------------------------------- tabs */
+.nav-tabs {
+  top: var(--header-h, 68px);
+  padding: 8px 30px;
+  gap: 6px;
+  background: var(--header-bg);
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+.tab-btn {
+  min-height: 44px; height: 44px; padding: 0 16px; gap: 9px;
+  border-radius: 12px; border: 1px solid transparent;
+  font-size: 15px; font-weight: 400; color: #8a96ad;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.tab-btn svg { width: 19px; height: 19px; flex: none; }
+.tab-btn:hover { color: #dfe7f5; background: rgb(255 255 255 / 0.04); }
+.tab-btn.active { color: var(--accent); background: rgb(57 213 255 / 0.09); border: 1px solid rgb(57 213 255 / 0.28); font-weight: 400; }
+.tab-btn:focus-visible, .tab-btn.gamepad-focused { outline-offset: 1px !important; }
+.tab-badge {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  display: inline-grid; place-items: center;
+  font-size: 12px; font-weight: 500; line-height: 1;
+  background: rgb(57 213 255 / 0.18); color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- page */
+.main-content { padding: 22px 30px 120px; }
+.control-bar {
+  background: none; border: 0; border-radius: 0;
+  padding: 0; margin-bottom: 20px; min-height: 44px; gap: 12px;
+}
+.control-bar h2 {
+  font-size: 20px !important; font-weight: 500 !important; color: var(--text-strong);
+  display: flex; align-items: center; gap: 10px;
+}
+.control-bar h2 .tab-badge { margin-left: 0 !important; height: 22px; padding: 0 9px; border-radius: 11px; background: rgb(57 213 255 / 0.15); }
+.control-bar label { font-size: 14px !important; }
+.control-group { gap: 10px; }
+
+.btn-primary, .btn-secondary, .btn-danger, .btn-kofi, .select-styled {
+  min-height: 44px; font-size: 15px; font-weight: 500; border-radius: 22px;
+}
+.btn-primary.compact, .btn-secondary.compact, .btn-danger.compact, .select-styled.compact {
+  min-height: 40px; font-size: 14px; padding: 0 16px; border-radius: 20px;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #39d5ff, #4f8dff); color: var(--accent-ink);
+  box-shadow: 0 6px 18px rgb(57 213 255 / 0.22);
+}
+.btn-primary:hover { transform: none; box-shadow: 0 6px 24px rgb(57 213 255 / 0.4); }
+.btn-secondary { background: var(--nd-fill); border: 1px solid var(--nd-edge); color: #d4dcea; }
+.btn-secondary:hover { background: rgb(255 255 255 / 0.1); border-color: rgb(255 255 255 / 0.18); color: #fff; }
+.btn-danger { background: linear-gradient(135deg, #ff6a8f, #ff3f6c); box-shadow: 0 6px 18px rgb(255 79 123 / 0.25); }
+.btn-danger:hover:not(:disabled) { transform: none; }
+.btn-kofi { border-radius: 22px; font-size: 14px; }
+.select-styled {
+  background-color: var(--nd-fill); border: 1px solid var(--nd-edge); color: #d4dcea;
+  padding: 0 16px;
+}
+.select-styled:focus { border-color: rgb(57 213 255 / 0.6); }
+#library-sort { min-width: 180px; }
+
+.section-title { font-size: 16px; font-weight: 500; color: var(--text-strong); letter-spacing: 0; margin: 0 2px 12px; }
+.section-title.nd-all { margin-top: 28px; }
+
+/* ---------------------------------------------------------------- library: recently played */
+.recent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }  /* the shelf holds three */
+.recent-card {
+  min-height: 142px; padding: 16px; gap: 16px;
+  border-radius: 18px; background: var(--surface-solid);
+  border: 1px solid rgb(255 255 255 / 0.08); box-shadow: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.recent-card:hover { border-color: rgb(57 213 255 / 0.4); box-shadow: 0 0 24px rgb(57 213 255 / 0.18); }
+.recent-card.is-running { border-color: rgb(255 79 123 / 0.35); }
+.recent-backdrop { inset: -30px; filter: blur(26px) saturate(1.3); opacity: 0.5; }
+.recent-card::after { background: linear-gradient(90deg, rgb(8 12 23 / 0.25), rgb(8 12 23 / 0.86)); }
+.recent-cover { width: 108px; height: 108px; border-radius: 14px; box-shadow: 0 8px 20px rgb(0 0 0 / 0.5); background: #0b1120; }
+.recent-info { gap: 4px; }
+.recent-title { font-size: 17px; font-weight: 500; }
+.recent-meta { font-size: 13px; color: #b3bdd0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-actions { margin-top: 8px; }
+.recent-actions .card-btn { flex: none; min-width: 112px; padding: 0 18px; }
+
+/* ---------------------------------------------------------------- cards (library and Browse) */
+.games-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.games-grid > .game-card { contain-intrinsic-size: auto 330px; }
+.game-card {
+  border-radius: 16px; background: var(--surface-solid);
+  border: 1px solid rgb(255 255 255 / 0.07); box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.game-card:hover {
+  transform: translateY(-4px); border-color: rgb(57 213 255 / 0.4);
+  box-shadow: 0 14px 32px rgb(0 0 0 / 0.45), 0 0 24px rgb(57 213 255 / 0.18);
+}
+.game-card:hover .card-poster img { transform: none; }
+.card-poster { background: #0b1120; }
+.nd-card .card-poster { aspect-ratio: 5 / 4; }
+.nd-card.is-running { border-color: rgb(46 230 182 / 0.35); }
+.badge-overlay { top: 10px; left: 10px; gap: 6px; flex-wrap: wrap; right: 10px; }
+.badge-overlay.nd-right { left: auto; right: 10px; justify-content: flex-end; }
+.nd-card .badge-overlay:not(.nd-right) { right: auto; }
+.badge {
+  font-size: 12px !important; font-weight: 500; line-height: 1.35; text-transform: none !important; letter-spacing: 0;
+  padding: 2px 8px; border-radius: 7px; white-space: nowrap;
+}
+.badge.vr { background: rgb(57 213 255 / 0.92); color: var(--accent-ink); }
+.badge.flat { background: var(--nd-violet-soft); color: #140a2e; }
+.badge.installed { background: var(--ok); color: #04241b; }
+.badge.update { background: #ffd18a; color: #2a1800; border: 0; }
+.badge.compat-needs_port { background: var(--warn); color: #2a1800; }
+.badge.compat-blocked { background: var(--danger); color: #fff; }
+.badge.badge-external { background: rgb(8 12 23 / 0.8); color: #dfe7f5; }
+
+.card-body { padding: 12px 12px 14px; gap: 2px; }
+.card-title { font-size: 15px; font-weight: 500; margin-bottom: 2px; }
+.card-meta { font-size: 13px; color: #97a3b9; min-width: 0; }
+.nd-card .card-meta { display: block; }
+.nd-card .card-meta span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-actions { margin-top: 10px; gap: 8px; }
+.card-btn {
+  min-height: 42px; padding: 0 10px; border-radius: 10px;
+  font-size: 14px; font-weight: 500; white-space: nowrap;
+}
+.card-btn.play { background: linear-gradient(135deg, #39d5ff, #4f8dff); color: var(--accent-ink); }
+.card-btn.play:hover { box-shadow: 0 0 18px rgb(57 213 255 / 0.4); }
+.card-btn.stop { background: var(--danger); color: #fff; }
+.card-btn.stop:hover { box-shadow: 0 0 18px rgb(255 79 123 / 0.45); }
+.card-btn.update { background: linear-gradient(135deg, #ffc56b, #ff9f43); color: #2a1800; font-weight: 500; }
+.card-btn.download { background: rgb(57 213 255 / 0.1); color: var(--accent); border: 1px solid rgb(57 213 255 / 0.25); }
+.card-btn.download:hover { background: rgb(57 213 255 / 0.2); color: #bdefff; }
+.card-summary { font-size: 13px; }
+
+/* ---------------------------------------------------------------- banners and notices */
+.compat-notice { border-radius: 14px; background: var(--surface); border-color: var(--line); }
+.app-update-banner, .updates-banner {
+  border-radius: 16px; animation: none;
+  background: linear-gradient(135deg, rgb(57 213 255 / 0.1), rgb(140 92 255 / 0.12));
+  border: 1px solid rgb(57 213 255 / 0.3); box-shadow: none;
+}
+.update-banner-title { font-weight: 500; }
+
+/* ---------------------------------------------------------------- forms, system cards */
+.form-card, .sys-card, .appearance-card {
+  background: var(--surface); border: 1px solid rgb(255 255 255 / 0.08); border-radius: 18px;
+}
+.sys-card h3, .appearance-head h3 { font-weight: 500 !important; color: var(--text-strong) !important; font-size: 17px !important; }
+.sys-card-support { border-color: rgb(255 94 91 / 0.25); }
+.sys-card-danger { border-color: rgb(255 79 123 / 0.25); }
+.system-grid { gap: 16px; }
+.form-card label { font-weight: 500 !important; }
+.form-card .search-input, .modal-content .search-input {
+  height: 46px; padding: 0 14px !important; border-radius: 12px !important; font-weight: 400;
+}
+.upload-row label.btn-secondary { display: inline-flex; }
+.skin-tile { border-radius: 14px; border-width: 1px; background: rgb(255 255 255 / 0.03); }
+.skin-tile.on { border-color: var(--accent); background: rgb(57 213 255 / 0.08); box-shadow: inset 0 0 0 1px var(--accent); }
+.skin-name { font-weight: 500; }
+.skin-name em { font-size: 12px; font-weight: 500; }
+.skin-note { font-size: 13px; }
+.mode-switch button { font-weight: 500; }
+.doctor-name { font-weight: 500; }
+.pairing-code { font-family: var(--font-mono); }
+
+/* ---------------------------------------------------------------- downloads */
+.download-item-card { background: var(--surface); border-radius: 18px; border-color: rgb(255 255 255 / 0.08); padding: 18px 20px; }
+.download-item-card:hover { background: var(--surface-2); border-color: rgb(57 213 255 / 0.3); }
+.download-thumb { border-radius: 14px; background: #0b1120; }
+.download-title { font-weight: 500; font-size: 17px; }
+.download-state { font-size: 12px; font-weight: 500; padding: 3px 10px; }
+.progress-track { height: 8px; background: rgb(255 255 255 / 0.08); }
+.progress-fill { background: linear-gradient(90deg, #39d5ff, #8c5cff); box-shadow: 0 0 12px rgb(57 213 255 / 0.3); }
+.progress-fill.installing { animation: none; }
+
+.downloads-drawer {
+  background: rgb(10 15 28 / 0.97);
+  border-top: 1px solid rgb(57 213 255 / 0.3);
+  box-shadow: 0 -10px 30px rgb(0 0 0 / 0.5);
+  padding: 12px 30px;
+}
+.drawer-inner { gap: 20px; }
+.drawer-inner strong, .drawer-inner h4 { font-weight: 500; }
+.downloads-drawer .btn-secondary { min-height: 40px !important; padding: 0 16px !important; font-size: 13px !important; }
+
+/* ---------------------------------------------------------------- storage */
+.storage-header-badge { font-size: 12px; font-weight: 500; letter-spacing: 0.06em; }
+.storage-title { font-size: 28px; font-weight: 500; letter-spacing: 0; }
+.storage-path-display { font-family: var(--font-mono); font-size: 13px; color: #8f9bb3; border-radius: 8px; }
+.storage-drives-list { padding: 6px 6px 10px; margin: -6px -6px 18px; }
+.storage-drive-card { border-radius: 16px; background: var(--surface); border-color: rgb(255 255 255 / 0.08); min-height: 72px; }
+.storage-drive-card:hover { transform: none; }
+.storage-drive-card.active { background: rgb(57 213 255 / 0.08); border-color: rgb(57 213 255 / 0.55); box-shadow: none; }
+.drive-name { font-weight: 500; }
+.drive-caption { font-size: 13px; }
+.storage-visualizer-card { background: var(--surface); border-radius: 18px; border-color: rgb(255 255 255 / 0.08); }
+.segmented-progress-bar { height: 18px; background: rgb(0 0 0 / 0.35); box-shadow: none; }
+.segmented-progress-bar .seg-games { background: linear-gradient(90deg, #2aa8e0, #39d5ff); }
+.segmented-progress-bar .seg-other { background: linear-gradient(90deg, #6d48e8, #8c5cff); }
+.legend-item { font-size: 13px; letter-spacing: 0.02em; }
+.legend-item strong { font-weight: 500; }
+.storage-section-title { font-size: 18px; font-weight: 500; }
+.storage-count-pill { font-size: 12px; font-weight: 500; }
+.storage-sort-label { font-size: 13px; color: #8f9bb3; }
+.storage-filter-box input { height: 40px; font-size: 14px; padding: 0 14px 0 36px; }
+.storage-filter-box input:focus { width: 200px; }
+.storage-games-list { padding: 6px; margin: -6px -6px 90px; }
+.storage-game-row { border-radius: 14px; background: var(--surface); border-color: rgb(255 255 255 / 0.07); min-height: 64px; }
+.storage-game-row:hover { transform: none; border-color: rgb(57 213 255 / 0.3); }
+.storage-game-row.selected { background: rgb(57 213 255 / 0.07); border-color: rgb(57 213 255 / 0.45); box-shadow: none; }
+.storage-game-title { font-weight: 500; }
+.storage-game-meta, .storage-game-breakdown { font-size: 13px; }
+.storage-game-badge { font-size: 12px; font-weight: 500; text-transform: none; }
+.storage-game-size { font-weight: 500; }
+.storage-batch-bar { background: rgb(12 18 34 / 0.98); border-radius: 18px; box-shadow: 0 16px 40px rgb(0 0 0 / 0.6); }
+.dropdown-menu { background: #0f1628; border-radius: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / 0.55); }
+.dropdown-item { min-height: 44px; font-size: 14px; border-radius: 10px; }
+.btn-secondary.icon-only { min-width: 44px; justify-content: center; }
+
+/* ---------------------------------------------------------------- dialogs */
+.modal-backdrop { background: rgb(4 7 14 / 0.82); }
+.modal-content {
+  background: var(--modal-bg);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-radius: 22px;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(57 213 255 / 0.05), 0 -1px 40px rgb(57 213 255 / 0.08);
+  background-image: radial-gradient(600px 220px at 0% 0%, rgb(57 213 255 / 0.07), transparent 70%);
+}
+.modal-content h2 { font-weight: 500 !important; }
+.modal-content h3 { font-weight: 500 !important; }
+.modal-close {
+  width: 44px; height: 44px; font-size: 26px; font-weight: 300;
+  background: rgb(8 12 23 / 0.85); border: 1px solid rgb(255 255 255 / 0.14); color: #c3cde0;
+}
+.modal-close:hover { background: rgb(255 255 255 / 0.12); color: #fff; }
+/* Close stays reachable in a long dialog: it sticks to the top corner instead of scrolling away.
+   The float's negative margins give it no footprint, so the layout is the same as before. */
+.modal-content > .modal-close {
+  /* Chrome measures a sticky float from the content box: -10px keeps it exactly where it starts. */
+  position: sticky; top: -10px; right: auto; float: right;
+  margin: -10px -10px -34px 12px;
+}
+#modal-cover-banner { border-radius: 16px !important; }
+.setting-label { font-weight: 500; }
+.setting-desc { font-size: 13px; }
+.slider { background-color: rgb(255 255 255 / 0.12); }
+input:checked + .slider { background-color: var(--accent); }
+
+.tuning-card { border-radius: 14px; }
+/* Rows that scroll sideways clip what pokes out of them: room for the focus ring. */
+.tuning-presets-strip { padding: 8px 8px 12px; margin: 0 -8px 12px; }
+.media-strip { padding: 8px; margin-left: -8px; margin-right: -8px; }
+.tuning-preset-chip:hover { transform: none; }
+#tuning-modal-engine-badge { margin-right: 58px !important; margin-top: 10px; }
+.tuning-card-title, .tuning-section-title { font-weight: 500; }
+.tuning-preset-chip, .tuning-select-chip { min-height: 40px; font-weight: 500; border-radius: 20px; }
+.tuning-preset-chip.active, .tuning-select-chip.selected { background: rgb(57 213 255 / 0.14); border-color: var(--accent); color: var(--accent); }
+.tuning-micro-note { font-size: 13px; }
+
+.job-title { font-weight: 500; }
+.job-icon.running { animation: none; }
+.job-bar-fill { background: linear-gradient(90deg, #39d5ff, #8c5cff); }
+.job-bar.running .job-bar-fill::after { animation: none; display: none; }
+.job-steps li.active { color: var(--accent); }
+.job-steps li.failed { font-weight: 500; }
+.job-log { font-family: var(--font-mono); }
+
+/* ---------------------------------------------------------------- toasts */
+.toast {
+  background: #111a2e; border: 1px solid rgb(57 213 255 / 0.4); border-radius: 14px;
+  box-shadow: 0 14px 36px rgb(0 0 0 / 0.55); color: var(--text); font-size: 15px;
+  padding: 14px 18px; min-height: 48px;
+}
+.toast.toast-error { background: #22101a; border-color: rgb(255 79 123 / 0.6); color: #ffe0e8; box-shadow: 0 14px 36px rgb(0 0 0 / 0.55); }
+.toast.toast-success { background: #0d2120; border-color: rgb(46 230 182 / 0.55); color: #ddfff4; box-shadow: 0 14px 36px rgb(0 0 0 / 0.55); }
+.toast.toast-warning { background: #241c0f; border-color: rgb(255 181 71 / 0.6); color: #fff1d6; box-shadow: 0 14px 36px rgb(0 0 0 / 0.55); }
+.toast-mark { background: var(--accent); box-shadow: 0 0 10px rgb(57 213 255 / 0.6); }
+.toast-error .toast-mark { background: var(--danger); box-shadow: 0 0 10px rgb(255 79 123 / 0.6); }
+.toast-success .toast-mark { background: var(--ok); box-shadow: 0 0 10px rgb(46 230 182 / 0.6); }
+.toast-warning .toast-mark { background: var(--warn); box-shadow: 0 0 10px rgb(255 181 71 / 0.6); }
+
+/* ---------------------------------------------------------------- scroll arrows, controller legend */
+.scroll-rail { right: 24px; gap: 10px; }
+.scroll-rail button {
+  width: 50px; height: 50px;
+  color: var(--accent); background: rgb(10 15 29 / 0.94);
+  border: 1px solid rgb(57 213 255 / 0.4); box-shadow: 0 6px 18px rgb(0 0 0 / 0.5);
+}
+.scroll-rail button:hover:not(:disabled), .scroll-rail button:active:not(:disabled) {
+  background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 20px rgb(57 213 255 / 0.5);
+}
+.scroll-rail button:disabled { opacity: 0.3; }
+.vr-controller-hud { background: rgb(10 15 29 / 0.97); border-color: rgb(57 213 255 / 0.3); font-weight: 500; font-size: 14px; }
+.vr-hud-key { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--accent); }
+.empty-state { border-radius: 18px; background: var(--surface); }
+.empty-state h3 { font-weight: 500; }
+
+/* ---------------------------------------------------------------- icons drawn in CSS (masks) */
+:root {
+  --nd-ic-keyboard: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2.5'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9'/%3E%3C/svg%3E");
+  --nd-ic-cpu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='6' width='12' height='12' rx='2.5'/%3E%3Cpath d='M9.5 2.5v3M14.5 2.5v3M9.5 18.5v3M14.5 18.5v3M2.5 9.5h3M2.5 14.5h3M18.5 9.5h3M18.5 14.5h3'/%3E%3C/svg%3E");
+  --nd-ic-stop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' rx='2.5' fill='black'/%3E%3C/svg%3E");
+  --nd-ic-port: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5'/%3E%3C/svg%3E");
+  --nd-ic-update: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20V9M7 13.5l5-5 5 5M5 4.5h14'/%3E%3C/svg%3E");
+}
+
+/* On wide screens the page is 1720 px and centred: the header, tabs and drawer line up with it. */
+@media (min-width: 1721px) {
+  .app-header, .nav-tabs { padding-left: calc((100% - 1720px) / 2 + 30px); padding-right: calc((100% - 1720px) / 2 + 30px); }
+  .downloads-drawer { padding-left: 30px; padding-right: 30px; }
+}
+
+/* ---------------------------------------------------------------- widths */
+@media (max-width: 1719px) {
+  /* Support keeps its heart; the word goes so a running game, a port and an update fit. */
+  .telemetry-chip.kofi-chip { width: 40px; padding: 0; justify-content: center; }
+  .telemetry-chip.kofi-chip span { display: none; }
+}
+@media (max-width: 1399px) {
+  .telemetry-chip.perf-chip .nd-ram { display: none; }  /* the full figures are on the chip's tooltip */
+  /* Tighter gaps and search so battery, storage, CPU, Stop, Porting, Update and Support share one row at 1280. */
+  .app-header { gap: 18px; }
+  .search-wrapper { min-width: 168px; }
+  .telemetry-bar { max-width: calc(100% - 375px); }
+}
+
+@media (max-width: 1100px) {
+  .app-header { gap: 16px; padding: 12px 20px; }
+  .nav-tabs { padding: 8px 20px; }
+  .main-content { padding: 20px 20px 120px; }
+  .tab-btn { padding: 0 13px; font-size: 14px; }
+  .search-wrapper { flex-basis: 280px; }
+}
+
+@media (max-width: 1180px) {
+  .recent-card { gap: 14px; padding: 14px; }
+  .recent-cover { width: 84px; height: 84px; border-radius: 12px; }
+  .recent-title { font-size: 16px; }
+}
+
+@media (max-width: 760px) {
+  .app-header { flex-wrap: wrap; padding: 10px 16px; gap: 10px; }
+  .search-wrapper { order: 3; flex: 1 1 100%; max-width: none; min-width: 0; }
+  .telemetry-bar { flex: 1 1 auto; max-width: none; }
+  .nav-tabs { padding: 8px 16px; gap: 4px; }
+  .main-content { padding: 18px 16px 110px; }
+  body.page-scrolls .main-content { padding-right: 70px; }
+  .scroll-rail { right: 10px; }
+  .scroll-rail button { width: 46px; height: 46px; }
+  .downloads-drawer { padding: 10px 16px; }
+  .drawer-inner { flex-wrap: wrap; gap: 10px 12px; }
+  .drawer-inner > div:first-child { flex: 1 1 100% !important; max-width: none !important; min-width: 0 !important; }
+  .drawer-inner > .progress-track { flex: 1 1 60px !important; margin: 0 !important; min-width: 60px; }
+  .toast-container { right: 16px; left: 16px; max-width: none; }
+}
+
+@media (max-width: 600px) {
+  /* Icons only; the names stay for screen readers and the tooltip. */
+  .tab-btn { padding: 0 12px; position: relative; }
+  .tab-btn .tab-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .tab-btn .tab-badge { position: absolute; top: 1px; right: 1px; min-width: 18px; height: 18px; font-size: 12px; padding: 0 5px; }
+  .nav-tabs { justify-content: space-between; }
+  .brand-title { font-size: 19px; }
+  .control-bar { align-items: flex-start; }
+  .control-bar > div { flex-wrap: wrap; }
+  .recent-grid { grid-template-columns: 1fr; }
+  .recent-cover { width: 92px; height: 92px; }
+  .games-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .card-actions { flex-wrap: wrap; }
+  /* Two cards across leave ~130 px of text: the place and played time wrap instead of ending in "...". */
+  .nd-card .card-meta span { white-space: normal; }
+  .card-actions .card-btn { flex: 1 1 100%; }
+  .modal-content { padding: 20px 16px; border-radius: 18px; }
+  .modal-content > .modal-close { top: -4px; margin: -4px -4px -40px 12px; }
+  /* On a phone only the tabs stay pinned; the header scrolls away with the page. */
+  html { scroll-padding-top: 80px; }
+  .app-header { position: relative; }
+  .nav-tabs { top: 0; }
+  /* The status chips become one row that scrolls sideways; padding keeps the focus ring visible. */
+  .telemetry-bar {
+    order: 4; flex: 1 1 100%; flex-wrap: nowrap; justify-content: flex-start;
+    overflow-x: auto; scrollbar-width: none; padding: 6px; margin: -6px;
+  }
+  .telemetry-bar::-webkit-scrollbar { display: none; }
+  .telemetry-chip { flex: none; }
+  /* Storage rows: the game on top, its size and checkbox below. */
+  .storage-game-row { flex-wrap: wrap; gap: 10px; padding: 12px 14px; }
+  .storage-game-left { flex: 1 1 100%; }
+  .storage-game-right { flex: 1 1 100%; justify-content: space-between; }
+  .storage-drive-card { flex: 1 1 100%; min-width: 0; }
+  .storage-drive-card .drive-name { flex-wrap: wrap; }
+  .storage-games-controls, .storage-sort-group { width: 100%; }
+  .storage-filter-box, .storage-filter-box input, .storage-filter-box input:focus { width: 100%; flex: 1; }
+}
+
+/* The scroll arrows sit beside an open dialog on narrow screens instead of over it. */
+@media (max-width: 900px) {
+  body:has(.scroll-rail.in-dialog.visible) .modal-backdrop.open { padding-right: 68px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-card, .recent-card, .tab-btn, .telemetry-chip, .scroll-rail button { transition: none; }
+  .game-card:hover, .game-card.gamepad-focused { transform: none; }
+}

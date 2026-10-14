@@ -16,7 +16,7 @@ import time
 import urllib.parse
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 # Ensure repository root is in sys.path and package context is established
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -555,8 +555,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             
             self.send_json({"success": True, "logs": "\\n".join(logs)})
         elif path == "/" or path == "/index.html":
-            index_file = os.path.join(WEB_DIR, "templates", "index.html")
-            self.serve_file(index_file, "text/html; charset=utf-8")
+            self.serve_index()
         elif path.startswith("/static/"):
             rel = path.replace("/static/", "")
             clean_rel = os.path.normpath(rel).lstrip("/")
@@ -855,6 +854,15 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     errors[str(slot)] = str(e)
             steam = refresh_grid_artwork(os.path.join(dep["anchor"], "launch.sh"), art_dir) if saved else {}
             self.send_json({"success": bool(saved), "saved": saved, "errors": errors, "steam_users": list(steam)})
+        elif path == "/api/ui/appearance":
+            skin, daylight = str(body.get("skin", "")), str(body.get("daylight", "light"))
+            if skin not in SKINS or daylight not in ("light", "dark"):
+                self.send_json({"error": "Unknown look"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            cfg = Config.get()
+            cfg.raw.setdefault("ui", {}).update(skin=skin, daylight=daylight)
+            cfg.save()
+            self.send_json({"success": True, "skin": skin, "daylight": daylight})
         elif path == "/api/power/keep-awake":
             try:
                 power.KeepAwake.set_manual(float(body.get("hours", 0)))
@@ -1096,6 +1104,25 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.close_connection = True  # part of the body may still be unread
             self.send_json({"error": str(e)}, status=HTTPStatus.INSUFFICIENT_STORAGE)
 
+    def serve_index(self) -> None:
+        """The dashboard, already in the saved look, so it does not flash the default one first."""
+        skin, daylight = appearance()
+        with open(os.path.join(WEB_DIR, "templates", "index.html"), "r", encoding="utf-8") as f:
+            page = f.read()
+        page = page.replace('data-skin="a" data-mode="light"', f'data-skin="{skin}" data-mode="{daylight}"', 1)
+        page = page.replace('href="/static/css/skins/a.css"', f'href="/static/css/skins/{skin}.css"', 1)
+        body = page.encode("utf-8")
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def discard_body(self, limit: int = 4 * 1024 * 1024) -> None:
         """Reads a refused request's body, so the client gets the answer rather than a reset
         connection (Windows resets one with unread data). Larger bodies stay unread and the
@@ -1150,6 +1177,27 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         # Suppress noisy standard request logs unless in debug mode
         pass
+
+
+# The looks' bundled fonts; Python's table does not know the type on every version.
+mimetypes.add_type("font/woff2", ".woff2")
+
+
+class FrameLoadHTTPServer(ThreadingHTTPServer):
+    # A browser opens a page with a dozen parallel requests. The socketserver default of 5 waiting
+    # connections let some of them be dropped or reset (seen on Windows as stalled or reset loads).
+    request_queue_size = 64
+    daemon_threads = True
+
+
+SKINS = ("a", "b", "c", "d", "e", "f")  # static/css/skins/<id>.css; "a" (Big Picture) is the default
+
+
+def appearance() -> Tuple[str, str]:
+    """The saved look and Daylight's version, falling back to the defaults for anything unknown."""
+    ui = Config.get().get("ui", {}) or {}
+    skin = ui.get("skin") if ui.get("skin") in SKINS else "a"
+    return skin, ("dark" if ui.get("daylight") == "dark" else "light")
 
 
 def keep_awake_while_busy() -> bool:
@@ -1252,7 +1300,7 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
     if os.path.exists("/proc/locks"):  # Linux: games run here
         FreezeGuard.start()
 
-    server = ThreadingHTTPServer((host, port), FrameLoadApiHandler)
+    server = FrameLoadHTTPServer((host, port), FrameLoadApiHandler)
     print(f"{CYAN}============================================================{RESET}")
     print(f"🚀 {GREEN}FrameLoad Server running at http://{host}:{port}{RESET}")
     print(f"📱 Access directly on Steam Frame or over Wi-Fi from any browser")

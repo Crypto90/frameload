@@ -60,6 +60,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "steam": {
         "add_grid_artwork": True,
     },
+    # The dashboard's look (System > Appearance): a..f, and Daylight's light or dark version.
+    "ui": {"skin": "a", "daylight": "light"},
     "storage": {
         "default_device_id": "internal",
         "custom_paths": [],
