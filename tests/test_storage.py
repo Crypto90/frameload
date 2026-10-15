@@ -63,6 +63,33 @@ class TestStorageManager(unittest.TestCase):
                 self.assertEqual(res["reclaimed_bytes"], 4096)
                 self.assertEqual(res["cleaned_files"], 1)
 
+    def test_shader_caches_are_reset_on_every_drive(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp_home, tempfile.TemporaryDirectory() as tmp_sd:
+            int_anchor = os.path.join(tmp_home, "Applications", "quest-frame")
+            shader_dirs = []
+            for anchor, pkg in ((int_anchor, "com.internal.game"), (os.path.join(tmp_sd, "quest-frame"), "com.card.game")):
+                game = os.path.join(anchor, pkg)
+                shaders = os.path.join(game, "lepton-shaders")
+                os.makedirs(shaders)
+                with open(os.path.join(shaders, "pipeline.bin"), "wb") as f:
+                    f.write(b"S" * 1000)
+                with open(os.path.join(game, "deployment.json"), "w") as f:
+                    json.dump({"package": pkg, "title": pkg}, f)
+                shader_dirs.append(shaders)
+            devices = [
+                {"id": "internal", "name": "Internal Storage", "path": tmp_home, "is_external": False},
+                {"id": "ext_card", "name": "microSD Card (card)", "path": tmp_sd, "is_external": True, "is_sd_card": True},
+            ]
+            with patch("frameload.manager.installed.ANCHOR_DIR", int_anchor), \
+                 patch("frameload.manager.storage.ANCHOR_DIR", int_anchor), \
+                 patch("frameload.manager.storage.StorageManager.get_devices", return_value=devices), \
+                 patch("frameload.system.fsutil.podman", return_value=None):
+                res = StorageManager.clean_cache(clear_downloads=False, clear_shaders=True)
+            self.assertEqual((res["reclaimed_bytes"], res["cleaned_files"]), (2000, 2))
+            for shaders in shader_dirs:
+                self.assertEqual(os.listdir(shaders), [])  # emptied; the folder stays for Lepton
+
     def test_resolve_anchor(self):
         # Default/internal
         internal_anchor = StorageManager.resolve_anchor("internal")

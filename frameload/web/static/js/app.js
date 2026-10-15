@@ -1230,19 +1230,30 @@ window.stopRunningGames = stopRunningGames;
 
 async function uninstallGame(pkg, keepSaves = true) {
   const target = (state.installed || []).find(g => g.package === pkg);
-  if (!await confirmDialog(`Uninstall ${target ? target.title : pkg}?`,
+  const name = target ? target.title : pkg;
+  if (!await confirmDialog(`Uninstall ${name}?`,
     keepSaves ? "It is removed from this headset and from your Steam library. Its save data is kept."
       : "It is removed from this headset and from your Steam library, together with its save data.",
     { yes: "Uninstall", danger: true })) return;
 
-  showToast(`Removing ${pkg}...`, "info");
-  try {
+  const request = async (keep) => {
     const res = await fetch("/api/installed/uninstall", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ package: pkg, keep_saves: keepSaves })
+      body: JSON.stringify({ package: pkg, keep_saves: keep })
     });
-    const data = await res.json();
+    return res.json();
+  };
+  showToast(`Removing ${pkg}...`, "info");
+  try {
+    let data = await request(keepSaves);
+    if (!data.success && data.backup_failed) {
+      // The game was left installed because its saves could not be backed up: deleting them is the player's call.
+      if (!await confirmDialog(`Uninstall ${name} anyway?`,
+        `${data.error} Uninstalling anyway deletes its save data.`,
+        { yes: "Uninstall anyway", no: "Keep the game", danger: true })) return;
+      data = await request(false);
+    }
     if (data.success) {
       showToast("Game uninstalled and removed from Steam library.", "success");
       closeModal();
@@ -2382,9 +2393,19 @@ async function executeBatchUninstall() {
     const data = await res.json();
 
     if (data.success) {
-      showToast(`Successfully uninstalled ${data.uninstalled_count} games! Reclaimed ${data.reclaimed_formatted}.`, "success");
+      const failed = (data.results || []).filter(r => !r.success);
+      if (data.uninstalled_count) {
+        showToast(`Uninstalled ${data.uninstalled_count} ${data.uninstalled_count === 1 ? "game" : "games"}. Reclaimed ${data.reclaimed_formatted}.`, "success");
+      }
+      if (failed.length) {
+        const hint = failed.some(r => r.backup_failed) ? " Untick the save backup to uninstall without one." : "";
+        showToast((failed.length === 1 ? failed[0].error
+          : `${failed.length} games were not uninstalled (${failed.map(r => r.title || r.package).join(", ")}). ${failed[0].error}`) + hint, "error");
+      }
       closeBatchModal();
+      // Games that are still installed stay selected, to try again (without the backup, if that failed).
       deselectAllStorageGames();
+      failed.forEach(r => state.storage.selectedPackages.add(r.package));
       loadStorageOverview();
       loadInstalled();
       loadSystemTelemetry();
@@ -2627,6 +2648,18 @@ async function triggerAppUpdate() {
 
   showToast("Downloading FrameLoad update...", "info");
 
+  // The update did not happen (nothing was restarted): the buttons work again for another try.
+  const failed = (message) => {
+    showToast(message, "error");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Update and Restart";
+    }
+    if (sysBtn) {
+      sysBtn.disabled = false;
+      sysBtn.textContent = "Update Now";
+    }
+  };
   try {
     const res = await fetch("/api/updates/app", { method: "POST" });
     const data = await res.json();
@@ -2637,18 +2670,10 @@ async function triggerAppUpdate() {
         window.location.reload();
       }, 3500);
     } else {
-      showToast(data.error || "Update failed. Check system logs.", "error");
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = "Update and Restart";
-      }
-      if (sysBtn) {
-        sysBtn.disabled = false;
-        sysBtn.textContent = "Update Now";
-      }
+      failed(data.error || "Update failed. Check system logs.");
     }
   } catch (err) {
-    showToast(`Update error: ${err.message}`, "error");
+    failed(`Update error: ${err.message}`);
   }
 }
 window.triggerAppUpdate = triggerAppUpdate;

@@ -452,21 +452,21 @@ class StorageManager:
 
             try:
                 res = Uninstaller.uninstall(pkg, keep_saves=keep_saves)
-                reclaimed_total += pkg_size
-                results.append({
-                    "package": pkg,
-                    "success": True,
-                    "reclaimed_bytes": pkg_size,
-                    "reclaimed_formatted": format_size(pkg_size),
-                })
             except Exception as e:
-                results.append({
-                    "package": pkg,
-                    "success": False,
-                    "error": str(e),
-                    "reclaimed_bytes": 0,
-                    "reclaimed_formatted": "0 B",
-                })
+                res = {"success": False, "error": str(e)}
+            # A game whose save backup failed is still installed: it reclaimed nothing.
+            ok = bool(res.get("success"))
+            if ok:
+                reclaimed_total += pkg_size
+            results.append({
+                "package": pkg,
+                "title": res.get("title", pkg),
+                "success": ok,
+                "error": "" if ok else res.get("error") or "Not uninstalled",
+                "backup_failed": bool(res.get("backup_failed")),
+                "reclaimed_bytes": pkg_size if ok else 0,
+                "reclaimed_formatted": format_size(pkg_size if ok else 0),
+            })
 
         return {
             "success": True,
@@ -515,19 +515,24 @@ class StorageManager:
             except OSError:
                 pass
 
-        # 2. Clean shader caches in installed games
-        if clear_shaders and os.path.isdir(ANCHOR_DIR):
-            for shader_dir in glob.glob(os.path.join(ANCHOR_DIR, "*/lepton-shaders")):
-                if os.path.isdir(shader_dir):
-                    sz = get_dir_size(shader_dir)
-                    try:
-                        from ..system import fsutil
-                        fsutil.remove_tree(shader_dir)
-                        os.makedirs(shader_dir, exist_ok=True)
+        # 2. Clean the shader caches of installed games, on every drive (Lepton's containers own the files)
+        if clear_shaders:
+            from ..system import fsutil
+            seen = set()
+            for game in InstalledManager.list_installed():
+                shader_dir = os.path.join(game["base"], "lepton-shaders")
+                real = os.path.realpath(shader_dir)
+                if real in seen or not os.path.isdir(shader_dir):
+                    continue
+                seen.add(real)
+                sz = get_dir_size(shader_dir)
+                try:
+                    if fsutil.remove_tree(shader_dir):
                         reclaimed_bytes += sz
                         cleaned_files += 1
-                    except OSError:
-                        pass
+                    os.makedirs(shader_dir, exist_ok=True)
+                except OSError:
+                    pass
 
         return {
             "success": True,

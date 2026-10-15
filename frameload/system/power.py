@@ -8,11 +8,19 @@ off (displays off) is not affected either way.
 """
 from __future__ import annotations
 
+import contextlib
+import itertools
 import shutil
 import subprocess
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
+
+# Work that runs inside a request (installing a file picked in the Install File tab or sent from
+# another device), by ticket. The downloader and porting jobs report their own state.
+_work: Dict[int, str] = {}
+_work_lock = threading.Lock()
+_tickets = itertools.count(1)
 
 
 class KeepAwake:
@@ -89,6 +97,19 @@ class KeepAwake:
         }
 
 
+@contextlib.contextmanager
+def busy(reason: str) -> Iterator[None]:
+    """Counts as work that sleep would interrupt (see busy_reason) until the block ends, failed or not."""
+    with _work_lock:
+        ticket = next(_tickets)
+        _work[ticket] = reason
+    try:
+        yield
+    finally:
+        with _work_lock:
+            _work.pop(ticket, None)
+
+
 def busy_reason(downloader: Any = None) -> str:
     """What FrameLoad is doing that sleep would interrupt, '' when nothing."""
     from ..installer import porting
@@ -96,6 +117,9 @@ def busy_reason(downloader: Any = None) -> str:
     if job:
         current = porting.PortingJobs.get(job) or {}
         return "Porting a game" if current.get("kind") == "port" else "Downloading the porting tools"
+    with _work_lock:
+        if _work:
+            return next(iter(_work.values()))
     if downloader is not None:
         try:
             for task in downloader.get_all_tasks():

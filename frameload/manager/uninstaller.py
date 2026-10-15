@@ -5,7 +5,7 @@ import os
 import shutil
 import signal
 import subprocess
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 from ..config import ANCHOR_DIR, FRAMELOAD_DIR, HOME
 from ..system import fsutil
@@ -27,6 +27,7 @@ class Uninstaller:
             raise FileNotFoundError(f"Game {package_name} is not installed.")
 
         appid = dep.get("appid")
+        title = dep.get("title", package_name)
         anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, package_name))
         launch_script = os.path.join(anchor, "launch.sh")
 
@@ -37,13 +38,27 @@ class Uninstaller:
             except OSError:
                 pass
 
-        # 2. Optionally backup saves if requested
+        # 2. Back up the saves first when asked. The player was told they are kept, so a backup that
+        #    fails or misses files leaves the game installed. A game that never saved has nothing to keep.
         if keep_saves:
-            from .backup import SaveBackupManager
+            from .backup import NoSaveData, SaveBackupManager
+            problem = ""
             try:
-                SaveBackupManager.backup_saves(package_name)
+                if not SaveBackupManager.backup_saves(package_name).get("complete", True):
+                    problem = "some files could not be read"
+            except NoSaveData:
+                pass
             except Exception as e:
-                print(f"[FrameLoad] Could not auto-backup saves before uninstall: {e}")
+                problem = str(e) or type(e).__name__
+            if problem:
+                return {
+                    "success": False,
+                    "backup_failed": True,
+                    "error": f"The save backup of {title} failed, so it was not uninstalled: {problem}",
+                    "package": package_name,
+                    "title": title,
+                    "steam_shortcut_removed": False,
+                }
 
         # 3. Remove game directory (Lepton's containers own some of the files)
         removed = fsutil.remove_tree(anchor) if os.path.isdir(anchor) else True
@@ -55,7 +70,7 @@ class Uninstaller:
             "success": removed,
             "error": "" if removed else f"Some files in {anchor} could not be deleted.",
             "package": package_name,
-            "title": dep.get("title", package_name),
+            "title": title,
             "steam_shortcut_removed": steam_removed
         }
 
@@ -152,31 +167,34 @@ class Uninstaller:
                 pass
 
             # Uninstall all games registered in library
+            kept: Set[str] = set()  # game folders whose saves could not be backed up: they stay, saves and all
             try:
                 installed = InstalledManager.list_installed()
                 for g in installed:
                     pkg = g.get("package")
                     if pkg:
                         try:
-                            Uninstaller.uninstall(pkg, keep_saves=keep_backups)
+                            res = Uninstaller.uninstall(pkg, keep_saves=keep_backups)
+                        except Exception as e:
+                            res = {"success": False, "error": str(e)}
+                        if res.get("success"):
                             summary["games_removed_count"] += 1
-                        except Exception:
-                            pass
+                        elif res.get("backup_failed") and g.get("anchor"):
+                            kept.add(os.path.realpath(g["anchor"]))
+                            summary["details"].append(f"{res['error']} It stays in {g['anchor']}.")
             except Exception as e:
                 summary["details"].append(f"purge games: {e}")
+            summary["games_kept_count"] = len(kept)
 
             # Remove anchor directory ~/Applications/quest-frame
-            if os.path.isdir(ANCHOR_DIR):
-                fsutil.remove_tree(ANCHOR_DIR)
+            Uninstaller._remove_games_folder(ANCHOR_DIR, kept)
 
             # Check MicroSD mounts for quest-frame directory
             try:
                 from .storage import StorageManager
                 for dev in StorageManager.get_devices():
                     if dev.get("id") != "internal" and dev.get("path"):
-                        sd_anchor = os.path.join(dev["path"], "quest-frame")
-                        if os.path.isdir(sd_anchor):
-                            fsutil.remove_tree(sd_anchor)
+                        Uninstaller._remove_games_folder(os.path.join(dev["path"], "quest-frame"), kept)
             except Exception as e:
                 summary["details"].append(f"microsd cleanup: {e}")
 
@@ -237,6 +255,29 @@ class Uninstaller:
             except Exception as e:
                 summary["details"].append(f"systemctl stop: {e}")
         return summary
+
+    @staticmethod
+    def _remove_games_folder(folder: str, keep: Set[str]) -> None:
+        """Deletes a quest-frame folder, except the game folders listed (by real path) in keep."""
+        if not os.path.isdir(folder):
+            return
+        try:
+            entries = [os.path.join(folder, name) for name in os.listdir(folder)] if keep else []
+        except OSError:
+            return  # cannot tell the kept games apart: delete nothing
+        if not any(os.path.realpath(p) in keep for p in entries):
+            fsutil.remove_tree(folder)
+            return
+        for p in entries:
+            if os.path.realpath(p) in keep:
+                continue
+            if os.path.isdir(p) and not os.path.islink(p):
+                fsutil.remove_tree(p)
+            else:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
 
     @staticmethod
     def _stop_server_started_without_systemd() -> None:

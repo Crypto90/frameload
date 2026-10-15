@@ -1,10 +1,14 @@
 """Unit tests for FrameLoad clean uninstaller."""
+import json
 import os
 import shutil
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
 
+from frameload.manager.backup import SaveBackupManager
+from frameload.manager.storage import StorageManager
 from frameload.manager.uninstaller import Uninstaller
 from frameload.system.shortcuts import remove_shortcut_by_title_or_exe
 from frameload.system.steam_vdf import shortcut_appid, vdf_decode, vdf_encode
@@ -99,6 +103,102 @@ class TestUninstaller(unittest.TestCase):
             res2 = Uninstaller.uninstall_frameload_app(purge_games=False, keep_backups=False, purge_all_data=True, remove_install_dir=False)
             self.assertTrue(res2["success"])
             self.assertFalse(os.path.exists(mock_frameload_dir))  # All data purged
+
+
+class TestUninstallKeepsSaves(unittest.TestCase):
+    """The dashboard says a game's save data is kept: a backup that fails must not delete the game."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="fl-keep-saves-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.anchor = os.path.join(self.tmp, "quest-frame")
+        self.backups = os.path.join(self.tmp, "backups")
+        self.games = {}
+        for pkg in ("com.saved.game", "com.fresh.game"):
+            game = os.path.join(self.anchor, pkg)
+            os.makedirs(os.path.join(game, "lepton-app"))
+            with open(os.path.join(game, "deployment.json"), "w", encoding="utf-8") as f:
+                json.dump({"package": pkg, "title": pkg.split(".")[1].title(), "appid": 0}, f)
+            self.games[pkg] = game
+        # Only one of them has saved anything yet.
+        self.save = os.path.join(self.games["com.saved.game"], "lepton-data", "internal", "com.saved.game", "save.dat")
+        os.makedirs(os.path.dirname(self.save))
+        with open(self.save, "w", encoding="utf-8") as f:
+            f.write("level 9")
+        for p in (patch("frameload.manager.installed.ANCHOR_DIR", self.anchor),
+                  patch("frameload.manager.uninstaller.ANCHOR_DIR", self.anchor),
+                  patch("frameload.manager.storage.StorageManager.get_devices", return_value=[]),
+                  patch("frameload.manager.backup.BACKUP_DIR", self.backups),
+                  patch("frameload.system.fsutil.podman", return_value=None),
+                  patch("frameload.manager.uninstaller.subprocess.run")):
+            p.start()
+            self.addCleanup(p.stop)
+        unregister = patch("frameload.manager.uninstaller.unregister_game_from_steam", return_value=True)
+        self.unregister = unregister.start()
+        self.addCleanup(unregister.stop)
+
+    def backup_fails_for_saved_game(self):
+        real_backup = SaveBackupManager.backup_saves
+
+        def backup(pkg):
+            if pkg == "com.saved.game":
+                raise OSError("disk full")
+            return real_backup(pkg)
+        return patch.object(SaveBackupManager, "backup_saves", side_effect=backup)
+
+    def test_a_failed_backup_leaves_the_game_installed(self):
+        for failure, why in (({"side_effect": OSError("Backup failed: tar: No space left on device")}, "No space left"),
+                             ({"return_value": {"success": True, "complete": False}}, "could not be read")):
+            with patch.object(SaveBackupManager, "backup_saves", **failure):
+                res = Uninstaller.uninstall("com.saved.game", keep_saves=True)
+            self.assertFalse(res["success"])
+            self.assertTrue(res["backup_failed"])
+            self.assertIn("Saved", res["error"])
+            self.assertIn("not uninstalled", res["error"])
+            self.assertIn(why, res["error"])
+            self.assertTrue(os.path.isfile(self.save))
+            self.unregister.assert_not_called()
+
+        res = Uninstaller.uninstall("com.saved.game", keep_saves=True)  # the backup works this time
+        self.assertTrue(res["success"], res)
+        self.assertFalse(os.path.exists(self.games["com.saved.game"]))
+        [archive] = os.listdir(self.backups)
+        with tarfile.open(os.path.join(self.backups, archive)) as tar:
+            self.assertIn("internal/com.saved.game/save.dat", tar.getnames())
+
+    def test_a_game_that_never_saved_still_uninstalls(self):
+        res = Uninstaller.uninstall("com.fresh.game", keep_saves=True)
+        self.assertTrue(res["success"], res)
+        self.assertFalse(os.path.exists(self.games["com.fresh.game"]))
+        self.unregister.assert_called_once()
+
+    def test_batch_uninstall_reports_the_game_it_kept(self):
+        with patch("frameload.manager.storage.ANCHOR_DIR", self.anchor), self.backup_fails_for_saved_game():
+            res = StorageManager.batch_uninstall(["com.saved.game", "com.fresh.game"], keep_saves=True)
+        saved, fresh = res["results"]
+        self.assertEqual(res["uninstalled_count"], 1)
+        self.assertFalse(saved["success"])
+        self.assertTrue(saved["backup_failed"])
+        self.assertIn("disk full", saved["error"])
+        self.assertEqual((saved["title"], saved["reclaimed_bytes"]), ("Saved", 0))
+        self.assertTrue(fresh["success"])
+        self.assertEqual(res["reclaimed_bytes"], fresh["reclaimed_bytes"])
+        self.assertTrue(os.path.isfile(self.save))
+        self.assertFalse(os.path.exists(self.games["com.fresh.game"]))
+
+    def test_removing_frameload_with_its_games_keeps_a_game_whose_backup_failed(self):
+        home = os.path.join(self.tmp, "home")
+        with patch("frameload.manager.uninstaller.HOME", home), \
+                patch("frameload.manager.uninstaller.FRAMELOAD_DIR", os.path.join(home, "data")), \
+                patch("frameload.manager.uninstaller.unregister_app_from_steam", return_value=True), \
+                patch("frameload.installer.porting.backup_signing_keys", return_value=""), \
+                self.backup_fails_for_saved_game():
+            res = Uninstaller.uninstall_frameload_app(purge_games=True, keep_backups=True, purge_all_data=False,
+                                                      remove_install_dir=False, stop_service_last=True)
+        self.assertEqual((res["games_removed_count"], res["games_kept_count"]), (1, 1))
+        self.assertTrue(os.path.isfile(self.save))
+        self.assertFalse(os.path.exists(self.games["com.fresh.game"]))
+        self.assertTrue(any("Saved" in line and "disk full" in line for line in res["details"]), res["details"])
 
 
 if __name__ == "__main__":

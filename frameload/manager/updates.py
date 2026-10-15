@@ -38,6 +38,28 @@ def _fetch(url: str, timeout: int = 60) -> bytes:
         return resp.read()
 
 
+def _git(args: List[str], timeout: int = 60) -> subprocess.CompletedProcess:
+    # Untranslated messages, whatever the system language: perform_app_update reads them.
+    return subprocess.run(["git"] + args, cwd=ROOT_DIR, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=timeout, env=dict(os.environ, LC_ALL="C"))
+
+
+def local_changes() -> List[str]:
+    """Files changed in the git install (git status --porcelain), [] when there are none."""
+    try:
+        res = _git(["status", "--porcelain"], timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if res.returncode != 0:
+        return []
+    files = []
+    for line in res.stdout.splitlines():
+        path = line[3:].split(" -> ")[-1].strip().strip('"')  # "XY path" or "R  old -> new"
+        if path:
+            files.append(path)
+    return files
+
+
 def expected_sha256(sums_text: str, filename: str) -> str:
     """The checksum SHA256SUMS lists for filename, '' if it is not listed."""
     for line in sums_text.splitlines():
@@ -247,28 +269,24 @@ class UpdateManager:
         is_git = os.path.isdir(os.path.join(ROOT_DIR, ".git"))
 
         if is_git:
-            # 1. Update via git pull
+            # 1. Update via git pull. Local edits belong to whoever made them: they are named, never stashed.
             try:
-                res = subprocess.run(
-                    ["git", "pull", "--ff-only", "origin", "main"],
-                    cwd=ROOT_DIR,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                if res.returncode != 0:
-                    # Stash uncommitted changes if any and retry
-                    subprocess.run(["git", "stash"], cwd=ROOT_DIR, capture_output=True, timeout=10)
-                    res = subprocess.run(
-                        ["git", "pull", "origin", "main"],
-                        cwd=ROOT_DIR,
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-                update_log = res.stdout + res.stderr
+                res = _git(["pull", "--ff-only", "origin", "main"])
             except Exception as e:
                 return {"success": False, "error": f"Git update failed: {e}"}
+            update_log = (res.stdout + res.stderr).strip()
+            if res.returncode != 0:
+                # Nothing was pulled: install.sh and the restart are skipped too.
+                changed = local_changes()
+                if changed and "would be overwritten" in update_log:
+                    names = ", ".join(changed[:8]) + (f" and {len(changed) - 8} more" if len(changed) > 8 else "")
+                    error = (f"Local changes in {ROOT_DIR} block the update: {names}. "
+                             "Commit or undo them, then update again.")
+                else:
+                    reason = "\n".join(line for line in update_log.splitlines()
+                                       if line.startswith(("fatal:", "error:"))) or update_log
+                    error = f"git pull failed: {reason[:500] or f'exit code {res.returncode}'}"
+                return {"success": False, "error": error, "details": update_log, "local_changes": changed}
         else:
             # 2. Standalone update via the release tarball, checked against the release's SHA256SUMS
             status = UpdateManager.check_app_update(force=True)

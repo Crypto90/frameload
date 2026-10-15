@@ -199,7 +199,7 @@ FrameLoad self-updates directly inside the headset without a PC:
    - Top dismissable banner on main dashboard.
    - System & Diagnostics tab badge.
 3. **Execution Flow:**
-   - **Git install:** Runs `git pull --ff-only origin main` (falls back to `git stash` if local files are modified).
+   - **Git install:** Runs `git pull --ff-only origin main`. Never stash: when it fails, return `success: False` with git's output (local changes that block it are named from `git status --porcelain`) and skip install.sh and the restart.
    - **Tarball install:** Downloads `frameload-vX.Y.Z-standalone.tar.gz` and extracts to application root.
    - Runs `install.sh --no-restart` to refresh shortcuts, systemd units, and container configs without killing the active HTTP process.
    - Returns HTTP 200 JSON to the frontend.

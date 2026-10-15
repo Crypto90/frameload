@@ -1,13 +1,17 @@
 """CPU/memory readings, keeping the headset awake, and the freeze guard."""
 from __future__ import annotations
 
+import http.client
+import json
 import os
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 from collections import deque
-from unittest.mock import patch
+from http.server import ThreadingHTTPServer
+from unittest.mock import MagicMock, patch
 
 from frameload.manager import guard
 from frameload.manager.guard import FreezeGuard
@@ -122,6 +126,66 @@ class TestKeepAwake(unittest.TestCase):
             power.KeepAwake.update("Downloading")
             self.assertFalse(power.KeepAwake.status()["held"])
             self.assertFalse(power.KeepAwake.status()["available"])
+
+    def test_work_inside_a_request_counts_until_it_ends(self):
+        from frameload.installer import porting
+        with patch.object(porting.PortingJobs, "active_id", return_value=""):
+            self.assertEqual(power.busy_reason(), "")
+            with power.busy("Installing Moss"):
+                self.assertEqual(power.busy_reason(), "Installing Moss")
+            self.assertEqual(power.busy_reason(), "")
+            with self.assertRaises(OSError), power.busy("Installing Moss"):
+                raise OSError("disk full")
+            self.assertEqual(power.busy_reason(), "")
+
+
+class TestLocalInstallKeepsAwake(unittest.TestCase):
+    """Installing a file from the Install File tab or from a phone runs inside the request."""
+
+    def setUp(self):
+        from frameload.catalog.downloader import Downloader
+        from frameload.installer import porting
+        from frameload.server import FrameLoadApiHandler
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), FrameLoadApiHandler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        fd, self.apk = tempfile.mkstemp(suffix=".apk")
+        os.close(fd)
+        self.addCleanup(os.remove, self.apk)
+        self.update = MagicMock()
+        for p in (patch.object(porting.PortingJobs, "active_id", return_value=""),
+                  patch.object(Downloader.get(), "get_all_tasks", return_value=[]),
+                  patch.object(porting, "auto_port", return_value={"needed": False}),
+                  patch("frameload.server.steam_session.status", return_value={}),
+                  patch.object(power.KeepAwake, "update", self.update)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def install(self, install_source):
+        with patch("frameload.server.PackageLoader.install_source", side_effect=install_source):
+            conn = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+            try:
+                conn.request("POST", "/api/local/install", body=json.dumps({"source_path": self.apk, "title": "Moss"}),
+                             headers={"Content-Type": "application/json"})
+                return conn.getresponse().status
+            finally:
+                conn.close()
+
+    def test_the_headset_stays_awake_while_installing_and_not_after(self):
+        seen = []
+        self.assertEqual(self.install(lambda **kw: seen.append(power.busy_reason()) or {"package": "com.moss"}), 200)
+        self.assertEqual(seen, ["Installing Moss"])
+        self.assertEqual(self.update.call_args_list[0].args, ("Installing Moss",))  # held right away
+        self.assertEqual(power.busy_reason(), "")
+        self.assertEqual(self.update.call_args_list[-1].args, ("",))  # and let go at the end
+
+        def broken(**kw):
+            raise OSError("disk full")
+        self.update.reset_mock()
+        self.assertEqual(self.install(broken), 500)
+        self.assertEqual(power.busy_reason(), "")  # a failed install lets go too
+        self.assertEqual(self.update.call_args_list[-1].args, ("",))
 
 
 class TestFreezeGuard(Case):

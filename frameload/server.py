@@ -947,23 +947,32 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             if not os.path.exists(source_path):
                 self.send_json({"error": f"Path not found: {source_path}"}, status=HTTPStatus.BAD_REQUEST)
                 return
+            res: Dict[str, Any] = {}
+            error = ""
             try:
-                res = PackageLoader.install_source(
-                    source_path=source_path,
-                    title=title,
-                    obb_path=obb_path,
-                    device_id=device_id,
-                    force_flat=force_flat,
-                )
+                # Copying a large game takes a while: the headset must not fall asleep in the middle.
+                with power.busy(f"Installing {title or os.path.basename(source_path.rstrip('/'))}"):
+                    refresh_keep_awake(self.downloader)
+                    res = PackageLoader.install_source(
+                        source_path=source_path,
+                        title=title,
+                        obb_path=obb_path,
+                        device_id=device_id,
+                        force_flat=force_flat,
+                    )
                 try:
                     res["porting"] = porting.auto_port(res)
                 except Exception as e:  # the install itself succeeded
                     res["porting"] = {"needed": True, "started": False, "reason": "error", "error": str(e)}
                 file_manager.discard_upload(source_path)  # a received upload has served its purpose
                 res["steam"] = steam_session.status()
-                self.send_json(res)
             except Exception as e:
-                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                error = str(e) or type(e).__name__
+            refresh_keep_awake(self.downloader)  # held on only for a porting job the install started
+            if error:
+                self.send_json({"error": error}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            else:
+                self.send_json(res)
         elif path == "/api/installed/mods/inject":
             pkg = body.get("package", "")
             source_path = body.get("source_path", "")
@@ -1204,6 +1213,14 @@ def appearance() -> Tuple[str, str]:
 
 def keep_awake_while_busy() -> bool:
     return bool(Config.get().get("power", {}).get("keep_awake_busy", True))
+
+
+def refresh_keep_awake(downloader: Any) -> None:
+    """Takes or drops the sleep inhibitor now rather than at the keep-awake loop's next check."""
+    try:
+        power.KeepAwake.update(power.busy_reason(downloader) if keep_awake_while_busy() else "")
+    except Exception as e:
+        print(f"[FrameLoad] Keep-awake check failed: {e}")
 
 
 def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:

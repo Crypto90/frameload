@@ -22,6 +22,10 @@ EXCLUDE = "external/Android/obb"
 BACKUP_NAME = re.compile(r"[A-Za-z0-9_.\-]+_save_\d{8}_\d{6}\.tar\.gz")
 
 
+class NoSaveData(FileNotFoundError):
+    """The game has not written any data yet, so there is nothing to back up."""
+
+
 class SaveBackupManager:
     @staticmethod
     def _data_dir(package_name: str) -> str:
@@ -36,7 +40,7 @@ class SaveBackupManager:
         data_dir = SaveBackupManager._data_dir(package_name)
         folders = [f for f in SAVE_FOLDERS if os.path.isdir(os.path.join(data_dir, f))]
         if not folders:
-            raise FileNotFoundError(f"No save data found in {data_dir}")
+            raise NoSaveData(f"No save data found in {data_dir}")
 
         os.makedirs(BACKUP_DIR, exist_ok=True)
         backup_filename = f"{package_name}_save_{time.strftime('%Y%m%d_%H%M%S')}.tar.gz"

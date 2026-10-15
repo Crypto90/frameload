@@ -109,20 +109,20 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 - **FAT, exFAT and NTFS:** cards in these formats are shown but cannot hold games. Lepton needs a Linux filesystem such as ext4.
 - **Choosing a drive:** with more than one drive that can hold games, installing from Browse asks where to put the game, like Steam does. It can remember your choice as the default.
 - **Moving games:** games move between drives, and the copy is checked before the original is removed.
-- **The Storage tab** shows each drive's space split into games, saves, shaders and other, and lists every game's size. You can select several games to move or uninstall them, clean the download cache, or reset the shader caches of games on internal storage.
+- **The Storage tab** shows each drive's space split into games, saves, shaders and other, and lists every game's size. You can select several games to move or uninstall them, clean the download cache, or reset the shader caches of the installed games on every drive.
 
 ### 🧊 Freeze Guard, Keep Awake and Performance
 - **Freeze Guard:** a game that uses up the headset's memory freezes everything, even the Steam button. FrameLoad prevents that:
   - It limits each game's memory so SteamVR keeps 2.5 GB.
   - It watches memory pressure while a game runs, ends the game before the headset locks up, and tells you which game it was.
-- **Keep Awake:** FrameLoad holds SteamOS's sleep inhibitor while it downloads from Browse, installs those downloads or ports a game. You can also keep the headset awake for an hour, or until you switch it off. Whether Steam's own sleep timer on the Frame honours the inhibitor is not confirmed yet.
+- **Keep Awake:** FrameLoad holds SteamOS's sleep inhibitor while it downloads from Browse, installs a game (a download, a file from the Install File tab or one sent from your phone or PC) or ports a game. You can also keep the headset awake for an hour, or until you switch it off. Whether Steam's own sleep timer on the Frame honours the inhibitor is not confirmed yet.
 - **Performance:** System → Performance shows CPU, memory, swap, GPU clock and temperatures live. Neon, Spatial, Command Center and Daylight also show CPU use in their status area.
 
 ### 📱 Phone & PC access
 - Open `http://<headset-ip>:5050` on another device on the same network. Pair it once with a six-digit code shown in the headset, and it can browse, install and upload like the headset can.
 
 ### 🧩 Saves, mods and logs
-- **Save backups** hold the app's private storage, where most games save, and its shared storage. Uninstalling a game in the dashboard makes a backup first.
+- **Save backups** hold the app's private storage, where most games save, and its shared storage. Uninstalling a game in the dashboard makes a backup first; if the backup fails, the game stays installed until you choose to uninstall it without one.
 - **Mods and Beat Saber custom songs** go into the game's shared storage from its page or the command line.
 - **Launch Log** explains the usual reasons a game does not start, in plain words.
 - **Self-test:** checks everything FrameLoad relies on. It runs by itself when the dashboard opens and only speaks up when something is wrong.
@@ -210,7 +210,7 @@ FrameLoad checks GitHub at most every six hours; **Check for Updates** under Sys
 
 To install it, press **Review & Update** in the banner (or the **Update** chip) and then **Update and Restart**, or press **Update Now** under System → FrameLoad Updates. FrameLoad updates itself and restarts its service, and the page reloads.
 
-- **A git install** updates with `git pull` from `main`, so it also gets fixes between releases.
+- **A git install** updates with `git pull` from `main`, so it also gets fixes between releases. If files you changed in the FrameLoad folder are in the way, the update stops and names them; nothing is stashed or overwritten, and nothing restarts.
 - **A release install** downloads the new release archive and checks it against the release's `SHA256SUMS`. If it does not match, nothing is changed.
 
 ---
@@ -247,7 +247,7 @@ If you installed into another folder, run `curl -fsSL https://raw.githubusercont
 - the browser profile of FrameLoad's window
 - `~/Applications/FrameLoad`
 
-Installed games and their Steam shortcuts stay unless you choose to delete the games. While Steam is running it keeps its own copy of the shortcut list and can write FrameLoad's entry back when it exits; if FrameLoad is still in your library after a Steam restart, remove it there (Manage → Remove non-Steam game).
+Installed games and their Steam shortcuts stay unless you choose to delete the games. When you delete them and keep the save backups, a game whose saves cannot be backed up stays installed; `uninstall.sh` and `frameload uninstall-app` name it. While Steam is running it keeps its own copy of the shortcut list and can write FrameLoad's entry back when it exits; if FrameLoad is still in your library after a Steam restart, remove it there (Manage → Remove non-Steam game).
 
 The signing keys of ported games are always copied to `~/Documents/FrameLoad-signing-keys` first. An update of a ported game must be signed with the same key, and FrameLoad's next porting setup imports the keys again.
 
@@ -382,7 +382,7 @@ The folders are made writable for the container. Whether a game loads them is up
 ### Save backups
 
 **Backup Saves** on a game's page writes `~/.local/share/frameload/backups/<package>_save_<date>_<time>.tar.gz`. It holds the app's private storage (`internal/`) and its shared storage (`external/`, without OBB files).
-- Uninstalling one game in the dashboard makes a backup first. The Storage tab's batch uninstall asks whether to make one.
+- Uninstalling one game in the dashboard makes a backup first. The Storage tab's batch uninstall asks whether to make one. A game whose backup fails is not uninstalled; the dashboard says why and asks before removing it without a backup. A game that has not saved anything yet is uninstalled without one.
 - Restoring is not in the dashboard yet. To restore by hand, install the game again if it was uninstalled, make sure it is stopped, and run:
 
 ```bash
@@ -434,7 +434,7 @@ frameload list
 frameload install <file-or-folder> [--title "Name"] [--obb <file-or-folder>] [--device <drive-id>] [--flat]
 frameload launch <package>
 frameload stop [<package>]                       # all running games without a package
-frameload uninstall <package> [--keep-saves]     # --keep-saves: write a save backup first
+frameload uninstall <package> [--keep-saves]     # --keep-saves: write a save backup first (stops if it fails)
 frameload storage                                # drives and their ids, as JSON
 frameload move <package> <internal|drive-id|folder>
 frameload sync-shortcuts                         # rewrite every game's Steam shortcut, add FrameLoad's if missing (while Steam is stopped)
