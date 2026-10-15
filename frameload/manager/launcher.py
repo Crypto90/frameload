@@ -14,6 +14,8 @@ from .installed import InstalledManager
 
 CONTAINER_PREFIX = "lepton-steamlaunch-"
 LAST_LAUNCH = ".last_launch"
+SHOW_LOG = "show.log"          # <base>/show.log: every press of Show, for the game's report
+SHOW_LOG_MAX = 32 * 1024
 
 
 class GameLauncher:
@@ -121,7 +123,49 @@ class GameLauncher:
         if not appid or f"{CONTAINER_PREFIX}{appid}" not in GameLauncher.running_containers():
             return {**base, "success": False, "running": False, "error": f"{title} is not running."}
         from ..system import steam_ui
-        return {**base, "running": True, **steam_ui.show_game()}
+        res = steam_ui.show_game()
+        from . import sessions
+        GameLauncher._note_show(dep.get("base") or dep.get("anchor") or "", res, sessions.current_start(dep))
+        # When Steam's menu cannot be closed (or closing it did not help), closing FrameLoad's own
+        # window is what is left: the dashboard offers it when run.sh owns an open window.
+        return {**base, "running": True, **res, "window_open": steam_ui.window_pid() is not None}
+
+    @staticmethod
+    def _note_show(base: str, res: Dict[str, Any], started: Any = None) -> None:
+        """Appends one press of Show to <base>/show.log (kept short), with how the game was started."""
+        if not base:
+            return
+        via = "steam library"  # a start from Steam's library writes no .last_launch
+        try:
+            with open(os.path.join(base, LAST_LAUNCH), "r", encoding="utf-8") as f:
+                launch = json.load(f) or {}
+            if not started or 0 <= float(started) - float(launch.get("time") or 0) <= 120:  # this start's
+                via = launch.get("via", "?")
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass
+        outcome = "ok" if res.get("success") else res.get("reason", "failed")
+        line = (f"{time.strftime('%Y-%m-%d %H:%M:%S')} Show: {outcome}; started via {via}; "
+                f"{'; '.join(res.get('steps') or [])}\n")
+        path = os.path.join(base, SHOW_LOG)
+        try:
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    old = f.read()[-SHOW_LOG_MAX:]
+            except OSError:
+                old = ""
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(old[old.find("\n") + 1:] if len(old) >= SHOW_LOG_MAX else old)
+                f.write(line)
+        except OSError:
+            pass
+
+    @staticmethod
+    def close_window() -> Dict[str, Any]:
+        """Closes FrameLoad's window (run.sh) so a game it covers is in front; games keep running."""
+        from ..system import steam_ui
+        if steam_ui.close_frameload_window():
+            return {"success": True}
+        return {"success": False, "error": "FrameLoad's window is not one FrameLoad can close (it was not opened from Steam)."}
 
     @staticmethod
     def running_containers() -> List[str]:

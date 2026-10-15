@@ -504,6 +504,28 @@
           <p class="tuning-micro-note" style="margin-top:6px;">Then nothing of FrameLoad stays in front of the game. Open FrameLoad again from your Steam library: downloads, installs and ports keep running, and Stop still works.</p>
         </div>
 
+        <!-- Send to GitHub (manager/github_reports.py) -->
+        <div class="sys-card" id="github-reports-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Crash Reports to GitHub</h3>
+            <span id="github-reports-badge" class="badge">Off</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            Adds <strong>Send to GitHub</strong> to What Happened and the Launch Log: one press turns the game's report into an issue (or a comment on the open issue of the same problem). Issues in a public repository can be read by anyone; the report leaves out your home folder, host name, network addresses and Steam ids.
+          </p>
+          <label class="field-label" for="github-repo">Repository</label>
+          <input type="text" id="github-repo" class="search-input github-field" style="border-radius:var(--radius-sm); padding-left:14px;" placeholder="Crypto90/frameload" autocomplete="off" spellcheck="false">
+          <label class="field-label" for="github-token">Your GitHub token</label>
+          <input type="password" id="github-token" class="search-input github-field" style="border-radius:var(--radius-sm); padding-left:14px;" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
+          <p class="tuning-micro-note" style="margin:6px 0 12px;">GitHub > Settings > Developer settings > Fine-grained tokens: access to this one repository, permission <strong>Issues: Read and write</strong>. It stays on this headset and is only sent to GitHub. Pasting it from a paired PC is easiest.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="btn-primary compact" onclick="saveGithubReports()">Save</button>
+            <button type="button" class="btn-secondary compact" onclick="checkGithubReports()">Test</button>
+            <button type="button" id="github-token-remove" class="btn-secondary compact" style="display:none;" onclick="removeGithubToken()">Remove Token</button>
+          </div>
+          <p id="github-reports-status" class="tuning-micro-note" style="margin-top:10px;" aria-live="polite"></p>
+        </div>
+
         <!-- Default game settings -->
         <div class="sys-card">
           <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:12px;">Default Game Settings</h3>
@@ -1129,6 +1151,7 @@
       <pre id="session-excerpt" class="job-log session-excerpt"></pre>
       <div class="session-actions">
         <button type="button" id="session-copy" class="btn-primary" onclick="copySessionReport(this)">Copy Log</button>
+        <button type="button" id="session-github" class="btn-secondary github-send" style="display:none;" onclick="sendSessionToGithub(this)">Send to GitHub</button>
         <button type="button" class="btn-secondary" onclick="saveSessionReport()">Save Log</button>
         <button type="button" class="btn-secondary" onclick="openSessionLog()">Open Launch Log</button>
         <button type="button" id="session-mute" class="btn-secondary" onclick="toggleSessionMute()">Don't Show for This Game</button>
@@ -1146,6 +1169,7 @@
       <pre id="log-lines" class="job-log log-modal-lines" tabindex="0"></pre>
       <div class="session-actions">
         <button type="button" class="btn-secondary" onclick="copyLogReport(this)">Copy Log</button>
+        <button type="button" id="log-github" class="btn-secondary github-send" style="display:none;" onclick="sendLogToGithub(this)">Send to GitHub</button>
         <button type="button" class="btn-secondary" onclick="saveLogReport()">Save Log</button>
         <button type="button" class="btn-primary" data-back onclick="closeLogModal()">Close</button>
       </div>

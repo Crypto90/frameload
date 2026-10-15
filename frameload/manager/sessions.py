@@ -43,6 +43,9 @@ LOG_TAIL_BYTES = 2 << 20
 LOG_COPY_MAX = 4 << 20
 LOG_READ_MAX = 64 << 20       # a longer launch.log is read from its end
 DUMP_TAIL_BYTES = 1 << 20
+XRCLIENT_TAIL_BYTES = 256 << 10
+START_LINES = 25              # lines of dashboard.log / the OpenXR client log in a copied report
+SHOW_LINES = 10
 COPY_MAX_CHARS = 60000        # what Copy Log puts on the clipboard (fits a GitHub issue)
 EVIDENCE_LINES = 40
 BACKTRACE_LINES = 120
@@ -358,12 +361,44 @@ def _copy_launch_log(src: str, dst: str) -> bool:
     return True
 
 
+def _keep_copy(text: str, dst: str) -> bool:
+    if not text.strip():
+        return False
+    try:
+        with open(dst, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+    except OSError:
+        return False
+    return True
+
+
+def _steam_logs() -> List[str]:
+    return [os.path.join(STEAM_DIR, "logs"), os.path.join(HOME, ".local/share/Steam/logs"),
+            os.path.join(HOME, ".steam/steam/logs")]
+
+
+def xrclient_log(pkg: str, start: float = 0, end: Optional[float] = None) -> str:
+    """SteamVR's log of the game's OpenXR client (xrclient_<package>.txt in Steam's logs), written
+    during the session; runtime errors such as SXR_GL_CHECK land there. "" when there is none."""
+    best, best_time = "", 0.0
+    for logs in _steam_logs():
+        for path in glob.glob(os.path.join(logs, "xrclient*.txt")):
+            if pkg not in os.path.basename(path):
+                continue
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if mtime >= start - 5 and (end is None or mtime <= end + 120) and mtime > best_time:
+                best, best_time = path, mtime
+    return best
+
+
 def _dump_dirs(log_text: str, appid: Any) -> List[str]:
     """Where Lepton wrote this session's logcat dump: the folder it named, or the usual places."""
     found = DUMP_DIR_RE.findall(log_text)
     dirs = [found[-1]] if found else []
-    for logs in (os.path.join(STEAM_DIR, "logs"), os.path.join(HOME, ".local/share/Steam/logs"),
-                 os.path.join(HOME, ".steam/steam/logs")):
+    for logs in _steam_logs():
         path = os.path.join(logs, "lepton-logcats", f"steamlaunch-{appid}")
         if path not in dirs:
             dirs.append(path)
@@ -726,7 +761,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     folder = _evidence_dir(pkg)
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(folder, exist_ok=True)
-    sources = {"launch_log": False, "crash_log": False, "system_log": False, "main_log": False, "kernel": False}
+    sources = {"launch_log": False, "crash_log": False, "system_log": False, "main_log": False, "kernel": False,
+               "dashboard_log": False, "last_launch": False, "xrclient": False}
 
     log = os.path.join(base, "launch.log")
     try:
@@ -755,6 +791,21 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
                 f.write(text)
             dumps[key] = text.splitlines()
             sources[key] = True
+
+    # What the next start overwrites: Steam's menu over the game (dashboard.log), how FrameLoad
+    # started it (.last_launch), and SteamVR's log of the game's OpenXR client.
+    for name, key, kept in (("dashboard.log", "dashboard_log", "dashboard.log"),
+                            (".last_launch", "last_launch", "last_launch.json")):
+        path = os.path.join(base, name)
+        try:
+            if os.path.getmtime(path) < start - 5:
+                continue
+        except OSError:
+            continue
+        sources[key] = _keep_copy(_read_text(path, DUMP_TAIL_BYTES), os.path.join(folder, kept))
+    client = xrclient_log(pkg, start, end)
+    if client:
+        sources["xrclient"] = _keep_copy(_read_text(client, XRCLIENT_TAIL_BYTES), os.path.join(folder, "xrclient.txt"))
 
     if kernel is None:
         kernel = kernel_lines(start, end + 120)
@@ -1038,6 +1089,7 @@ def report_text(pkg: str, full: bool = False, source: str = "session") -> str:
                 body += ["", f"{label}:", text]
     elif record and record.get("sources", {}).get("kernel"):
         body += ["", "Kernel log:"] + _read_text(os.path.join(folder, "kernel.txt")).splitlines()[-20:]
+    body += _start_section(pkg, dep, record, folder, full)
 
     text = redact("\n".join(head + body))
     label = "Launch log" + (" (kept copy of that session)" if use_copy else "")
@@ -1056,6 +1108,53 @@ def report_text(pkg: str, full: bool = False, source: str = "session") -> str:
     note = f" (last {len(tail)} lines; {cut} earlier lines are in Save Log)" if cut else ""
     result = text + f"\n\n{label}{note}:\n" + "\n".join(tail) + "\n"
     return result[-COPY_MAX_CHARS:] if len(result) > COPY_MAX_CHARS else result
+
+
+def _start_section(pkg: str, dep: Dict[str, Any], record: Optional[Dict[str, Any]], folder: str, full: bool) -> List[str]:
+    """How the game was started and what became of Steam's menu over it: .last_launch, dashboard.log,
+    the presses of Show (show.log), and SteamVR's log of the game's OpenXR client. A recorded session
+    uses the copies kept with it; the live report reads the game's folder."""
+    base = dep.get("base") or dep.get("anchor") or ""
+    sources = (record or {}).get("sources") or {}
+    kept = record is not None
+
+    def pick(copy_name: str, key: str, live_path: str) -> str:
+        if kept:
+            return _read_text(os.path.join(folder, copy_name), DUMP_TAIL_BYTES) if sources.get(key) else ""
+        return _read_text(live_path, DUMP_TAIL_BYTES) if live_path else ""
+
+    out: List[str] = []
+    start = float((record or {}).get("start") or current_start(dep) or 0)
+    launch_text = pick("last_launch.json", "last_launch", os.path.join(base, ".last_launch"))
+    try:
+        launch = json.loads(launch_text) if launch_text.strip() else {}
+        if not isinstance(launch, dict) or (start and not 0 <= start - float(launch.get("time") or 0) <= 120):
+            launch = {}  # an earlier start's: a start from Steam's library writes none
+    except (ValueError, TypeError):
+        launch = {}
+    how = {"steam": "through Steam (steam://rungameid)",
+           "direct": "directly by FrameLoad (Steam had not loaded its shortcut)"}.get(launch.get("via"), "")
+    out.append("How it was started: " + (how or "from Steam's library or by FramePort (no record by FrameLoad)"))
+
+    count = 0 if full else START_LINES
+    dash = pick("dashboard.log", "dashboard_log", os.path.join(base, "dashboard.log")).splitlines()
+    if dash:
+        out += ["Steam's menu at the start (dashboard.log):"] + dash[-count:]
+    shows = [ln for ln in _read_text(os.path.join(base, "show.log")).splitlines() if ln.strip()]
+    if start:  # only the presses during this session
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
+        end_stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(record["end"]) + 1)) if record and record.get("end") else "9"
+        shows = [ln for ln in shows if stamp <= ln[:19] <= end_stamp]
+    if shows:
+        out += ["Show presses (show.log):"] + shows[-SHOW_LINES:]
+    if kept:
+        client = _read_text(os.path.join(folder, "xrclient.txt")) if sources.get("xrclient") else ""
+    else:
+        path = xrclient_log(pkg, start)
+        client = _read_text(path, XRCLIENT_TAIL_BYTES) if path else ""
+    if client.strip():
+        out += ["SteamVR's OpenXR client log (xrclient):"] + client.splitlines()[-count:]
+    return ["", "Starting the game:"] + out
 
 
 def save_report(pkg: str, source: str = "session") -> str:

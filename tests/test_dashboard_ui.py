@@ -192,7 +192,7 @@ class TestSessionDialog(unittest.TestCase):
         modal = self.modal("session-modal")
         self.assertIn('role="alertdialog" aria-labelledby="session-title"', modal)
         labels = [re.sub(r"\s+", " ", label).strip() for label in re.findall(r"<button[^>]*>([^<]+)</button>", modal)]
-        self.assertEqual(labels, ["Copy Log", "Save Log", "Open Launch Log", "Don't Show for This Game", "Close"])
+        self.assertEqual(labels, ["Copy Log", "Send to GitHub", "Save Log", "Open Launch Log", "Don't Show for This Game", "Close"])
         self.assertRegex(modal, r'<button[^>]*data-back[^>]*>Close</button>')  # B / Back closes it
         self.assertIn('class="job-log session-excerpt"', modal)
         # The launch log opens from it and must lie on top of it.

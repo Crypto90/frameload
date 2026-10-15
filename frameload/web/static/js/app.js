@@ -263,7 +263,7 @@ function setupTabs() {
       if (targetId === "catalog") loadCatalog();
       else if (targetId === "library") { loadInstalled(); loadSteamStatus(); }
       else if (targetId === "storage") loadStorageOverview();
-      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); loadStartingGames(); }
+      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); loadStartingGames(); loadGithubReports(); }
       if (targetId === "system") startPerfLive(); else stopPerfLive();
 
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
@@ -1474,9 +1474,13 @@ const MENU_LEFT_OPEN = "Steam's menu could not be closed from here. Press the St
 
 // Show <game>: a VR game draws behind SteamVR's dashboard, where this window lives, until the
 // dashboard is closed. The server closes it through Steam's own interface, as Steam's Resume does.
+// When that fails, or Show is pressed again soon after it worked (the game stayed hidden), closing
+// FrameLoad's own window is offered: the game keeps running and FrameLoad opens again from Steam.
+state.showWorked = {};
 async function showGame(pkg) {
   const game = (state.installed || []).find(g => g.package === pkg);
   const name = game ? game.title : pkg;
+  const again = Date.now() - (state.showWorked[pkg] || 0) < 120000;
   let res;
   try {
     res = await apiPost("/api/installed/show-game", { package: pkg });
@@ -1484,13 +1488,30 @@ async function showGame(pkg) {
     showToast(MENU_LEFT_OPEN, "error");
     return;
   }
-  if (res.success) {
-    showToast(`${name} is in front now.`, "success");
-  } else if (res.running === false) {
+  if (res.running === false) {
     showToast(res.error || `${name} is not running.`, "warning");
     refreshRunningGames();
-  } else {
+    return;
+  }
+  if (res.success && !again) {
+    state.showWorked[pkg] = Date.now();
+    showToast(`${name} is in front now. Still only hear it? Press Show again.`, "success");
+    return;
+  }
+  if (!res.window_open) {
     showToast(res.error || MENU_LEFT_OPEN, "error");
+    return;
+  }
+  const why = res.success ? `Steam's menu closed, but ${name} still did not come to the front.` : (res.error || MENU_LEFT_OPEN);
+  const close = await confirmDialog("Close FrameLoad's Window?",
+    `${why} Closing FrameLoad's window leaves ${name} alone in front. The game keeps running; open FrameLoad again from your Steam library to stop it.`,
+    { yes: "Close Window", no: "Keep Open" });
+  if (!close) return;
+  try {
+    const out = await apiPost("/api/window/close", {});
+    if (!out.success) showToast(out.error || "FrameLoad's window could not be closed.", "error");
+  } catch (e) {
+    showToast(e.message, "error");
   }
 }
 
@@ -4387,6 +4408,124 @@ function openSessionLog() {
   const rec = state.sessions.current;
   if (rec) openLogModal(rec.package, { session: true });  // launch.log may already be a newer session's
 }
+
+// === Send to GitHub (System > Crash Reports to GitHub) ===
+// One press sends the report as an issue; the same problem of the same game version becomes a
+// comment on its open issue. The buttons only show once a token is set.
+state.github = { configured: false, repo: "" };
+
+function renderGithubButtons() {
+  document.querySelectorAll(".github-send").forEach(b => { b.style.display = state.github.configured ? "" : "none"; });
+}
+
+function renderGithubReports(info) {
+  state.github = { configured: !!info.configured, repo: info.repo || "" };
+  renderGithubButtons();
+  const badge = document.getElementById("github-reports-badge");
+  if (badge) {
+    badge.textContent = info.configured ? `On · token ${info.hint}` : "Off";
+    badge.classList.toggle("badge-on", !!info.configured);
+  }
+  const repo = document.getElementById("github-repo");
+  if (repo && document.activeElement !== repo) repo.value = info.repo || "";
+  const remove = document.getElementById("github-token-remove");
+  if (remove) remove.style.display = info.configured ? "" : "none";
+}
+
+async function loadGithubReports() {
+  try {
+    renderGithubReports(await apiGet("/api/reports/github"));
+  } catch (e) {
+    /* next visit */
+  }
+}
+
+function githubStatus(text, kind = "") {
+  const el = document.getElementById("github-reports-status");
+  if (!el) return;
+  el.textContent = text;
+  el.dataset.kind = kind;
+}
+
+async function saveGithubReports() {
+  const repo = document.getElementById("github-repo");
+  const token = document.getElementById("github-token");
+  const body = { repo: repo ? repo.value : "" };
+  if (token && token.value.trim()) body.token = token.value.trim();
+  try {
+    const res = await apiPost("/api/reports/github/settings", body);
+    if (token) token.value = "";
+    renderGithubReports(res);
+    githubStatus(res.configured ? `Saved. Reports go to ${res.repo}. Press Test to check the token.` : `Saved. Add a token to send reports to ${res.repo}.`, "ok");
+  } catch (e) {
+    githubStatus(e.message, "error");
+  }
+}
+
+async function checkGithubReports() {
+  githubStatus("Asking GitHub...");
+  try {
+    const res = await apiPost("/api/reports/github/check", {});
+    renderGithubReports(res);
+    githubStatus(res.success ? `${res.message} The first report shows whether the token may create issues.` : res.error, res.success ? "ok" : "error");
+  } catch (e) {
+    githubStatus(e.message, "error");
+  }
+}
+
+async function removeGithubToken() {
+  const yes = await confirmDialog("Remove the GitHub Token?", "Send to GitHub disappears until you add a token again. The token itself stays valid on GitHub until you delete it there.",
+    { yes: "Remove", no: "Keep", danger: true });
+  if (!yes) return;
+  try {
+    renderGithubReports(await apiPost("/api/reports/github/settings", { clear: true }));
+    githubStatus("The token is removed from this headset.", "ok");
+  } catch (e) {
+    githubStatus(e.message, "error");
+  }
+}
+
+async function sendToGithub(button, pkg, source) {
+  if (!pkg || (button && button.disabled)) return;
+  const label = button ? (button.dataset.label || button.textContent) : "";
+  if (button) {
+    button.dataset.label = label;
+    button.disabled = true;
+    button.textContent = "Sending...";
+  }
+  let res;
+  try {
+    res = await apiPost("/api/reports/github/send", { package: pkg, source });
+  } catch (e) {
+    res = { success: false, error: e.message };
+  }
+  if (button) {
+    button.disabled = false;
+    button.textContent = res.success ? `Sent #${res.number}` : label;
+    if (res.success) setTimeout(() => { button.textContent = label; }, 6000);
+  }
+  if (!res.success) {
+    showToast(res.error || "The report could not be sent.", "error");
+  } else if (res.already) {
+    showToast(`This session was already sent: issue #${res.number} in ${res.repo}.`, "info");
+  } else {
+    showToast(res.comment ? `Added to issue #${res.number} (the same problem was reported before).` : `Sent as issue #${res.number} in ${res.repo}.`, "success");
+  }
+}
+
+function sendSessionToGithub(button) {
+  const rec = state.sessions.current;
+  return sendToGithub(button, rec && rec.package, "session");
+}
+
+function sendLogToGithub(button) {
+  return sendToGithub(button, state.logView.pkg, state.logView.source);
+}
+window.saveGithubReports = saveGithubReports;
+window.checkGithubReports = checkGithubReports;
+window.removeGithubToken = removeGithubToken;
+window.sendSessionToGithub = sendSessionToGithub;
+window.sendLogToGithub = sendLogToGithub;
 window.openSessionDialog = openSessionDialog;
 window.closeSessionDialog = closeSessionDialog;
 window.toggleSessionMute = toggleSessionMute;
@@ -4902,6 +5041,7 @@ async function setCloseOnVrStart(enabled) {
 window.setCloseOnVrStart = setCloseOnVrStart;
 
 document.addEventListener("DOMContentLoaded", () => {
+  loadGithubReports();
   loadPerf();
   state.perf.chipTimer = setInterval(() => { if (!state.perf.timer) loadPerf(); }, 5000);
   if (state.activeTab === "system") { startPerfLive(); loadGuard(); loadKeepAwake(); loadStartingGames(); }

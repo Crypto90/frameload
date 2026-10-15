@@ -52,7 +52,7 @@ from .system import perf, power
 from .installer.lepton_quest import LeptonInstaller
 from .installer.package_loader import PackageLoader
 from .manager import files as file_manager
-from .manager import launchlog
+from .manager import github_reports, launchlog
 from .manager import sessions
 from .manager.backup import SaveBackupManager
 from .manager.guard import FreezeGuard
@@ -371,6 +371,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json(file_manager.browse(params.get("path", [""])[0]))
             except PermissionError as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.FORBIDDEN)
+        elif path == "/api/reports/github":
+            # Send to GitHub: the repository and whether a token is set; never the token itself.
+            self.send_json(github_reports.settings())
         elif path == "/api/catalog/updates":
             self.send_json({"updates": self.app_sources.available_updates()})
         elif path.startswith("/api/sessions/"):
@@ -836,6 +839,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/installed/show-game":
             # Closes SteamVR's dashboard (FrameLoad's window lives in it) so the running game is in front.
             self.send_json(GameLauncher.show(body.get("package", "")))
+        elif path == "/api/window/close":
+            # What Show offers when Steam's menu stays: FrameLoad's window goes, games keep running.
+            self.send_json(GameLauncher.close_window())
         elif path == "/api/installed/settings" or path == "/api/installed/tuning":
             pkg = body.get("package", "")
             settings = body.get("settings", body)
@@ -941,6 +947,21 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             cfg.save()
             refresh_keep_awake(self.downloader)
             self.send_json({"success": True, "while_busy": keep_awake_while_busy(), **power.KeepAwake.status()})
+        elif path == "/api/reports/github/settings":
+            # A paired PC may set the token too: pasting it there is easier than typing it in VR.
+            try:
+                self.send_json({"success": True, **github_reports.save_settings(body)})
+            except (ValueError, OSError) as e:
+                self.send_json({"success": False, "error": str(e)}, status=HTTPStatus.BAD_REQUEST)
+        elif path == "/api/reports/github/check":
+            self.send_json(github_reports.check())
+        elif path == "/api/reports/github/send":
+            pkg = body.get("package", "")
+            if not pkg:
+                self.send_json({"error": "Missing package"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(github_reports.send(pkg, "live" if body.get("source") == "live" else "session",
+                                               str(body.get("note") or "")))
         elif path == "/api/guard/settings":
             self.send_json({"success": True, "settings": FreezeGuard.save_settings(body)})
         elif path == "/api/sessions/seen":

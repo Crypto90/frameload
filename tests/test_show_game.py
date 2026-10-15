@@ -274,18 +274,34 @@ class TestClosingTheWindow(TempCase):
 class TestShowGame(TempCase):
     def test_show_closes_the_dashboard_and_checks_it_stayed_closed(self):
         dashboard = Dashboard()
-        self.assertEqual(steam_ui.show_game(dashboard, settle=0), {"success": True, "visible": False})
-        self.assertEqual(dashboard.calls, [HIDE, VISIBLE])
+        res = steam_ui.show_game(dashboard, settle=0, recheck=0)
+        self.assertEqual((res["success"], res["visible"], res["was_open"]), (True, False, True))
+        self.assertEqual(dashboard.calls, [VISIBLE, HIDE, VISIBLE])
+        self.assertEqual(res["steps"], ["menu open: True", "HideDashboard: done", "menu open: False"])
 
         # Steam gives no clear answer (its interface changed): that is no success either.
-        self.assertFalse(steam_ui.show_game(lambda e: None, settle=0)["success"])
-        res = steam_ui.show_game(Dashboard(reopen=1), settle=0)  # Steam opened it again
-        self.assertEqual((res["success"], res["visible"]), (False, True))
+        res = steam_ui.show_game(lambda e: None, settle=0, recheck=0)
+        self.assertEqual((res["success"], res["reason"]), (False, "no-answer"))
+        res = steam_ui.show_game(Dashboard(reopen=1), settle=0, recheck=0)  # Steam opened it again
+        self.assertEqual((res["success"], res["visible"], res["reason"]), (False, True, "still-open"))
         self.assertEqual(res["error"], "Steam's menu could not be closed from here. Press the Steam button on your controller.")
 
-        res = steam_ui.show_game(lambda e: (_ for _ in ()).throw(ConnectionRefusedError("refused")), settle=0)
-        self.assertFalse(res["success"])
-        self.assertEqual(res["error"], steam_ui.MENU_LEFT_OPEN)
+    def test_a_menu_that_comes_back_a_moment_later_is_no_success(self):
+        answers = iter([True, False, True])
+        res = steam_ui.show_game(lambda e: next(answers) if e == VISIBLE else None, settle=0, recheck=0.01)
+        self.assertEqual((res["success"], res["reason"], res["error"]), (False, "reopened", steam_ui.MENU_REOPENED))
+
+    def test_steam_that_does_not_answer_is_named(self):
+        def refused(expression):
+            raise ConnectionRefusedError("[Errno 111] Connection refused")
+        res = steam_ui.show_game(refused, settle=0, recheck=0)
+        self.assertEqual((res["success"], res["reason"], res["error"]), (False, "unreachable", steam_ui.STEAM_UNREACHABLE))
+        self.assertIn("IsDashboardVisible failed: [Errno 111] Connection refused", res["steps"])
+
+        def changed(expression):
+            raise RuntimeError("TypeError: Cannot read properties of undefined (reading 'HideDashboard')")
+        res = steam_ui.show_game(changed, settle=0, recheck=0)
+        self.assertEqual((res["reason"], res["error"]), ("refused", steam_ui.MENU_LEFT_OPEN))
 
     def test_show_speaks_to_steams_devtools(self):
         seen = []
@@ -322,9 +338,44 @@ class TestShowGame(TempCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
 
-        res = steam_ui.show_game(lambda e: steam_ui.steam_js(e, address=server.server_address), settle=0)
-        self.assertEqual(res, {"success": True, "visible": False})
-        self.assertEqual(seen, [HIDE, VISIBLE])
+        res = steam_ui.show_game(lambda e: steam_ui.steam_js(e, address=server.server_address), settle=0, recheck=0)
+        self.assertEqual((res["success"], res["visible"]), (True, False))
+        self.assertEqual(seen, [VISIBLE, HIDE, VISIBLE])
+
+    def test_a_javascript_error_in_steam_is_an_error_not_an_empty_answer(self):
+        class Devtools(socketserver.BaseRequestHandler):
+            def handle(self):
+                head = b""
+                while b"\r\n\r\n" not in head:
+                    head += self.request.recv(1024)
+                port = self.server.server_address[1]
+                if head.startswith(b"GET /json"):
+                    body = json.dumps([{"title": "SharedJSContext",
+                                        "webSocketDebuggerUrl": f"ws://127.0.0.1:{port}/devtools/page/S"}]).encode()
+                    self.request.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode()
+                                         + b"\r\nConnection: close\r\n\r\n" + body)
+                    return
+                self.request.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+                self.request.recv(4096)
+                payload = json.dumps({"id": 1, "result": {"result": {"type": "object"}, "exceptionDetails": {
+                    "text": "Uncaught", "exception": {"description": "TypeError: Cannot read properties of undefined\n    at <anonymous>"}}}}).encode()
+                self.request.sendall(bytes([0x81, 126]) + len(payload).to_bytes(2, "big") + payload)
+
+        server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Devtools)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with self.assertRaisesRegex(RuntimeError, "^TypeError: Cannot read properties of undefined$"):
+            steam_ui.steam_js(VISIBLE, address=server.server_address)
+
+    def test_doctor_checks_steams_interface(self):
+        from frameload.system import doctor
+        self.patch(steam_ui, "steam_js", return_value=False)
+        self.assertEqual(doctor._steam_interface()["state"], "ok")
+        self.patch(steam_ui, "steam_js", side_effect=ConnectionRefusedError("refused"))
+        check = doctor._steam_interface()
+        self.assertEqual(check["state"], "warn")
+        self.assertIn("Show", check["detail"])
 
     def test_only_a_running_vr_game_is_shown(self):
         game = {"package": "a.b", "title": "Neon Drift", "appid": 77, "is_vr": True}
@@ -337,13 +388,47 @@ class TestShowGame(TempCase):
         show.assert_not_called()
 
         running.return_value = ["lepton-steamlaunch-77"]
+        self.patch(steam_ui, "window_pid", return_value=None)
         res = GameLauncher.show("a.b")
-        self.assertEqual((res["success"], res["running"], res["title"]), (True, True, "Neon Drift"))
+        self.assertEqual((res["success"], res["running"], res["title"], res["window_open"]), (True, True, "Neon Drift", False))
         show.assert_called_once()
 
         game["is_vr"] = False  # a 2D app is a window of its own: hiding the dashboard would hide it
         self.assertFalse(GameLauncher.show("a.b")["success"])
         self.assertEqual(show.call_count, 1)
+
+
+class TestShowLog(TempCase):
+    def test_every_press_is_kept_for_the_report_with_how_the_game_started(self):
+        base = os.path.join(self.tmp, "game")
+        game = {"package": "a.b", "title": "Neon Drift", "appid": 77, "is_vr": True, "base": base}
+        self.write("game", ".last_launch", data=json.dumps({"time": 1, "via": "direct", "pending": True}))
+        self.patch(InstalledManager, "get_game", return_value=game)
+        self.patch(GameLauncher, "running_containers", return_value=["lepton-steamlaunch-77"])
+        self.patch(steam_ui, "window_pid", return_value=4242)
+        self.patch(steam_ui, "show_game", return_value={"success": False, "reason": "reopened", "visible": True,
+                                                        "error": steam_ui.MENU_REOPENED,
+                                                        "steps": ["menu open: True", "HideDashboard: done"]})
+        res = GameLauncher.show("a.b")
+        self.assertTrue(res["window_open"])  # the dashboard then offers to close FrameLoad's window
+        with open(os.path.join(base, "show.log"), encoding="utf-8") as f:
+            line = f.read()
+        self.assertIn("Show: reopened; started via direct; menu open: True; HideDashboard: done", line)
+
+        from frameload.manager import launcher
+        self.patch(launcher, "SHOW_LOG_MAX", 300)
+        for _ in range(20):
+            GameLauncher.show("a.b")
+        with open(os.path.join(base, "show.log"), encoding="utf-8") as f:
+            text = f.read()
+        self.assertLess(len(text), 600)  # kept short
+        self.assertTrue(text.startswith("20"))  # whole lines only
+
+    def test_closing_the_window_needs_one_frameload_opened(self):
+        close = self.patch(steam_ui, "close_frameload_window", return_value=False)
+        self.assertFalse(GameLauncher.close_window()["success"])
+        close.return_value = True
+        self.assertTrue(GameLauncher.close_window()["success"])
 
 
 class TestLauncherError(TempCase):
@@ -465,6 +550,13 @@ class TestRoutes(TempCase):
         with patch.object(FrameLoadApiHandler, "client_is_local", return_value=False):
             self.assertEqual(self.post("/api/installed/show-game", {"package": "a.b"})[0], 401)
         self.assertEqual(show.call_count, 1)
+
+    def test_close_window_route(self):
+        close = self.patch(GameLauncher, "close_window", return_value={"success": True})
+        self.assertEqual(self.post("/api/window/close", {}), (200, {"success": True}))
+        with patch.object(FrameLoadApiHandler, "client_is_local", return_value=False):
+            self.assertEqual(self.post("/api/window/close", {})[0], 401)  # unpaired devices: no
+        self.assertEqual(close.call_count, 1)
 
     def test_close_window_setting_is_saved(self):
         status, body = self.post("/api/ui/starting", {"close_on_vr_start": True})

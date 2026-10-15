@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.9] - 2026-10-15
+
+### Added
+- **Send to GitHub.** One press in the What happened window or the Launch Log turns the game's report into a GitHub issue, so crashes found while testing games can be worked through later.
+  - If the same problem of the same game version already has an open issue, the report is added to it as a comment. The same session is never sent twice.
+  - If that issue was closed and the problem comes back, a new issue names the old one.
+  - It needs your own GitHub token (fine-grained, Issues: read and write), pasted under **System → Crash Reports to GitHub**; FrameLoad comes with none. The token stays on the headset (readable by your user only), is sent only to GitHub and is never shown again. The buttons appear only once a token is set.
+- **Reports say more about how a game started:** whether FrameLoad started it through Steam or directly, what became of Steam's menu at the start, each press of Show, and SteamVR's log of the game's OpenXR client. These are now kept with each session, because the next start overwrites them.
+- `frameload doctor` (System → Self-Test) checks that Steam's interface answers on 127.0.0.1:8080, which Show and the automatic closing of Steam's menu need.
+
+### Changed
+- **Show** checks Steam's menu before and after closing it, and again three seconds later, because Steam can open it again right away.
+  - When the menu cannot be closed, or comes back, FrameLoad offers to close its own window instead: the game keeps running alone in front, and FrameLoad opens again from the Steam library.
+  - Pressing Show again within two minutes, when the game still cannot be seen, offers the same.
+  - When Steam's interface does not answer at all, FrameLoad says so instead of the general message.
+  - Every press is written to `show.log` in the game's folder.
+
+---
+
 ## [v1.3.8] - 2026-10-15
 
 ### Added

@@ -45,6 +45,9 @@ USER_DASHBOARD_MARKER = b"toggle_dashboard_action"
 WINDOW_PID = os.path.join(FRAMELOAD_DIR, "window.pid")
 CONTAINER_PREFIX = "lepton-steamlaunch-"
 MENU_LEFT_OPEN = "Steam's menu could not be closed from here. Press the Steam button on your controller."
+MENU_REOPENED = "Steam opened its menu again right away."
+STEAM_UNREACHABLE = ("FrameLoad cannot reach Steam's interface (127.0.0.1:8080 does not answer). "
+                     "Press the Steam button on your controller.")
 
 
 def _say(line: str) -> None:
@@ -108,7 +111,12 @@ def steam_js(expression: str, timeout: float = 5.0, address: Tuple[str, int] = D
                 length = struct.unpack(">Q", _read_exact(sock, 8))[0]
             message = json.loads(_read_exact(sock, length).decode("utf-8", "replace") or "{}")
             if message.get("id") == 1:
-                return ((message.get("result") or {}).get("result") or {}).get("value")
+                result = message.get("result") or {}
+                if result.get("exceptionDetails"):  # Steam's interface changed: say so instead of "no value"
+                    details = result["exceptionDetails"]
+                    raise RuntimeError(((details.get("exception") or {}).get("description") or
+                                        details.get("text") or "JavaScript error").splitlines()[0][:200])
+                return (result.get("result") or {}).get("value")
 
 
 def dashboard_visible(timeout: float = 3.0, evaluate: Optional[Callable[..., Any]] = None) -> Optional[bool]:
@@ -121,19 +129,41 @@ def dashboard_visible(timeout: float = 3.0, evaluate: Optional[Callable[..., Any
     return value if isinstance(value, bool) else None
 
 
-def show_game(evaluate: Callable[[str], Any] = steam_js, settle: float = 1.0) -> Dict[str, Any]:
+def show_game(evaluate: Callable[[str], Any] = steam_js, settle: float = 1.0, recheck: float = 2.0) -> Dict[str, Any]:
     """What Show <game> in the dashboard does: closes SteamVR's dashboard (where FrameLoad's own
-    window lives) so the running VR game is in front, then checks a moment later that it stayed
-    closed. Steam may open it again, for example while FrameLoad is its only running app."""
+    window lives) so the running VR game is in front, then checks after `settle` and again after
+    `recheck` more seconds that it stayed closed. Steam may open it again, for example while
+    FrameLoad is its only running app. `reason` and `steps` say what happened, for show.log."""
+    steps = []
+
+    def ask() -> Optional[bool]:
+        try:
+            value = evaluate("SteamClient.OpenVR.VROverlay.IsDashboardVisible()")
+        except Exception as exc:
+            steps.append(f"IsDashboardVisible failed: {exc}")
+            return None
+        steps.append(f"menu open: {value!r}")
+        return value if isinstance(value, bool) else None
+
+    before = ask()
     try:
         evaluate("SteamClient.OpenVR.VROverlay.HideDashboard()")
-    except Exception as exc:  # no devtools port, Steam restarting
-        return {"success": False, "visible": None, "error": MENU_LEFT_OPEN, "detail": str(exc)}
+        steps.append("HideDashboard: done")
+    except Exception as exc:  # no devtools port, Steam restarting, Steam's interface changed
+        steps.append(f"HideDashboard failed: {exc}")
+        unreachable = isinstance(exc, (OSError, ConnectionError)) or "Connection refused" in str(exc)
+        return {"success": False, "visible": before, "reason": "unreachable" if unreachable else "refused",
+                "error": STEAM_UNREACHABLE if unreachable else MENU_LEFT_OPEN, "detail": str(exc), "steps": steps}
     time.sleep(settle)
-    visible = dashboard_visible(evaluate=lambda expression, timeout=3.0: evaluate(expression))
+    visible = ask()
     if visible is not False:  # still open, or Steam gave no clear answer
-        return {"success": False, "visible": visible, "error": MENU_LEFT_OPEN}
-    return {"success": True, "visible": False}
+        return {"success": False, "visible": visible, "reason": "still-open" if visible else "no-answer",
+                "error": MENU_LEFT_OPEN, "steps": steps}
+    if recheck:
+        time.sleep(recheck)
+        if ask():
+            return {"success": False, "visible": True, "reason": "reopened", "error": MENU_REOPENED, "steps": steps}
+    return {"success": True, "visible": False, "was_open": before, "steps": steps}
 
 
 def container_logcat(appid: Any, timeout: float = 5.0) -> bytes:
@@ -172,18 +202,27 @@ def close_on_vr_start(config_file: str = CONFIG_FILE) -> bool:
     return ui.get("close_on_vr_start") is True
 
 
-def close_frameload_window(pid_file: str = WINDOW_PID, proc: str = "/proc") -> bool:
-    """Ends FrameLoad's window: its run.sh closes the browser on SIGTERM, and Steam's FrameLoad entry
-    ends with it. The server, downloads and Stop keep running; FrameLoad opens again from the Steam
-    library. Only a process that is still run.sh is signalled (a pid can be reused)."""
+def window_pid(pid_file: str = WINDOW_PID, proc: str = "/proc") -> Optional[int]:
+    """The pid of the run.sh that owns FrameLoad's window, or None when no window is open.
+    Only a process that is still run.sh counts (a pid can be reused)."""
     try:
         with open(pid_file, "r", encoding="utf-8") as f:
             pid = int(f.read().strip())
         with open(os.path.join(proc, str(pid), "cmdline"), "rb") as f:
             args = f.read().split(b"\0")
     except (OSError, ValueError):
-        return False
+        return None
     if pid <= 1 or not any(os.path.basename(arg) == b"run.sh" for arg in args):
+        return None
+    return pid
+
+
+def close_frameload_window(pid_file: str = WINDOW_PID, proc: str = "/proc") -> bool:
+    """Ends FrameLoad's window: its run.sh closes the browser on SIGTERM, and Steam's FrameLoad entry
+    ends with it. The server, downloads and Stop keep running; FrameLoad opens again from the Steam
+    library."""
+    pid = window_pid(pid_file, proc)
+    if pid is None:
         return False
     try:
         os.kill(pid, signal.SIGTERM)

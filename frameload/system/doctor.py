@@ -35,6 +35,21 @@ def _cameras() -> List[str]:
     return names
 
 
+def _steam_interface() -> Dict[str, str]:
+    """Steam's interface on 127.0.0.1:8080 (CEF devtools): Show and the closing of Steam's menu at a
+    VR game's first picture go through it."""
+    from . import steam_ui
+    try:
+        visible = steam_ui.steam_js("SteamClient.OpenVR.VROverlay.IsDashboardVisible()", timeout=3)
+    except Exception as e:
+        return _check("Steam's interface", WARN,
+                      f"127.0.0.1:8080 does not answer ({e}): Show and the closing of Steam's menu when a VR game "
+                      "starts cannot work. Restart Steam; if this stays, Steam was started without its debugging port.")
+    if not isinstance(visible, bool):
+        return _check("Steam's interface", WARN, "Steam answers, but not with the menu's state: its interface may have changed.")
+    return _check("Steam's interface", OK, f"Answers on 127.0.0.1:8080; Steam's menu is {'open' if visible else 'closed'}.")
+
+
 def run_checks() -> Dict[str, Any]:
     checks: List[Dict[str, str]] = []
     osr = get_os_release()
@@ -68,6 +83,9 @@ def run_checks() -> Dict[str, Any]:
     checks.append(_check("Steam library", OK if users else WARN,
                          f"{STEAM_DIR} ({len(users)} user(s)); Steam is {'running' if is_steam_running() else 'not running'}."
                          if users else f"No Steam user found under {STEAM_DIR}; shortcuts cannot be added."))
+
+    if is_steam_running():
+        checks.append(_steam_interface())
 
     try:
         from ..manager.installed import InstalledManager

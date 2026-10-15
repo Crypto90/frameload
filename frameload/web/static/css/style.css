@@ -3357,3 +3357,30 @@ button.dropdown-item { width: 100%; border: 0; background: none; font: inherit; 
 
 /* A card's source in Browse > 2D Apps > All sources */
 .badge.source { background: var(--surface-solid); color: var(--text-strong); box-shadow: inset 0 0 0 1px var(--line); text-transform: none; }
+
+/* System > Crash Reports to GitHub */
+.field-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 10px 0 4px;
+}
+
+.github-field {
+  width: 100%;
+  min-height: 40px;
+}
+
+#github-reports-badge {
+  background: rgb(var(--fg-rgb) / 0.08);
+  color: var(--text-muted);
+}
+
+#github-reports-badge.badge-on {
+  background: rgb(var(--ok-rgb) / 0.15);
+  color: var(--accent-emerald);
+}
+
+#github-reports-status[data-kind="ok"] { color: var(--accent-emerald); }
+#github-reports-status[data-kind="error"] { color: var(--danger); }

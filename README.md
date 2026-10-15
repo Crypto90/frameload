@@ -119,7 +119,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
   - It limits each game's memory so SteamVR keeps 2.5 GB.
   - It watches memory pressure while a game runs, ends the game before the headset locks up, and tells you which game it was.
   - It stops a game whose picture has not changed for 30 seconds (15 s, 1 or 2 minutes can be chosen). It waits while the headset is asleep, the Steam menu is open or the game is still drawing.
-- **What happened:** when a game crashes, hangs the graphics processor, runs out of memory, is stopped by the Freeze Guard, cannot start or closes right after starting, FrameLoad opens a window with the cause in plain words, the log lines that show it, and **Copy Log** / **Save Log** for the full report.
+- **What happened:** when a game crashes, hangs the graphics processor, runs out of memory, is stopped by the Freeze Guard, cannot start or closes right after starting, FrameLoad opens a window with the cause in plain words, the log lines that show it, and **Copy Log** / **Save Log** for the full report. With your own GitHub token, **Send to GitHub** files it as an issue in one press.
 - **Keep Awake:** FrameLoad holds SteamOS's sleep inhibitor while it downloads from Browse, installs a game (a download, a file from the Install File tab or one sent from your phone or PC) or ports a game. You can also keep the headset awake for an hour, or until you switch it off. Whether Steam's own sleep timer on the Frame honours the inhibitor is not confirmed yet.
 - **Performance:** System → Performance shows CPU, memory, swap, GPU clock and temperatures live. Neon, Spatial, Command Center and Daylight also show CPU use in their status area.
 
@@ -320,7 +320,13 @@ FrameLoad's window lives in SteamVR's dashboard, the same layer as Steam's menu.
 - on the game's page;
 - where each look shows the running game: **Show** replaces Resume in Big Picture, Showcase and Command Center, and sits beside Stop in Spatial, Neon and Daylight.
 
-Show closes Steam's menu the way Steam's own Resume does, then checks a second later that it stayed closed. If it did not, FrameLoad says: "Steam's menu could not be closed from here. Press the Steam button on your controller." The toast after **Play** of a VR game points at it too. If the headset shows black after Show, the game itself is not drawing.
+Show closes Steam's menu the way Steam's own Resume does, then checks after one and after three seconds that it stayed closed. The toast after **Play** of a VR game points at it too. If the headset shows black after Show, the game itself is not drawing.
+
+When Show does not help:
+- If Steam's menu cannot be closed, or comes back right away, FrameLoad offers **Close FrameLoad's Window**. The game keeps running alone in front; open FrameLoad again from your Steam library to stop it.
+- If the menu closed but you still only hear the game, press **Show** again within two minutes: FrameLoad offers the same.
+- If FrameLoad cannot reach Steam's interface at all (127.0.0.1:8080), it says so; `frameload doctor` checks that port too.
+- Every press is written to `show.log` in the game's folder, which goes into the game's report.
 
 **Automatically.** When a ported game shows its first frame, its launcher closes Steam's menu by itself:
 - It sees the first frame in the game's log. If Lepton stops copying that log into `launch.log` (it can, while the game keeps running), the launcher asks the game's container directly every 2 seconds.
@@ -388,9 +394,26 @@ The window's buttons:
 - **Copy Log** copies a report for a bug report or a forum post: what happened, the game and FrameLoad versions, SteamOS, Lepton, memory, the crash backtrace and the end of the log. Your home folder, host name, network and hardware addresses and Steam account ids are removed.
 - **Save Log** saves the full report: on the headset to `~/Downloads`, on a phone or PC as a download.
 - **Open Launch Log** shows the log of that session. FrameLoad keeps a copy, because the next start erases it.
+- **Send to GitHub** (only once a token is set, see below) turns the report into a GitHub issue with one press.
 - **Don't Show for This Game** stops the window from opening by itself for that game.
 
 A game whose last session ended this way has a **What Happened** button on its page. Normal quits, Steam's Exit game and your own **Stop** are recorded without a window. Switch the window off under **System → Freeze Guard** ("Show what happened when a game crashes or is stopped").
+
+### Sending crash reports to GitHub
+
+For testing many games: with **Send to GitHub**, one press in the What happened window (or the Launch Log) files the game's report as an issue in FrameLoad's repository, to be worked through later.
+- The report is the one Copy Log gives. It also has how the game was started, Steam's menu at the start (`dashboard.log`), your presses of Show and SteamVR's log of the game's OpenXR client.
+- If the same problem of the same game version already has an open issue, the report is added to it as a comment. Sending the same session twice does nothing.
+- If that issue was closed and the problem comes back, a new issue names the old one.
+
+GitHub needs a token for this, and FrameLoad comes with none. Create your own:
+1. On GitHub, open **Settings → Developer settings → Fine-grained tokens**.
+2. Give it access to the repository only, with the permission **Issues: Read and write**.
+3. Paste it under **System → Crash Reports to GitHub** (from a paired PC is easiest) and press **Test**.
+
+The token is kept in `~/.local/share/frameload/data/github_token`, readable by your user only, and is sent nowhere but GitHub. The dashboard never shows it again (only its last four characters). **Remove Token** deletes it from the headset; delete it on GitHub too if you no longer need it.
+
+Issues in a public repository can be read by anyone. Another repository (`owner/name`) can be set on the same card.
 
 ### When a game does not start
 
@@ -402,7 +425,7 @@ Open the game and press **Launch Log**. FrameLoad reads the log of the last star
 - a missing microSD card, or Lepton not found
 - podman running out of kernel keyrings
 
-For everything around the game, run **System → Self-Test**, or `frameload doctor` in a terminal. It checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library, every installed game and the porting setup. Include its output when you report a problem.
+For everything around the game, run **System → Self-Test**, or `frameload doctor` in a terminal. It checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library and its interface on 127.0.0.1:8080 (which Show uses), every installed game and the porting setup. Include its output when you report a problem.
 
 ### Apps that cannot run
 
@@ -543,6 +566,7 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `cache/` | Downloads in progress, porting work folders, update downloads |
 | `data/` | Catalog data, cover thumbnails, and the unpacked copy of each game downloaded from Browse (kept after install; safe to delete once the game is installed) |
 | `data/sessions/` | How each game's last session ended (`<package>.json`) and the logs kept from it (`<package>/`, at most about 7 MB per game; removed when the game is uninstalled) |
+| `data/github_token`, `data/github_reports.json` | Your GitHub token for Send to GitHub (readable by your user only), and which sessions and problems were sent to which issue |
 | `data/fdroid_cache.json`, `data/app_sources/` | The downloaded app lists of F-Droid and of the other 2D app sources (one file per source) |
 | `uploads/` | Files received from a phone or PC; removed after install, and unused ones when FrameLoad starts and they are older than 24 hours |
 | `frameport-venv/`, `frameport-home/` | FramePort and its tools (Java, OVRPort, apksigner, signing keys) |
@@ -561,6 +585,7 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `artwork/` | Steam artwork, the APK's own icon and `artwork.json` |
 | `launch.log`, `dashboard.log` | Output of the last start; `dashboard.log` ends with what became of Steam's menu over the game |
 | `.last_launch` | How FrameLoad started the game last: through Steam, or directly because Steam had not loaded it |
+| `show.log` | Each press of Show: what Steam's menu did, and how the game had been started |
 | `.last_played`, `.playtime` | Play history |
 | `.session_end`, `.launch_error` | How the last session ended (start, end, exit status), and why the launcher could not start Lepton |
 | `unported.apk` | The original APK of a ported game |
@@ -587,6 +612,7 @@ Almost everything is set in the dashboard. FrameLoad keeps its settings in `~/.l
 | `guard.enabled`, `guard.memory_limit` | `true` | Freeze Guard's memory watchdog and its memory limit |
 | `guard.stop_frozen`, `guard.frozen_seconds` | `true`, `30` | Stop a game whose picture froze, and after how long (15, 30, 60 or 120 s) |
 | `guard.report_crashes` | `true` | Open "What happened" when a game crashes or is stopped |
+| `reports.github_repo` | `"Crypto90/frameload"` | Where Send to GitHub files issues (the token is not in this file) |
 | `power.keep_awake_busy` | `true` | Stay awake while downloading, installing or porting |
 | `storage.default_device_id` | `"internal"` | Drive new games go to |
 | `server.allowed_hosts` | `[]` | Extra host names (`frameload allow-host`) |
