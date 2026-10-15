@@ -213,23 +213,31 @@
           <label style="font-size:0.85rem; color:var(--text-muted);">Catalog:</label>
           <select id="catalog-kind-select" class="select-styled" style="margin-right:12px;">
             <option value="vr">VR Games</option>
-            <option value="flat">2D Apps (F-Droid)</option>
+            <option value="flat">2D Apps</option>
           </select>
-          <button id="fdroid-updates-btn" class="btn-secondary compact" style="display:none; margin-right:12px;" onclick="updateAllApps()"></button>
+          <!-- Where 2D apps come from; filled from /api/app-sources (renderAppSourceSelect in app.js) -->
+          <select id="catalog-source-select" class="select-styled" style="display:none;" aria-label="App source">
+            <option value="fdroid">F-Droid</option>
+            <option value="all">All sources</option>
+          </select>
+          <button id="app-sources-btn" type="button" class="btn-secondary compact" style="display:none; margin-right:12px;" onclick="openAppSourcesModal()">Sources</button>
+          <button id="app-updates-btn" class="btn-secondary compact" style="display:none; margin-right:12px;" onclick="updateAllApps()"></button>
           <select id="catalog-category-select" class="select-styled" style="display:none; margin-right:12px;" aria-label="Category">
             <option value="">All categories</option>
           </select>
-          <label style="font-size:0.85rem; color:var(--text-muted);">Sort by:</label>
-          <select id="sort-select" class="select-styled">
-            <option value="downloads_desc">Most Downloads (Popular)</option>
-            <option value="downloads_asc">Least Downloads</option>
-            <option value="date_desc">Most Recent Updates</option>
-            <option value="rating_desc">Highest Rated</option>
-            <option value="name_asc">Title (A-Z)</option>
-            <option value="name_desc">Title (Z-A)</option>
-            <option value="size_desc">Size (Largest first)</option>
-            <option value="size_asc">Size (Smallest first)</option>
-          </select>
+          <span class="control-pair">
+            <label for="sort-select" style="font-size:0.85rem; color:var(--text-muted);">Sort by:</label>
+            <select id="sort-select" class="select-styled">
+              <option value="downloads_desc">Most Downloads (Popular)</option>
+              <option value="downloads_asc">Least Downloads</option>
+              <option value="date_desc">Most Recent Updates</option>
+              <option value="rating_desc">Highest Rated</option>
+              <option value="name_asc">Title (A-Z)</option>
+              <option value="name_desc">Title (Z-A)</option>
+              <option value="size_desc">Size (Largest first)</option>
+              <option value="size_asc">Size (Smallest first)</option>
+            </select>
+          </span>
         </div>
       </div>
 
@@ -834,6 +842,8 @@
 
       <!-- What you can do with it comes first: no scrolling to reach Play in the headset -->
       <div id="modal-actions" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;"></div>
+      <!-- The same app in other sources (renderAlsoIn in app.js) -->
+      <div id="modal-also-in" class="also-in" style="display:none;"></div>
       <div id="modal-compat" style="display:none; margin-bottom:16px;"></div>
       <div id="modal-media" class="modal-media" style="display:none;"></div>
       
@@ -846,6 +856,7 @@
           <span><strong>Storage Drive:</strong> <span id="modal-game-drive" style="color:var(--text-primary);">Internal Storage</span></span>
           <button id="modal-game-move-btn" class="btn-secondary compact" style="display:none;" onclick="moveCurrentModalGame()">Move Drive</button>
         </div>
+        <div id="modal-source-row" style="grid-column:span 2; display:none;"><strong>Source:</strong> <span id="modal-game-source" style="color:var(--text-primary);"></span></div>
         <div style="grid-column:span 2;"><strong>Target Runtime:</strong> <span id="modal-game-platform" style="color:var(--accent-cyan);">Steam Frame (Lepton Container)</span></div>
         <div style="grid-column:span 2;"><strong>VR Runtime:</strong> <span id="modal-game-openxr" style="color:var(--accent-purple);">--</span></div>
       </div>
@@ -1196,6 +1207,39 @@
       <div style="display:flex; justify-content:flex-end; gap:12px; flex-wrap:wrap; margin-top:18px;">
         <button type="button" id="install-drive-cancel" class="btn-secondary" data-back>Cancel</button>
         <button type="button" id="install-drive-ok" class="btn-primary">Install</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browse > Sources: where 2D apps come from. Rows come from /api/app-sources (renderAppSourcesList in
+       app.js); adding and changing sources works only at the headset itself. -->
+  <div id="app-sources-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:680px;" role="dialog" aria-labelledby="app-sources-title">
+      <button class="modal-close" onclick="closeAppSourcesModal()" aria-label="Close">&times;</button>
+      <h2 id="app-sources-title" style="font-size:1.3rem; font-weight:800; color:var(--text-strong); margin-bottom:6px;">App Sources</h2>
+      <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5; padding-right:48px;">
+        Where the 2D apps in Browse come from. Each source signs its app list with its own key, and FrameLoad checks that key every time it downloads the list.
+      </p>
+      <div id="app-sources-list" class="source-list"></div>
+      <p id="app-sources-readonly" class="tuning-micro-note" style="display:none; margin-top:12px;">Sources can only be changed on the headset itself.</p>
+      <div id="app-sources-add" class="source-add">
+        <h3 class="source-add-title">Add a Repository</h3>
+        <p class="tuning-micro-note" style="margin-bottom:10px;">Any F-Droid repository works, for example one an app's developers run. Paste its address (https:// or fdroidrepos://).</p>
+        <label class="source-field">
+          <span>Address</span>
+          <input type="url" id="app-source-url" class="search-input" placeholder="https://example.org/fdroid/repo" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="source-field">
+          <span>Signing key fingerprint (optional)</span>
+          <input type="text" id="app-source-fingerprint" class="search-input" placeholder="64 hexadecimal characters, as the repository publishes it" autocomplete="off" spellcheck="false">
+        </label>
+        <div id="app-source-result" class="source-result" style="display:none;"></div>
+        <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+          <button type="button" id="app-source-check" class="btn-primary compact" onclick="checkAppRepository()">Check Repository</button>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+        <button type="button" class="btn-secondary" data-back onclick="closeAppSourcesModal()">Close</button>
       </div>
     </div>
   </div>

@@ -15,6 +15,9 @@ from .lepton_quest import LeptonInstaller
 from .linux_native import LinuxNativeInstaller
 from .windows_proton import WindowsProtonInstaller
 
+# What an install from a file records as its origin: such an app gets no updates from an app source.
+FILE_ORIGIN = {"source": "file"}
+
 
 class PackageLoader:
     @staticmethod
@@ -371,6 +374,7 @@ class PackageLoader:
                 force_flat=force_flat,
                 device_id=device_id,
                 target_anchor=target_anchor,
+                origin=FILE_ORIGIN,
             )
 
         # 6. Handle Android Archive (.xapk, .apks, .zip)
@@ -395,6 +399,7 @@ class PackageLoader:
                     force_flat=force_flat,
                     device_id=device_id,
                     target_anchor=target_anchor,
+                    origin=FILE_ORIGIN,
                 )
                 res["extracted_from"] = source_path
                 return res
@@ -414,4 +419,5 @@ class PackageLoader:
                 force_flat=force_flat,
                 device_id=device_id,
                 target_anchor=target_anchor,
+                origin=FILE_ORIGIN,
             )

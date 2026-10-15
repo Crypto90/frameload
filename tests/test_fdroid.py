@@ -103,7 +103,8 @@ class TestCatalogSearch(unittest.TestCase):
         self.catalog._set_games(parse_index(INDEX))
 
     def test_search_category_and_sort(self):
-        with patch.object(FDroidCatalog, "_installed_version_codes", return_value={"org.example.notes": "19"}):
+        installed = {"org.example.notes": {"package": "org.example.notes", "kind": "flat", "version_code": "19", "origin": None}}
+        with patch("frameload.catalog.app_sources.installed_apps", return_value=installed):
             everything = self.catalog.search(sort_by="downloads")
             self.assertEqual([i["package_name"] for i in everything["items"]], ["org.example.game", "org.example.notes"])
             notes = everything["items"][1]
@@ -154,7 +155,7 @@ class TestVerifiedDownload(unittest.TestCase):
                            download_url="https://f-droid.org/repo/org.app_1.apk", sha256=sha256)
         return DownloadTask(id=game.id, game=game, total_bytes=game.size_bytes)
 
-    def fake_download(self, url, dest, task, max_retries=3):
+    def fake_download(self, url, dest, task, max_retries=3, opener=None):
         with open(dest, "wb") as f:
             f.write(self.payload)
         return True

@@ -64,6 +64,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Also "close_on_vr_start" (System > Starting Games, off unless set): a VR game's launcher closes
     # FrameLoad's window when the game shows its first picture (system/steam_ui.py).
     "ui": {"skin": "a", "daylight": "light"},
+    # Where 2D apps come from (Browse > Sources): sources hidden from Browse, repositories the player
+    # added ({id, name, url, fingerprint, added}) and the order of the source list.
+    "app_sources": {
+        "disabled": [],
+        "custom": [],
+        "order": ["fdroid", "izzyondroid", "guardian"],
+    },
     "storage": {
         "default_device_id": "internal",
         "custom_paths": [],

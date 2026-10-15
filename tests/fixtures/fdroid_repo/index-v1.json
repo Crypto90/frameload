@@ -1,0 +1,135 @@
+{
+ "repo": {
+  "name": "FrameLoad Test Repo",
+  "timestamp": 1760000000000,
+  "version": 20002,
+  "address": "https://repo.example.org/fdroid/repo",
+  "description": "Apps for FrameLoad's tests.",
+  "mirrors": [
+   "https://mirror.example.net/fdroid/repo",
+   "http://plain.example.net/fdroid/repo",
+   "http://abcdefghijklmnop.onion/fdroid/repo"
+  ]
+ },
+ "apps": [
+  {
+   "packageName": "org.example.notes",
+   "suggestedVersionCode": "20",
+   "categories": [
+    "Writing"
+   ],
+   "license": "GPL-3.0-only",
+   "lastUpdated": 1750000000000,
+   "antiFeatures": [
+    "NonFreeNet"
+   ],
+   "localized": {
+    "en-US": {
+     "name": "Pocket Notes",
+     "summary": "Plain text notes",
+     "description": "Long text",
+     "icon": "icon.png",
+     "phoneScreenshots": [
+      "1.png"
+     ]
+    }
+   }
+  },
+  {
+   "packageName": "org.example.x86only",
+   "suggestedVersionCode": "1",
+   "name": "x86 Only"
+  },
+  {
+   "packageName": "com.google.android.gms",
+   "suggestedVersionCode": "1",
+   "name": "microG Services"
+  },
+  {
+   "packageName": "org.example.module",
+   "suggestedVersionCode": "1",
+   "name": "Some Module",
+   "categories": [
+    "Xposed"
+   ]
+  },
+  {
+   "packageName": "org.example.oldsdk",
+   "suggestedVersionCode": "1",
+   "name": "Old SDK"
+  }
+ ],
+ "packages": {
+  "org.example.notes": [
+   {
+    "versionCode": 21,
+    "versionName": "2.1-beta",
+    "apkName": "org.example.notes_21.apk",
+    "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "hashType": "sha256",
+    "size": 2100,
+    "minSdkVersion": 24,
+    "signer": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   {
+    "versionCode": 20,
+    "versionName": "2.0",
+    "apkName": "org.example.notes_20.apk",
+    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hashType": "sha256",
+    "size": 2000,
+    "minSdkVersion": 24,
+    "signer": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   {
+    "versionCode": 19,
+    "versionName": "1.9",
+    "apkName": "org.example.notes_19.apk",
+    "hash": "9999999999999999999999999999999999999999999999999999999999999999",
+    "hashType": "sha256",
+    "size": 1900,
+    "signer": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   }
+  ],
+  "org.example.x86only": [
+   {
+    "versionCode": 1,
+    "apkName": "x86_1.apk",
+    "hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "hashType": "sha256",
+    "size": 1,
+    "nativecode": [
+     "x86_64"
+    ]
+   }
+  ],
+  "com.google.android.gms": [
+   {
+    "versionCode": 1,
+    "apkName": "gms_1.apk",
+    "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "hashType": "sha256",
+    "size": 1
+   }
+  ],
+  "org.example.module": [
+   {
+    "versionCode": 1,
+    "apkName": "module_1.apk",
+    "hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "hashType": "sha256",
+    "size": 1
+   }
+  ],
+  "org.example.oldsdk": [
+   {
+    "versionCode": 1,
+    "apkName": "oldsdk_1.apk",
+    "hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "hashType": "sha256",
+    "size": 1,
+    "maxSdkVersion": 30
+   }
+  ]
+ }
+}

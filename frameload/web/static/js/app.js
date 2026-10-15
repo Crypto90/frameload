@@ -12,8 +12,11 @@ const state = {
     query: "",
     sortBy: "downloads",
     sortOrder: "desc",
-    kind: "vr"
+    kind: "vr",
+    source: savedAppSource()  // where 2D apps come from: an app source id, or "all"
   },
+  // Browse > Sources (/api/app-sources); `local` is true at the headset, the only place they can be changed.
+  appSources: { list: [], local: false, loaded: false },
   installed: [],
   downloads: [],
   system: null,
@@ -323,6 +326,19 @@ function setupSearch() {
     });
   }
 
+  const sourceSelect = document.getElementById("catalog-source-select");
+  if (sourceSelect) {
+    sourceSelect.value = state.catalog.source;
+    sourceSelect.addEventListener("change", (e) => {
+      state.catalog.source = e.target.value;
+      rememberAppSource(state.catalog.source);
+      state.catalog.category = "";  // categories differ between sources
+      state.catalog.page = 1;
+      applyCatalogKind();
+      loadCatalog();
+    });
+  }
+
   const categorySelect = document.getElementById("catalog-category-select");
   if (categorySelect) {
     categorySelect.addEventListener("change", (e) => {
@@ -341,15 +357,18 @@ function setupSearch() {
   initCatalogInfiniteScroll();
 }
 
-// The two catalogs differ: F-Droid has categories but no download counts or ratings.
+// The two catalogs differ: app sources have categories but no download counts or ratings.
 function applyCatalogKind() {
   const isFlat = state.catalog.kind === "flat";
   const categorySelect = document.getElementById("catalog-category-select");
   const sortSelect = document.getElementById("sort-select");
-  const hint = document.getElementById("catalog-source-hint");
   const search = document.getElementById("search-input");
   if (categorySelect) categorySelect.style.display = isFlat ? "" : "none";
-  if (hint) hint.textContent = isFlat ? "Free and open-source Android apps from F-Droid, shown as 2D windows" : "Browse public VR mirror";
+  ["catalog-source-select", "app-sources-btn"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isFlat ? "" : "none";
+  });
+  updateCatalogHint();
   SEARCH_HINTS.catalog = isFlat ? "Search apps..." : "Search games and apps...";
   if (search) search.placeholder = SEARCH_HINTS[state.activeTab] || SEARCH_HINTS.catalog;
   if (sortSelect) {
@@ -364,19 +383,87 @@ function applyCatalogKind() {
       state.catalog.sortOrder = "desc";
     }
   }
-  if (isFlat) { loadCatalogCategories(); loadAppUpdates(); }
-  else { const btn = document.getElementById("fdroid-updates-btn"); if (btn) btn.style.display = "none"; }
+  if (isFlat) { loadAppSources(); loadCatalogCategories(); loadAppUpdates(); }
+  else { const btn = document.getElementById("app-updates-btn"); if (btn) btn.style.display = "none"; }
+}
+
+// --- App sources: where 2D apps come from (F-Droid, IzzyOnDroid, ...) ---
+// The choice is remembered per browser; without storage (private window) it is F-Droid each time.
+function savedAppSource() {
+  try {
+    return localStorage.getItem("frameload_app_source") || "fdroid";
+  } catch (_) {
+    return "fdroid";
+  }
+}
+
+function rememberAppSource(id) {
+  try {
+    localStorage.setItem("frameload_app_source", id);
+  } catch (_) { /* not kept: the default applies next time */ }
+}
+
+function currentAppSource() {
+  return (state.appSources.list || []).find(s => s.id === state.catalog.source) || null;
+}
+
+function updateCatalogHint() {
+  const hint = document.getElementById("catalog-source-hint");
+  if (!hint) return;
+  if (state.catalog.kind !== "flat") { hint.textContent = "Browse public VR mirror"; return; }
+  const src = currentAppSource();
+  hint.textContent = state.catalog.source === "all" ? "Apps from all your sources, shown as 2D windows"
+    : src ? `${src.blurb}, shown as 2D windows` : "Android apps, shown as 2D windows";
+}
+
+function appSourceLabel(src) {
+  return `${src.name} (${src.app_count ? `${Number(src.app_count).toLocaleString()} apps` : "not downloaded"})`;
+}
+
+function renderAppSourceSelect() {
+  const select = document.getElementById("catalog-source-select");
+  if (!select) return;
+  const shown = state.appSources.list.filter(s => s.enabled);
+  select.innerHTML = '<option value="all">All sources</option>' + shown.map(s =>
+    `<option value="${escapeHtml(s.id)}">${escapeHtml(appSourceLabel(s))}</option>`).join("");
+  select.value = state.catalog.source;
+}
+
+async function loadAppSources() {
+  try {
+    const data = await apiGet("/api/app-sources");
+    state.appSources = { list: data.sources || [], local: !!data.local, loaded: true };
+  } catch (e) {
+    console.error("Error loading app sources:", e);
+    return;
+  }
+  // The remembered source may have been hidden or removed since.
+  const shown = state.appSources.list.filter(s => s.enabled);
+  if (state.catalog.source !== "all" && !shown.some(s => s.id === state.catalog.source)) {
+    state.catalog.source = shown.some(s => s.id === "fdroid") ? "fdroid" : (shown[0] ? shown[0].id : "all");
+    rememberAppSource(state.catalog.source);
+    state.catalog.category = "";
+    if (state.catalog.kind === "flat") { loadCatalogCategories(); loadCatalog(); }
+  }
+  renderAppSourceSelect();
+  updateCatalogHint();
+  // An empty catalog says which source to sync and how large it is, which is known only now.
+  const empty = document.querySelector("#catalog-grid > .empty-state");
+  if (empty && state.catalog.kind === "flat") empty.innerHTML = catalogEmptyMessage({ last_sync: state.catalog.lastSync });
+  const modal = document.getElementById("app-sources-modal");
+  if (modal && modal.classList.contains("open")) renderAppSourcesList();
 }
 
 async function loadAppUpdates() {
-  const btn = document.getElementById("fdroid-updates-btn");
+  const btn = document.getElementById("app-updates-btn");
   if (!btn) return;
   try {
     const data = await apiGet("/api/catalog/updates");
     const count = (data.updates || []).length;
     btn.style.display = count && state.catalog.kind === "flat" ? "" : "none";
     btn.textContent = count === 1 ? "Update 1 App" : `Update ${count} Apps`;
-    btn.title = (data.updates || []).map(u => `${u.title}: ${u.installed_version} -> ${u.new_version}`).join("\n");
+    btn.title = (data.updates || []).map(u =>
+      `${u.title} (${u.source_name || u.source}): ${u.installed_version} -> ${u.new_version}`).join("\n");
   } catch (e) {
     btn.style.display = "none";
   }
@@ -393,11 +480,158 @@ async function updateAllApps() {
 }
 window.updateAllApps = updateAllApps;
 
+// --- Browse > Sources: the list of app sources and adding a repository (changes only at the headset) ---
+const REPOSITORY_WARNING = "Anyone can run a repository. F-Droid, IzzyOnDroid and Guardian Project review what " +
+  "they publish; this one may not. FrameLoad checks that the list is signed by the same key every time and that " +
+  "every app matches its checksum, but it cannot tell whether an app is safe. Add it only if you trust the people who run it.";
+
+function groupedFingerprint(fingerprint) {
+  return (String(fingerprint || "").toUpperCase().match(/.{1,4}/g) || []).join(" ");
+}
+
+function renderAppSourcesList() {
+  const list = document.getElementById("app-sources-list");
+  if (!list) return;
+  const { local, loaded } = state.appSources;
+  const sources = state.appSources.list || [];
+  list.innerHTML = !sources.length ? `<p class="tuning-micro-note">${loaded ? "No sources." : "Loading sources..."}</p>`
+    : sources.map(src => {
+      const meta = src.syncing ? "Downloading its app list now..."
+        : src.last_sync ? `${Number(src.app_count || 0).toLocaleString()} apps, last synced ${new Date(src.last_sync).toLocaleString()}`
+        : `Not downloaded yet${src.size_hint ? ` (about ${src.size_hint})` : ""}`;
+      return `
+        <div class="source-row${src.enabled ? "" : " off"}">
+          <div class="source-main">
+            <div class="source-name">${escapeHtml(src.name)} <span class="badge source-tag">${src.builtin ? "Built in" : "Added by you"}</span></div>
+            <div class="source-url">${escapeHtml(src.url)}</div>
+            <div class="source-meta">${escapeHtml(meta)}</div>
+            <div class="source-fp" title="Fingerprint of the key that signs this source's app list">Key ${escapeHtml(groupedFingerprint(src.fingerprint)) || "not known yet"}</div>
+          </div>
+          <div class="source-actions">
+            <label class="check-row"><input type="checkbox" ${src.enabled ? "checked" : ""} ${local ? "" : "disabled"}
+              onchange="setAppSourceEnabled(${jsArg(src.id)}, this.checked, this)"> <span>Show in Browse</span></label>
+            ${!src.builtin && local ? `<button type="button" class="btn-secondary compact" onclick="removeAppSource(${jsArg(src.id)})">Remove</button>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+  const readonly = document.getElementById("app-sources-readonly");
+  const addForm = document.getElementById("app-sources-add");
+  if (readonly) readonly.style.display = loaded && !local ? "" : "none";
+  if (addForm) addForm.style.display = local ? "" : "none";
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+
+function openAppSourcesModal() {
+  const modal = document.getElementById("app-sources-modal");
+  if (!modal) return;
+  renderAppSourcesList();
+  modal.onclick = (e) => { if (e.target === modal) closeAppSourcesModal(); };
+  modal.classList.add("open");
+  loadAppSources();  // fresh app counts; re-renders the list
+}
+window.openAppSourcesModal = openAppSourcesModal;
+
+function closeAppSourcesModal() {
+  const modal = document.getElementById("app-sources-modal");
+  if (modal) modal.classList.remove("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+window.closeAppSourcesModal = closeAppSourcesModal;
+
+async function setAppSourceEnabled(id, enabled, input) {
+  try {
+    await apiPost("/api/app-sources/enable", { id, enabled });
+  } catch (e) {
+    if (input) input.checked = !enabled;
+    showToast(e.message, "error");
+    return;
+  }
+  await loadAppSources();
+  if (state.catalog.kind === "flat") loadCatalog();  // "All sources" shows a different set now
+}
+window.setAppSourceEnabled = setAppSourceEnabled;
+
+async function removeAppSource(id) {
+  const src = (state.appSources.list || []).find(s => s.id === id);
+  if (!src) return;
+  if (!await confirmDialog(`Remove ${src.name}?`, "Its app list is deleted from the headset. Apps you installed from it stay installed, but they get no more updates.",
+    { yes: "Remove", danger: true })) return;
+  try {
+    const res = await apiPost("/api/app-sources/remove", { id });
+    const lost = (res.lost_updates || []).length;
+    showToast(lost ? `${src.name} removed. ${lost === 1 ? "1 installed app" : `${lost} installed apps`} from it no longer get updates.`
+      : `${src.name} removed.`, "success");
+  } catch (e) {
+    showToast(e.message, "error");
+    return;
+  }
+  await loadAppSources();
+  if (state.catalog.kind === "flat") loadCatalog();
+}
+window.removeAppSource = removeAppSource;
+
+// Check Repository: the headset downloads the repository's app list and checks its signature (nothing is
+// kept), then asks before adding it. A new repository is shown in Browse and synced right away.
+async function checkAppRepository() {
+  const urlInput = document.getElementById("app-source-url");
+  const fpInput = document.getElementById("app-source-fingerprint");
+  const result = document.getElementById("app-source-result");
+  const btn = document.getElementById("app-source-check");
+  if (!urlInput || !fpInput || !result || !btn) return;
+  const show = (text, isError) => {
+    result.textContent = text;
+    result.className = `source-result${isError ? " error" : ""}`;
+    result.style.display = text ? "" : "none";
+  };
+  const url = urlInput.value.trim();
+  if (!url) {
+    show("Enter the repository's address first.", true);
+    urlInput.focus();
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+  show("Downloading the repository's app list and checking its signature...", false);
+  let info;
+  try {
+    info = await apiPost("/api/app-sources/probe", { url, fingerprint: fpInput.value.trim() });
+  } catch (e) {
+    show(e.message, true);
+    return;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check Repository";
+  }
+  const summary = `${info.name} lists ${Number(info.apps).toLocaleString()} apps; ${Number(info.compatible).toLocaleString()} of them can run on the Steam Frame. `
+    + (info.pinned ? "Its app list is signed with the key you entered."
+      : `Its app list is signed with the key ${groupedFingerprint(info.fingerprint)}; from now on FrameLoad accepts lists from it only with this key.`);
+  show(summary, false);
+  if (!await confirmDialog("Add this repository?", `${summary} ${REPOSITORY_WARNING}`, { yes: "Add repository", danger: true })) return;
+  let added;
+  try {
+    added = await apiPost("/api/app-sources/add", { url: info.url, fingerprint: info.fingerprint, name: info.name });
+  } catch (e) {
+    show(e.message, true);
+    return;
+  }
+  urlInput.value = "";
+  fpInput.value = "";
+  show("", false);
+  closeAppSourcesModal();
+  state.catalog.source = added.source.id;
+  rememberAppSource(state.catalog.source);
+  state.catalog.category = "";
+  await loadAppSources();
+  updateCatalogHint();
+  syncCatalog();
+}
+window.checkAppRepository = checkAppRepository;
+
 async function loadCatalogCategories() {
   const select = document.getElementById("catalog-category-select");
   if (!select) return;
   try {
-    const data = await apiGet("/api/catalog/categories");
+    const data = await apiGet(`/api/catalog/categories?source=${encodeURIComponent(state.catalog.source)}`);
     const current = state.catalog.category || "";
     select.innerHTML = '<option value="">All categories</option>' + (data.categories || []).map(c =>
       `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)} (${c.count})</option>`).join("");
@@ -419,8 +653,13 @@ function buildGameCardHTML(game, installedPkgs) {
   if (isInstalled && game.update_available) {
     action = `<button class="card-btn update" onclick="event.stopPropagation(); queueDownload(${jsArg(game.id)})">Update</button>`;
   } else if (isInstalled) {
-    action = `<button class="card-btn play" onclick="event.stopPropagation(); launchGame(${jsArg(game.package_name)})">${isFlat ? "Open" : "Play"}</button>`;
+    // An app installed from another source is opened here; it is updated from where it came from.
+    const elsewhere = game.installed_source && game.source && game.installed_source !== game.source;
+    const tip = elsewhere ? ` title="Installed from ${escapeHtml(game.installed_source_name)}"` : "";
+    action = `<button class="card-btn play"${tip} onclick="event.stopPropagation(); launchGame(${jsArg(game.package_name)})">${isFlat ? "Open" : "Play"}</button>`;
   }
+  const sourceBadge = isFlat && state.catalog.source === "all" && game.source_name
+    ? `<span class="badge source">${escapeHtml(game.source_name)}</span>` : "";
 
   return `
     <div class="game-card${isFlat ? " app-card" : ""}" data-id="${escapeHtml(game.id)}" draggable="false" onclick="openGameModal(${jsArg(game.id)}, 'catalog')">
@@ -429,6 +668,7 @@ function buildGameCardHTML(game, installedPkgs) {
         <div class="badge-overlay">
           <span class="badge ${isFlat ? "flat" : "vr"}">${isFlat ? "2D" : "VR"}</span>
           ${isInstalled ? '<span class="badge installed">Installed</span>' : ""}
+          ${sourceBadge}
         </div>
       </div>
       <div class="card-body">
@@ -465,8 +705,9 @@ async function loadCatalog(page = 1, append = false) {
       sort_order: state.catalog.sortOrder,
       kind: state.catalog.kind
     });
-    if (state.catalog.kind === "flat" && state.catalog.category) {
-      params.set("category", state.catalog.category);
+    if (state.catalog.kind === "flat") {
+      params.set("source", state.catalog.source);
+      if (state.catalog.category) params.set("category", state.catalog.category);
     }
 
     const res = await fetch(`/api/catalog?${params}`);
@@ -487,6 +728,7 @@ async function loadCatalog(page = 1, append = false) {
       }
     } else {
       state.catalog.items = newItems;
+      state.catalog.lastSync = data.last_sync || "";
       if (newItems.length === 0) {
         container.innerHTML = `<div class="empty-state">${catalogEmptyMessage(data)}</div>`;
       } else {
@@ -511,7 +753,12 @@ function catalogEmptyMessage(data) {
     return 'No VR titles match your query. Click "Sync Catalog" to refresh mirror metadata.';
   }
   if (!data.last_sync) {
-    return 'The F-Droid app catalog has not been downloaded yet. Press "Sync Catalog" to fetch it (about 10 MB).';
+    if (state.catalog.source === "all") {
+      return 'None of your app sources has been downloaded yet. Press "Sync Catalog" to fetch them, one after another.';
+    }
+    const src = currentAppSource();
+    const size = src && src.size_hint ? ` (about ${escapeHtml(src.size_hint)})` : "";
+    return `The ${escapeHtml(src ? src.name : "app")} catalog has not been downloaded yet. Press "Sync Catalog" to fetch it${size}.`;
   }
   return "No apps match your search.";
 }
@@ -589,10 +836,14 @@ async function syncCatalog() {
   const btn = document.getElementById("sync-catalog-btn");
   const isFlat = state.catalog.kind === "flat";
   if (btn) { btn.classList.add("spinning"); btn.disabled = true; }
-  showToast(isFlat ? "Downloading the F-Droid app catalog..." : "Syncing the VR catalog from the mirror...", "info");
+  const src = currentAppSource();
+  showToast(!isFlat ? "Syncing the VR catalog from the mirror..."
+    : state.catalog.source === "all" ? "Downloading the catalogs of all your app sources, one after another..."
+    : `Downloading the ${src ? src.name : "app"} catalog${src && src.size_hint ? ` (about ${src.size_hint})` : ""}...`, "info");
 
   try {
-    const data = await apiPost("/api/catalog/sync", { kind: state.catalog.kind });
+    const data = await apiPost("/api/catalog/sync", isFlat ? { kind: "flat", source: state.catalog.source } : { kind: state.catalog.kind });
+    if (isFlat) loadAppSources();  // app counts and sync times in the source list
     if (data.success) {
       showToast(isFlat ? (data.message || `${data.total_games} apps available.`) : `Catalog synced: ${data.total_games} games available.`, "success");
       if (isFlat) loadCatalogCategories();
@@ -610,7 +861,8 @@ async function syncCatalog() {
 // --- Download Queue Controls ---
 async function queueDownload(gameId) {
   const game = (state.catalog.items || []).find(g => g.id === gameId)
-    || (state.selectedGame && state.selectedGame.id === gameId ? state.selectedGame : null);
+    || (state.selectedGame && state.selectedGame.id === gameId ? state.selectedGame : null)
+    || (state.alsoIn || []).find(g => g.id === gameId);  // "Install from <source>" on an app's page
   // An update goes where the game already is; a new game goes where the player says.
   const installed = game && (state.installed || []).find(g => g.package === game.package_name);
   let deviceId = installed ? (installed.device_id || "internal") : undefined;
@@ -630,7 +882,8 @@ async function queueDownload(gameId) {
       showToast("Download queued.", "success");
       pollDownloadsOnce();
     } else {
-      showToast(data.error || "Failed to queue download", "error");
+      // A different signing key, or the same app already downloading from another source, is not a fault.
+      showToast(data.error || "Failed to queue download", res.status === 409 ? "warning" : "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
@@ -1520,15 +1773,20 @@ function openGameModal(id, mode = "catalog") {
   const media = document.getElementById("modal-media");
   if (media) { media.style.display = "none"; media.innerHTML = ""; }
 
+  // Which source a 2D app comes from, or was installed from, and the other sources that list it.
+  const fromSource = mode === "catalog" && game.kind === "flat" && !!game.source;
+  renderAppSourceRow(game, mode);
+  renderAlsoIn(null);
+
   // Release Notes / Instructions section
   const notesSection = document.getElementById("modal-notes-section");
   const notesText = document.getElementById("modal-game-notes");
   if (notesSection && notesText) {
     const notesHeading = notesSection.querySelector("span");
-    if (notesHeading) notesHeading.textContent = game.source === "fdroid" ? "About this app" : "💡 Release Notes & Headset Instructions";
-    if (game.source === "fdroid") {
+    if (notesHeading) notesHeading.textContent = fromSource ? "About this app" : "💡 Release Notes & Headset Instructions";
+    if (fromSource) {
       const about = [game.summary, (game.categories || []).join(", "), game.license ? `License: ${game.license}` : "",
-        (game.anti_features || []).length ? `F-Droid notes: ${game.anti_features.join(", ")}` : ""].filter(Boolean).join("\n");
+        (game.anti_features || []).length ? `Notes from ${game.source_name || "the repository"}: ${game.anti_features.join(", ")}` : ""].filter(Boolean).join("\n");
       notesText.textContent = about;
       notesSection.style.display = about ? "block" : "none";
       fetch(`/api/catalog/game/${encodeURIComponent(game.id)}`)
@@ -1536,8 +1794,10 @@ function openGameModal(id, mode = "catalog") {
         .then(data => {
           if (state.selectedGame !== game || !data.game) return;
           renderAppMedia(data.game);
+          renderAppSourceRow(data.game, mode);
+          renderAlsoIn(data.game);
           if (!data.game.description) return;
-          // F-Droid descriptions contain simple HTML; show them as plain text.
+          // Repository descriptions contain simple HTML; show them as plain text.
           const plain = new DOMParser().parseFromString(data.game.description, "text/html").body.textContent || "";
           notesText.textContent = [about, plain.trim()].filter(Boolean).join("\n\n");
           notesSection.style.display = "block";
@@ -1621,10 +1881,14 @@ function openGameModal(id, mode = "catalog") {
 
   const actionContainer = document.getElementById("modal-actions");
   if (mode === "catalog") {
-    const verb = isInstalled ? (game.update_available ? "Update" : "Reinstall") : (game.kind === "flat" ? "Install" : "Download to Steam Frame");
+    // An app installed from another source can switch to this one only when both are signed by the same key.
+    const elsewhere = isInstalled && game.installed_source && game.source && game.installed_source !== game.source;
+    const verb = isInstalled ? (game.update_available ? "Update" : elsewhere ? `Install from ${escapeHtml(game.source_name || game.source)}` : "Reinstall")
+      : (game.kind === "flat" ? "Install" : "Download to Steam Frame");
     actionContainer.innerHTML = `
-      <button class="btn-primary" onclick="queueDownload(${jsArg(game.id)}); closeModal();">${verb}</button>
+      <button class="btn-primary" ${game.blocked ? "disabled" : ""} onclick="queueDownload(${jsArg(game.id)}); closeModal();">${verb}</button>
       ${isInstalled ? `<button class="btn-secondary" onclick="launchGame(${jsArg(pkg)}); closeModal();">Open</button>` : ""}
+      ${game.blocked ? `<span class="tuning-micro-note" style="flex-basis:100%;">${escapeHtml(game.blocked)}</span>` : ""}
     `;
   } else {
     const arg = jsArg(game.package);
@@ -1649,6 +1913,50 @@ function openGameModal(id, mode = "catalog") {
   }
 
   modal.classList.add("open");
+}
+
+// The game page's Source row: where a 2D app in Browse comes from, or where an installed one came from.
+function renderAppSourceRow(game, mode) {
+  const row = document.getElementById("modal-source-row");
+  const text = document.getElementById("modal-game-source");
+  if (!row || !text) return;
+  let label = "";
+  if (mode === "catalog" && game.kind === "flat" && game.source) {
+    label = game.source_name || game.source;
+    if (game.installed_source && game.installed_source !== game.source) label += ` (installed from ${game.installed_source_name})`;
+  } else if (mode === "installed" && game.origin && game.origin.source) {
+    const origin = game.origin;
+    label = origin.source === "file" ? "Installed from a file" : origin.source === "link" ? "Installed from a link"
+      : (origin.source_name || origin.source);
+  }
+  text.textContent = label;
+  row.style.display = label ? "" : "none";
+}
+
+// Other sources that list the same app. One of them can replace the installed app only when its APK is
+// signed by the same key; otherwise its button is off and says why.
+function renderAlsoIn(game) {
+  const box = document.getElementById("modal-also-in");
+  if (!box) return;
+  const others = (game && game.also_in) || [];
+  state.alsoIn = others;
+  if (!others.length) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = '<div class="also-in-title">Also in</div>' + others.map(other => {
+    const name = escapeHtml(other.source_name || other.source);
+    const version = escapeHtml(other.version_name || (other.version_code ? `v${other.version_code}` : ""));
+    return `
+      <div class="also-in-row">
+        <span>${name} ${version}</span>
+        <button type="button" class="btn-secondary compact" ${other.blocked ? "disabled" : ""} onclick="closeModal(); queueDownload(${jsArg(other.id)})">Install from ${name}</button>
+        ${other.blocked ? `<span class="also-in-note">${escapeHtml(other.blocked)}</span>` : ""}
+      </div>`;
+  }).join("");
+  box.style.display = "";
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
 }
 
 // Game page > Move Drive: the drive dialog lists every other drive with its free space against the
@@ -4829,7 +5137,7 @@ async function composePendingArtwork() {
   if (changed) renderInstalledGrid();
 }
 
-// === Store media: screenshots and a trailer from the app's own F-Droid metadata ===
+// === Store media: screenshots and a trailer from the app's own metadata in its repository ===
 state.media = { shots: [], index: 0 };
 
 function youtubeId(url) {

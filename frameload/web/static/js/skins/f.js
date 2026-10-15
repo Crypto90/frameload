@@ -102,7 +102,7 @@
   function pageSentence(tab, ctx) {
     const state = ctx.state;
     if (tab === "library") return librarySentence(state);
-    if (tab === "catalog") return "Games and apps from your mirror";
+    if (tab === "catalog") return "VR games and 2D apps to install";
     if (tab === "sideload") return "An APK, bundle, EXE or AppImage";
     if (tab === "downloads") {
       const all = state.downloads || [];

@@ -25,6 +25,14 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
+# A task in one of these states still writes, or will write, the package's install.
+ACTIVE_STATES = ("queued", "downloading", "decompressing", "installing", "paused")
+
+
+class DownloadConflict(RuntimeError):
+    """Another download of the same package is already queued or running."""
+
+
 class Downloader:
     _instance: Downloader | None = None
 
@@ -58,6 +66,14 @@ class Downloader:
         with self._lock:
             if game.id in self.tasks and self.tasks[game.id].status in ("downloading", "queued"):
                 return self.tasks[game.id]
+            # The same app from a second source (or a second release) would install over the first one
+            # mid-way. Link downloads all carry a placeholder package until their APK is read.
+            other = next((t for t in self.tasks.values() if t.id != game.id and t.status in ACTIVE_STATES
+                          and t.game.package_name == game.package_name), None) if game.source != "link" else None
+            if other:
+                raise DownloadConflict(f"{other.game.name} is already being downloaded"
+                                       f"{f' from {other.game.source_name}' if other.game.source_name else ''}. "
+                                       "Wait until it has finished, or cancel it first.")
 
             if not device_id:
                 cfg = Config.get()
@@ -164,7 +180,15 @@ class Downloader:
                 self._queue.task_done()
 
     def _execute_direct_download(self, task: DownloadTask) -> None:
-        """Single-file download (F-Droid): fetch the APK, check it against the catalog's SHA-256, install."""
+        """Single-file download (an app source or a link): fetch the APK, check it against the catalog's
+        SHA-256, install."""
+        from .app_sources import download_opener
+
+        # Apps from a repository come over https only; one the player added is reached on public
+        # addresses only (its host could otherwise point at this headset).
+        opener = download_opener(task.game.source)
+        if opener and not task.game.download_url.startswith("https://"):
+            raise RuntimeError("The catalog lists this app at an address that is not https; it was not downloaded.")
         game_dir = os.path.join(CACHE_DIR, task.id)
         os.makedirs(game_dir, exist_ok=True)
         dest_file = os.path.join(game_dir, f"{task.id}.apk")
@@ -174,7 +198,7 @@ class Downloader:
             # A finished file that failed the check cannot be resumed (the server answers 416).
             if os.path.isfile(dest_file) and task.total_bytes and os.path.getsize(dest_file) >= task.total_bytes:
                 os.remove(dest_file)
-            if not self._download_file(task.game.download_url, dest_file, task):
+            if not self._download_file(task.game.download_url, dest_file, task, opener=opener):
                 if task.status in ("canceled", "paused"):
                     return
                 raise RuntimeError("Download failed. Check the network connection and try again.")
@@ -384,8 +408,10 @@ class Downloader:
             task.status = "completed"
             task.status_detail = "Ready to Play"
 
-    def _download_file(self, url: str, dest_path: str, task: DownloadTask, max_retries: int = 3) -> bool:
+    def _download_file(self, url: str, dest_path: str, task: DownloadTask, max_retries: int = 3,
+                       opener: Optional[urllib.request.OpenerDirector] = None) -> bool:
         """Downloads a single file with resume support, auto-retry, and speed calculation."""
+        open_url = opener.open if opener else urllib.request.urlopen
         for attempt in range(max_retries):
             if task.status in ("canceled", "paused"):
                 return False
@@ -397,7 +423,7 @@ class Downloader:
 
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=20) as resp:
+                with open_url(req, timeout=20) as resp:
                     status = resp.status
                     content_len = resp.headers.get("Content-Length")
 

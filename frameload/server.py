@@ -41,9 +41,10 @@ def color_excepthook(exc_type, exc_value, exc_traceback):
 sys.excepthook = color_excepthook
 
 
-from .catalog.downloader import Downloader
+from .catalog.app_sources import BUILTIN as BUILTIN_SOURCE_IDS
+from .catalog.app_sources import AppSources, RepoCatalog, RepoUnavailable, app_origin, switch_refusal
+from .catalog.downloader import DownloadConflict, Downloader
 from .catalog.vrp_mirror import VrpMirror
-from .catalog.fdroid import FDroidCatalog
 from .config import ANCHOR_DIR, Config, DATA_DIR
 from .installer.artwork import image_extension
 from .installer import hand_tracking, porting
@@ -121,9 +122,19 @@ def is_trusted_host(host_header: str) -> bool:
 
 class FrameLoadApiHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        self.fdroid = FDroidCatalog.get()
+        self.app_sources = AppSources.get()
         self.downloader = Downloader.get()
         super().__init__(*args, directory=WEB_DIR, **kwargs)
+
+    @property
+    def fdroid(self) -> RepoCatalog:
+        """F-Droid's catalog, the default app source."""
+        return self.app_sources.source("fdroid")  # type: ignore[return-value]
+
+    def app_source_param(self, value: Any) -> str:
+        """A source id from a request: 'all', a configured source, or '' when it is neither."""
+        value = str(value or "fdroid")
+        return value if value == "all" or self.app_sources.find(value) else ""
 
     @property
     def mirror(self) -> VrpMirror:
@@ -221,9 +232,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except (ValueError, TypeError):
                 per_page = 36
             kind = params.get("kind", ["vr"])[0]
-            
+
             if kind == "flat":
-                res = self.fdroid.search(
+                source = self.app_source_param(params.get("source", ["fdroid"])[0])
+                if not source:
+                    self.send_json({"error": "Unknown app source"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                res = self.app_sources.search(
+                    source=source,
                     query=q,
                     sort_by=sort_by,
                     sort_order=sort_order,
@@ -231,6 +247,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                     per_page=per_page,
                     category=params.get("category", [""])[0],
                 )
+                res["source"] = source
             else:
                 res = self.mirror.search(
                     query=q, 
@@ -241,7 +258,15 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 )
             self.send_json(res)
         elif path == "/api/catalog/categories":
-            self.send_json({"categories": self.fdroid.categories(), "last_sync": self.fdroid.last_sync})
+            source = self.app_source_param(params.get("source", ["fdroid"])[0])
+            if not source:
+                self.send_json({"error": "Unknown app source"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(self.app_sources.categories(source))
+        elif path == "/api/app-sources":
+            # Anyone paired may look; only the headset itself changes them (POST /api/app-sources/...).
+            self.send_json({"sources": self.app_sources.summaries(), "local": self.client_is_local(),
+                            "syncing": self.app_sources.syncing()})
         elif path.startswith("/api/catalog/notes/"):
             identifier = path.replace("/api/catalog/notes/", "").strip()
             identifier = os.path.basename(identifier)
@@ -250,9 +275,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path.startswith("/api/catalog/game/"):
             identifier = path.replace("/api/catalog/game/", "").strip()
             identifier = os.path.basename(identifier)
-            app = self.fdroid.get_game(identifier)
+            app = self.app_sources.get_game(identifier)
             if app:
-                self.send_json({"success": True, "game": app.to_dict()})
+                self.send_json({"success": True, "game": self.app_sources.describe(app)})
                 return
             game = self.mirror.get_game(identifier) or self.mirror.games_by_pkg.get(identifier)
             if game:
@@ -300,7 +325,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 return
 
             # 4. Fallback vector SVG placeholder
-            game = self.fdroid.games_by_pkg.get(pkg) or self.mirror.games_by_pkg.get(pkg)
+            game = self.app_sources.loaded_entry(pkg) or self.mirror.games_by_pkg.get(pkg)
             title = game.name if game else pkg
             safe_title = html.escape((title[:24] + "...") if len(title) > 24 else title)
             svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
@@ -347,7 +372,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except PermissionError as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.FORBIDDEN)
         elif path == "/api/catalog/updates":
-            self.send_json({"updates": self.fdroid.available_updates()})
+            self.send_json({"updates": self.app_sources.available_updates()})
         elif path.startswith("/api/sessions/"):
             # "What happened": a game's last session (?source=live: its current launch log) and the report.
             rest = urllib.parse.unquote(path[len("/api/sessions/"):].strip())
@@ -659,23 +684,26 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except KeyError:
                 pass
             self.send_json({"success": True})
+        elif path.startswith("/api/app-sources/"):
+            self.handle_app_sources(path, body)
         elif path == "/api/catalog/update-all":
             queued = []
-            for update in self.fdroid.available_updates():
-                app = self.fdroid.get_game(update["id"])
+            for update in self.app_sources.available_updates():
+                app = self.app_sources.get_game(update["id"])
                 if app:
-                    queued.append(self.downloader.add_to_queue(app).id)
+                    try:
+                        queued.append(self.downloader.add_to_queue(app).id)
+                    except DownloadConflict:
+                        pass  # already on its way
             self.send_json({"success": True, "queued": len(queued)})
         elif path == "/api/catalog/sync":
             kind = body.get("kind", "")
             if kind == "flat":
-                messages: list = []
-                success = self.fdroid.sync(messages.append)
-                self.send_json({
-                    "success": success,
-                    "total_games": len(self.fdroid.games),
-                    "message": messages[-1] if messages else "",
-                })
+                source = self.app_source_param(body.get("source"))
+                if not source:
+                    self.send_json({"error": "Unknown app source"}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                self.send_json(self.app_sources.sync(source))
                 return
             success = self.mirror.sync_catalog()
             if not kind:
@@ -752,15 +780,23 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 success = self.mirror.parse_gamelist_file(gamelist_path)
                 self.send_json({"success": success, "total_games": len(self.mirror.games)})
         elif path == "/api/downloads/queue":
-            game_id = body.get("game_id", "")
+            game_id = str(body.get("game_id", ""))
             device_id = body.get("device_id")
-            game = self.fdroid.get_game(game_id) or self.mirror.get_game(game_id)
+            game = self.app_sources.get_game(game_id) or self.mirror.get_game(game_id)
             if not game:
                 self.send_json({"error": "Game not found in catalog"}, status=HTTPStatus.NOT_FOUND)
                 return
+            if game.source and game.kind == "flat":
+                # An APK signed by another key cannot replace the installed app (Android would refuse it).
+                refusal = switch_refusal(game, InstalledManager.get_game(game.package_name))
+                if refusal:
+                    self.send_json({"error": refusal, "code": "different_signer"}, status=HTTPStatus.CONFLICT)
+                    return
             try:
                 task = self.downloader.add_to_queue(game, device_id=device_id)
                 self.send_json({"success": True, "task": task.to_dict()})
+            except DownloadConflict as e:
+                self.send_json({"error": str(e), "code": "already_downloading"}, status=HTTPStatus.CONFLICT)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -1139,6 +1175,37 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
+    def handle_app_sources(self, path: str, body: Dict[str, Any]) -> None:
+        """Browse > Sources: check, add, remove, show or hide a source of 2D apps. Like pairing codes,
+        only someone at the headset can change where apps come from; paired devices see the list."""
+        if not self.client_is_local():
+            self.send_json({"error": "Sources can only be changed on the headset itself."}, status=HTTPStatus.FORBIDDEN)
+            return
+        action = path.rsplit("/", 1)[-1]
+        try:
+            if action == "probe":
+                self.send_json(self.app_sources.probe(str(body.get("url", "")), str(body.get("fingerprint", ""))))
+            elif action == "add":
+                source = self.app_sources.add_custom(str(body.get("url", "")), str(body.get("fingerprint", "")),
+                                                     str(body.get("name", "")))
+                self.send_json({"success": True, "source": {"id": source.id, "name": source.name, "url": source.url}})
+            elif action == "remove":
+                lost = self.app_sources.remove_custom(str(body.get("id", "")))
+                self.send_json({"success": True, "lost_updates": lost})
+            elif action == "enable":
+                self.app_sources.set_enabled(str(body.get("id", "")), bool(body.get("enabled")))
+                self.send_json({"success": True})
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND)
+        except KeyError:
+            self.send_json({"error": "Unknown app source"}, status=HTTPStatus.NOT_FOUND)
+        except RepoUnavailable as e:
+            self.send_json({"error": str(e)}, status=HTTPStatus.BAD_GATEWAY)
+        except ValueError as e:  # includes a refused address and an index that is not signed as expected
+            self.send_json({"error": str(e)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as e:  # a connection that broke off mid-way, and the like
+            self.send_json({"error": f"The repository could not be read: {e}"}, status=HTTPStatus.BAD_GATEWAY)
+
     def read_json_body(self) -> Dict[str, Any]:
         try:
             content_length = int(self.headers.get("Content-Length", 0))
@@ -1291,6 +1358,66 @@ def refresh_keep_awake(downloader: Any) -> None:
         print(f"[FrameLoad] Keep-awake check failed: {e}")
 
 
+def on_download_complete(task) -> None:
+    """The downloader's hook: installs what a finished download fetched into Lepton."""
+    config = Config.get()
+    if not config["download"].get("auto_install_on_download", True):
+        task.status = "ready_to_install"
+        return
+
+    if not task.target_apk:
+        task.status = "error"
+        task.error_message = "No APK found in extracted game folder."
+        sys.stderr.write(f"{RED}✖ [Auto-Install Error]: {task.error_message}{RESET}\n")
+        return
+
+    task.status = "installing"
+    task.status_detail = "Installing into Lepton container..."
+    # Find obb folder if present
+    obb_dir = None
+    if task.extracted_path and os.path.isdir(task.extracted_path):
+        cand1 = os.path.join(task.extracted_path, "Android/obb")
+        if os.path.isdir(cand1):
+            obb_dir = cand1
+        else:
+            cand2 = os.path.join(task.extracted_path, "obb")
+            if os.path.isdir(cand2):
+                obb_dir = cand2
+
+    # An app from an app source records where it came from, and must be the package the catalog listed.
+    game = task.game
+    from_source = game.kind == "flat" and bool(game.source) and game.source != "link"
+    origin = app_origin(game) if from_source else ({"source": "link"} if game.source == "link" else None)
+    target_device = getattr(task, "device_id", None) or config.get("storage", {}).get("default_device_id", "internal")
+    try:
+        installed = LeptonInstaller.install_quest_game(
+            package_name=game.package_name,
+            title=game.name,
+            apk_path=task.target_apk,
+            obb_path=obb_dir,
+            force_flat=True if game.kind == "flat" else None,
+            # The server fetches this picture itself: only from the built-in sources (an added repository's
+            # host is checked on FrameLoad's own connections only). The APK's own icon is used first anyway.
+            icon_url=game.thumbnail_url if from_source and game.source in BUILTIN_SOURCE_IDS else "",
+            device_id=target_device,
+            origin=origin,
+            expected_package=game.package_name if from_source else None,
+        )
+        task.status = "completed"
+        task.status_detail = "Installed & Ready to Play"
+        try:
+            if porting.auto_port(installed).get("started"):
+                task.status_detail = "Installed. Porting for the Steam Frame..."
+        except Exception as port_exc:  # the install itself succeeded
+            print(f"[FrameLoad] Could not start porting {game.name}: {port_exc}")
+        print(f"{GREEN}✔ [Auto-Install Success]: {game.name} installed successfully!{RESET}")
+    except Exception as exc:
+        task.status = "error"
+        task.error_message = str(exc)
+        task.status_detail = f"Install failed: {exc}"
+        sys.stderr.write(f"{RED}✖ [Auto-Install Failed]: {exc}{RESET}\n")
+
+
 def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
     # A log line with a character the console cannot encode must not take the server down.
     for stream in (sys.stdout, sys.stderr):
@@ -1301,57 +1428,6 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
 
     # Hook auto-installer into downloader
     downloader = Downloader.get()
-
-    def on_download_complete(task):
-        config = Config.get()
-        if not config["download"].get("auto_install_on_download", True):
-            task.status = "ready_to_install"
-            return
-
-        if not task.target_apk:
-            task.status = "error"
-            task.error_message = "No APK found in extracted game folder."
-            sys.stderr.write(f"{RED}✖ [Auto-Install Error]: {task.error_message}{RESET}\n")
-            return
-
-        task.status = "installing"
-        task.status_detail = "Installing into Lepton container..."
-        # Find obb folder if present
-        obb_dir = None
-        if task.extracted_path and os.path.isdir(task.extracted_path):
-            cand1 = os.path.join(task.extracted_path, "Android/obb")
-            if os.path.isdir(cand1):
-                obb_dir = cand1
-            else:
-                cand2 = os.path.join(task.extracted_path, "obb")
-                if os.path.isdir(cand2):
-                    obb_dir = cand2
-
-        target_device = getattr(task, "device_id", None) or config.get("storage", {}).get("default_device_id", "internal")
-        try:
-            installed = LeptonInstaller.install_quest_game(
-                package_name=task.game.package_name,
-                title=task.game.name,
-                apk_path=task.target_apk,
-                obb_path=obb_dir,
-                force_flat=True if task.game.kind == "flat" else None,
-                icon_url=task.game.thumbnail_url if task.game.source == "fdroid" else "",
-                device_id=target_device
-            )
-            task.status = "completed"
-            task.status_detail = "Installed & Ready to Play"
-            try:
-                if porting.auto_port(installed).get("started"):
-                    task.status_detail = "Installed. Porting for the Steam Frame..."
-            except Exception as port_exc:  # the install itself succeeded
-                print(f"[FrameLoad] Could not start porting {task.game.name}: {port_exc}")
-            print(f"{GREEN}✔ [Auto-Install Success]: {task.game.name} installed successfully!{RESET}")
-        except Exception as exc:
-            task.status = "error"
-            task.error_message = str(exc)
-            task.status_detail = f"Install failed: {exc}"
-            sys.stderr.write(f"{RED}✖ [Auto-Install Failed]: {exc}{RESET}\n")
-
     downloader.set_complete_hook(on_download_complete)
 
     def migrate() -> None:

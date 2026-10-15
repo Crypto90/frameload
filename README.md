@@ -72,14 +72,17 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
   | *Cannot run* | 32-bit only, needs a newer Android than Lepton's (Android 14), delivered as split APKs, or checks its own signature |
 - **Browse** has two catalogs:
   - VR games from the catalog mirror set under System → Mirror Manager
-  - free Android apps from F-Droid
+  - 2D apps from F-Droid, IzzyOnDroid, Guardian Project and repositories you add
 
   Downloads can be paused, resume after an interruption and install by themselves when they finish. The Downloads tab shows each one with its picture, its state (Downloading, Unpacking, Installing, Installed, Failed) and the time left.
-- **F-Droid store:**
-  - Lists only apps Lepton can run: 64-bit ARM, Android 14 or older.
-  - Offers F-Droid's suggested version and checks every download against the catalog's SHA-256 before installing.
+- **2D apps:**
+  - **Sources:** F-Droid (the default), IzzyOnDroid (apps as their developers release them) and Guardian Project (Orbot, Tor Browser and other privacy apps). Choose one in Browse, or **All sources**, where an app listed by several sources appears once and its page shows the others.
+  - **Your own repositories:** **Sources** → **Add a Repository** takes any F-Droid repository address (`https://…` or `fdroidrepos://…`, with or without `?fingerprint=`). FrameLoad downloads its app list, checks its signature and shows its signing key before you add it. Only public https addresses are accepted. Sources are added, removed or hidden on the headset itself; a paired phone or PC sees the list only.
+  - **Signed app lists:** each source's list is used only when it is signed by that source's key (built into FrameLoad for the three sources above, recorded when you add a repository), and an older list never replaces a newer one. When a source does not answer, the mirrors its last list named are tried. Nothing is downloaded until you press **Sync Catalog**.
+  - Lists only apps Lepton can run: 64-bit ARM apps that install on Android 14, Lepton's version. Google's own services (microG's packages) and Xposed modules are left out.
+  - Offers each source's suggested version and checks every download against the list's SHA-256 before installing.
   - Each app's page shows its screenshots, and its trailer where it has one.
-  - **Update N Apps** appears when installed apps have newer versions.
+  - **Update N Apps** appears when installed apps have newer versions. An app is updated only from the source it was installed from, and only when the new version is signed by the same key; installing it from another source works only with the same key as well (otherwise uninstall it first, after backing up its saves). Apps installed from a file get no updates from a source.
   - Apps open as a flat window with Android's navigation bar hidden.
 - **Install links:** `frameload://install?url=…` (an https link to an `.apk`), `frameload://sideload?path=…` and `frameload://launch?package=…`. A link never installs anything by itself: the dashboard shows where it comes from and waits for you to press **Install**, and a Quest game installed that way is ported like any other install. A launch link starts the game right away and refuses an app that cannot run on the Frame. A game built for Meta's runtime is ported first only while automatic porting is on (start it again when the port is done).
 
@@ -540,6 +543,7 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `cache/` | Downloads in progress, porting work folders, update downloads |
 | `data/` | Catalog data, cover thumbnails, and the unpacked copy of each game downloaded from Browse (kept after install; safe to delete once the game is installed) |
 | `data/sessions/` | How each game's last session ended (`<package>.json`) and the logs kept from it (`<package>/`, at most about 7 MB per game; removed when the game is uninstalled) |
+| `data/fdroid_cache.json`, `data/app_sources/` | The downloaded app lists of F-Droid and of the other 2D app sources (one file per source) |
 | `uploads/` | Files received from a phone or PC; removed after install, and unused ones when FrameLoad starts and they are older than 24 hours |
 | `frameport-venv/`, `frameport-home/` | FramePort and its tools (Java, OVRPort, apksigner, signing keys) |
 | `bin/` | 7-Zip |
@@ -574,6 +578,9 @@ Almost everything is set in the dashboard. FrameLoad keeps its settings in `~/.l
 | :--- | :--- | :--- |
 | `ui.skin` / `ui.daylight` | `"a"` / `"light"` | The look (`a`-`f`) and Daylight's mode (System → Appearance) |
 | `ui.close_on_vr_start` | `false` | Close FrameLoad's window when a VR game shows its first picture (System → Starting Games) |
+| `app_sources.disabled` | `[]` | 2D app sources hidden from Browse (Browse → Sources → Show in Browse) |
+| `app_sources.custom` | `[]` | Repositories you added: `id`, `name`, `url`, `fingerprint` (the SHA-256 of the key their app list must be signed with) and `added` |
+| `app_sources.order` | `["fdroid", "izzyondroid", "guardian"]` | Order of the sources; an app listed by several sources is shown from the first one in **All sources** unless it is installed from another |
 | `porting.auto` | `true` | Port Quest games automatically after installing them |
 | `porting.auto_setup` | `true` | Download and update the porting tools automatically |
 | `porting.frameport_cli` | `""` | Use this FramePort executable instead of FrameLoad's own copy (a path, or a list such as `["python3", "-m", "frameport"]`) |

@@ -51,9 +51,11 @@ class CatalogGame:
     license: str = ""
     anti_features: List[str] = field(default_factory=list)
     sha256: str = ""  # expected checksum of a direct download
-    source: str = ""  # catalog the entry came from, e.g. "fdroid"
+    source: str = ""  # catalog the entry came from: an app source id ("fdroid", "izzyondroid", ...) or "link"
+    source_name: str = ""  # that source's display name
+    signer: str = ""  # SHA-256 of the APK's signing certificate, as the repository's signed index lists it
     update_available: bool = False
-    screenshots: List[str] = field(default_factory=list)  # store pictures (F-Droid's own metadata)
+    screenshots: List[str] = field(default_factory=list)  # store pictures (the repository's own metadata)
     video: str = ""  # a trailer link from the same metadata, usually YouTube
 
     def __post_init__(self) -> None:

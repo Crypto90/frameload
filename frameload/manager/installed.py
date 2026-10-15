@@ -153,6 +153,9 @@ class InstalledManager:
                         "compat": dep.get("compat", {}) if isinstance(dep.get("compat"), dict) else {},
                         "port_failed": bool(dep.get("port_failed", False)),
                         "port_error": str(dep.get("port_error", "")),
+                        # Which app source it came from ({"source": "file"} for a file); None for installs
+                        # made before FrameLoad recorded it.
+                        "origin": dep.get("origin") if isinstance(dep.get("origin"), dict) else None,
                         "is_running": is_running,
                         **play_stats(base, is_running),
                         "last_session": last_session(pkg),  # how its last session ended (What Happened)

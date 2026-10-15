@@ -193,12 +193,21 @@ class LeptonInstaller:
         target_anchor: Optional[str] = None,
         device_id: Optional[str] = None,
         icon_url: str = "",
+        origin: Optional[Dict[str, Any]] = None,
+        expected_package: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Installs a Quest VR or 2D Android APK for Lepton and adds it to the Steam library.
 
         force_flat=True shows the app as a 2D window; anything else trusts the APK's own manifest.
+        origin is recorded in deployment.json (where the app came from: an app source, or
+        {"source": "file"}); None keeps what an earlier install recorded. expected_package is the package
+        a catalog listed: an APK for any other package is refused before anything is copied, so a
+        repository cannot replace another app's install.
         """
         analysis = inspect_apk(apk_path)
+        if expected_package and analysis.manifest_parsed and analysis.package_name != expected_package:
+            raise ValueError(f"The downloaded app ({analysis.package_name}) is not the one the catalog listed "
+                             f"({expected_package}); nothing was installed.")
         if analysis.manifest_parsed:
             package_name = analysis.package_name  # Lepton keys data and OBB folders on the real package
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*", package_name or "") or ".." in package_name:
@@ -291,6 +300,10 @@ class LeptonInstaller:
             "layout_version": 7,
             "time": time.time(),
         }
+        if origin is None:
+            origin = previous.get("origin")  # a port or a reinstall keeps where the app came from
+        if isinstance(origin, dict) and origin.get("source"):
+            dep["origin"] = origin
         with open(dep_path, "w", encoding="utf-8") as f:
             json.dump(dep, f, indent=2)
 
