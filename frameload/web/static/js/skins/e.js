@@ -141,6 +141,10 @@
 
   function primaryHtml(g) {
     const pkg = arg(g.package);
+    // A running VR game resumes by closing Steam's menu over it (Show); a 2D app is a window of its own.
+    if (g.is_running && g.is_vr) {
+      return `<button type="button" class="e-btn pri" data-e-key="det:pri" title="Close Steam's menu so ${esc(g.title)} is in front" aria-label="Show ${esc(g.title)}" onclick="showGame(${pkg})">${ic("play")}Show</button>`;
+    }
     if (g.is_running) return `<button type="button" class="e-btn pri" data-e-key="det:pri" onclick="launchGame(${pkg})">${ic("play")}Resume</button>`;
     if (view.ctx.updateFor(g)) return `<button type="button" class="e-btn pri" data-e-key="det:pri" onclick="updateGame(${pkg})">${ic("update")}Update</button>`;
     if (needsPort(g)) {

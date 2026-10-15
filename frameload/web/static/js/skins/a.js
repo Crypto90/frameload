@@ -95,7 +95,9 @@
       : g.last_played ? `Last played ${ctx.ago(g.last_played)} · ${kind}` : `Recently added · ${kind}`;
     let primary;
     if (g.is_running) {
-      primary = `<button type="button" class="a-play" onclick="event.stopPropagation(); launchGame(${pkg})">${RUN_SVG}Resume</button>
+      // A VR game resumes by closing Steam's menu over it (Show); a 2D app is a window of its own.
+      primary = `${g.is_vr ? ctx.showButton(g, "a-play", { short: true, icon: RUN_SVG })
+        : `<button type="button" class="a-play" onclick="event.stopPropagation(); launchGame(${pkg})">${RUN_SVG}Resume</button>`}
         <button type="button" class="a-ghost" onclick="event.stopPropagation(); stopGame(${pkg})">Stop</button>`;
     } else if (ctx.updateFor(g)) {
       primary = `<button type="button" class="a-play a-blue" onclick="event.stopPropagation(); updateGame(${pkg})">Update</button>`;

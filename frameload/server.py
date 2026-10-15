@@ -797,6 +797,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             pkg = body.get("package", "")
             res = GameLauncher.stop(pkg)
             self.send_json(res)
+        elif path == "/api/installed/show-game":
+            # Closes SteamVR's dashboard (FrameLoad's window lives in it) so the running game is in front.
+            self.send_json(GameLauncher.show(body.get("package", "")))
         elif path == "/api/installed/settings" or path == "/api/installed/tuning":
             pkg = body.get("package", "")
             settings = body.get("settings", body)
@@ -882,6 +885,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             cfg.raw.setdefault("ui", {}).update(skin=skin, daylight=daylight)
             cfg.save()
             self.send_json({"success": True, "skin": skin, "daylight": daylight})
+        elif path == "/api/ui/starting":
+            # Read by the game's launcher (system/steam_ui.py) when the game shows its first picture.
+            cfg = Config.get()
+            cfg.raw.setdefault("ui", {})["close_on_vr_start"] = body.get("close_on_vr_start") is True
+            cfg.save()
+            self.send_json({"success": True, "close_on_vr_start": cfg.raw["ui"]["close_on_vr_start"]})
         elif path == "/api/power/keep-awake":
             try:
                 power.KeepAwake.set_manual(float(body.get("hours", 0)))

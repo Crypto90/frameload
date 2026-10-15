@@ -119,6 +119,9 @@ fi
 # A window that ran and was closed can exit non-zero, so a failed exit is never a reason to try the
 # next browser (that retry used to reopen Firefox behind the closed window).
 WINDOW_LOCK="$DATA_DIR/window.lock"
+# This script's pid while it owns the window. A VR game's launcher may send it SIGTERM when the game
+# shows its first picture (System > Starting Games, frameload/system/steam_ui.py).
+WINDOW_PID="$DATA_DIR/window.pid"
 BROWSER_PID=""
 
 close_window() {
@@ -188,6 +191,8 @@ launch_app_window() {
         echo "FrameLoad's window is already open."
         exit 0
     fi
+    echo $$ > "$WINDOW_PID"
+    trap 'rm -f "$WINDOW_PID"' EXIT
 
     local flatpak_args=()
     if which flatpak >/dev/null 2>&1 && flatpak run --help 2>/dev/null | grep -q -- "--die-with-parent"; then

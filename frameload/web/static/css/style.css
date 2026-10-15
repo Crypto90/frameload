@@ -2308,6 +2308,31 @@ body.vr-grabbing * {
   color: var(--text-strong);
 }
 
+/* Show <game>: a running VR game can play behind Steam's menu and this window; this brings it in front */
+.telemetry-chip.show-chip {
+  min-height: 40px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.telemetry-chip.show-chip::before {
+  content: "";
+  flex: none;
+  border-style: solid;
+  border-width: 5px 0 5px 8px;
+  border-color: transparent transparent transparent currentColor;
+}
+
+.telemetry-chip.show-chip:hover,
+.telemetry-chip.show-chip:focus-visible {
+  box-shadow: var(--glow);
+}
+
 /* ==========================================================================
    v1.3.4: sized for a headset. Everything below is read at arm's length through
    lenses and pressed with a laser pointer, so text is larger, targets are at
@@ -3001,8 +3026,10 @@ html { scrollbar-gutter: stable; }
   white-space: nowrap;
 }
 .recent-meta { font-size: 0.86rem; color: var(--text-muted); }
-.recent-actions { display: flex; margin-top: 6px; }
+.recent-actions { display: flex; gap: 8px; margin-top: 6px; }
 .recent-actions .card-btn { flex: none; min-width: 120px; }
+/* A running VR game has Show and Stop: they share the row */
+.recent-actions:has(> .card-btn + .card-btn) .card-btn { flex: 1 1 0; min-width: 0; max-width: 120px; padding: 8px 12px; }
 
 /* Performance card and header chip */
 .telemetry-chip.perf-chip {

@@ -244,6 +244,27 @@ body:has(#tab-library.active .c-show) .telemetry-chip.stop-chip { bottom: 10px; 
   }
   body.page-scrolls:not(:has(#tab-library.active .c-show)) .telemetry-chip.stop-chip::after { content: "Stop"; font-size: 15px; }
 }
+/* Show (a running VR game) is a pill of the same kind, stacked above Stop. On the Library the hero
+   has Show when it shows the running game, and selecting the running tile brings it there. */
+.telemetry-chip.show-chip {
+  position: fixed;
+  right: var(--c-pad);
+  bottom: 78px;
+  z-index: 120;
+  min-height: 48px;
+  padding: 0 20px 0 16px;
+  gap: 10px;
+  border: 0;
+  border-radius: 24px;
+  font-size: 15px;
+  box-shadow: 0 12px 30px rgb(var(--shade-rgb) / 0.55);
+}
+body:has(#tab-library.active .c-show) .telemetry-chip.show-chip { display: none !important; }
+body:has(.modal-backdrop.open) .telemetry-chip.show-chip { visibility: hidden; }
+@media (min-width: 641px) and (max-width: 1559px) {
+  body.page-scrolls .telemetry-chip.show-chip { right: 10px; padding: 0 16px 0 14px; gap: 8px; font-size: 0; }
+  body.page-scrolls .telemetry-chip.show-chip::after { content: "Show"; font-size: 15px; }
+}
 
 .c-status { order: 5; display: flex; align-items: center; gap: 14px; margin-left: 4px; font-size: 16px; font-weight: 600; color: #fff; white-space: nowrap; }
 .c-status:empty { display: none; }
@@ -790,6 +811,7 @@ input:checked + .slider { background-color: #ff86b0; }
   .scroll-rail.visible { transform: none; }
   .scroll-rail button { width: 46px; height: 46px; }
   .telemetry-chip.stop-chip { bottom: 14px; }
+  .telemetry-chip.show-chip { bottom: 72px; }
   .c-meta { font-size: 15px; gap: 6px 12px; }
   /* Storage rows: a smaller picture and size so the title keeps its width */
   .storage-game-row { padding: 12px 14px; gap: 12px; }

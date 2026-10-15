@@ -399,6 +399,8 @@ body.page-scrolls .app-header { padding-right: 88px; }
 .search-wrapper:not(:focus-within):has(.search-input:placeholder-shown) .search-icon { color: var(--text-strong); width: 18px; height: 18px; left: 15px; }
 #header-battery, #header-storage, #header-perf, #header-porting { display: none !important; }
 body:has(#tab-library.active) #header-stop-game { display: none !important; }
+/* The "Playing now" card has Show; elsewhere (and while searching the library) the header does */
+body:has(#tab-library.active .f-now) #header-show-game { display: none !important; }
 
 .f-readout {
   height: 48px;
@@ -448,6 +450,7 @@ button.f-read-seg:hover { background: rgb(var(--fg-rgb) / 0.05); }
 .telemetry-chip.stop-chip { background: var(--surface); color: var(--text-strong); box-shadow: inset 0 0 0 1px var(--f-line-strong); font-size: 14px; }
 .telemetry-chip.stop-chip::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--danger); }
 .telemetry-chip.stop-chip:hover, .telemetry-chip.stop-chip:focus-visible { background: var(--f-bad-soft); color: var(--f-bad-ink); }
+.telemetry-chip.show-chip { font-size: 14px; box-shadow: none; }
 .telemetry-chip.update-alert { background: var(--f-up-soft); color: var(--f-up-ink); box-shadow: none; animation: none; }
 .telemetry-chip.update-alert strong { color: inherit !important; font-family: var(--font-mono); }
 .telemetry-chip.clickable:hover { transform: none; background: var(--surface-2); color: var(--text-strong); }

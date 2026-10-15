@@ -281,7 +281,8 @@
           <h2 title="${ctx.esc(g.title)}">${ctx.esc(g.title)}</h2>
           <p>${ctx.esc(line)}</p>
           <div class="f-acts">
-            <button type="button" class="f-btn" onclick="${act.call}(${pkg})">${ctx.icon(act.icon)}${act.label}</button>
+            ${ctx.showButton(g, "f-btn", { short: true, icon: ctx.icon("play") })}
+            <button type="button" class="f-btn${g.is_running && g.is_vr ? " f-ghost" : ""}" onclick="${act.call}(${pkg})">${ctx.icon(act.icon)}${act.label}</button>
             <button type="button" class="f-btn f-ghost" onclick="openGameModal(${pkg}, 'installed')">${ctx.icon("dots")}Details</button>
           </div>
         </div>

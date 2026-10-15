@@ -292,6 +292,7 @@ body { letter-spacing: 0.005em; }
   background: currentColor;
 }
 .telemetry-chip.stop-chip:hover, .telemetry-chip.stop-chip:focus-visible { background: #c3323c; color: #fff; }
+.telemetry-chip.show-chip { font-size: 14px; }
 .telemetry-chip.porting-chip { background: rgba(26, 159, 255, 0.14); border-color: rgba(26, 159, 255, 0.4); color: #9ad4ff; font-size: 14px; }
 .telemetry-chip.porting-chip:hover { background: rgba(26, 159, 255, 0.26); }
 .telemetry-chip.porting-chip::before { border-color: rgba(154, 212, 255, 0.3); border-top-color: #9ad4ff; }

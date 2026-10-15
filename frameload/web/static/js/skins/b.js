@@ -47,7 +47,11 @@
     const name = ctx.esc(game.title || game.package);
     const l = level(game);
     if (game.is_running) {
-      return `<button type="button" class="sp-round stop" aria-label="Stop ${name}" title="Stop" onclick="event.stopPropagation(); stopGame(${pkg})">${ctx.icon("stop")}</button>`;
+      // A running VR game can play behind Steam's menu and this window: Show brings it in front.
+      const show = game.is_vr
+        ? `<button type="button" class="sp-round show" aria-label="Show ${name}" title="Show ${name}" onclick="event.stopPropagation(); showGame(${pkg})">${ctx.icon("play")}</button>`
+        : "";
+      return `${show}<button type="button" class="sp-round stop" aria-label="Stop ${name}" title="Stop" onclick="event.stopPropagation(); stopGame(${pkg})">${ctx.icon("stop")}</button>`;
     }
     if (ctx.updateFor(game)) {
       return `<button type="button" class="sp-round update" aria-label="Update ${name}" title="Update" onclick="event.stopPropagation(); updateGame(${pkg})">${ctx.icon("update")}</button>`;

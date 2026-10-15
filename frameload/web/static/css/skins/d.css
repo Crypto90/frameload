@@ -182,6 +182,12 @@ button.telemetry-chip, a.telemetry-chip { font: inherit; font-size: 13px; }
 }
 .telemetry-chip.stop-chip::before { display: inline-block; vertical-align: -3px; margin-right: 7px; }
 .telemetry-chip.stop-chip:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* Show <game> (a running VR game): filled, so it is the first thing found; cut short like Stop */
+.telemetry-chip.show-chip {
+  display: block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; line-height: 38px; font-weight: 600;
+}
+.telemetry-chip.show-chip::before { display: inline-block; vertical-align: 0; margin-right: 8px; }
+.telemetry-chip.show-chip:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: var(--glow); }
 .telemetry-chip.porting-chip {
   --nd-mask: var(--nd-ic-port); font-weight: 500;
   color: var(--accent); background: rgb(57 213 255 / 0.08); border-color: rgb(57 213 255 / 0.45);
@@ -288,6 +294,7 @@ button.telemetry-chip, a.telemetry-chip { font: inherit; font-size: 13px; }
 .recent-meta { font-size: 13px; color: #b3bdd0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .recent-actions { margin-top: 8px; }
 .recent-actions .card-btn { flex: none; min-width: 112px; padding: 0 18px; }
+.recent-actions:has(> .card-btn + .card-btn) .card-btn { flex: 1 1 0; min-width: 0; max-width: 112px; padding: 0 12px; }
 
 /* ---------------------------------------------------------------- cards (library and Browse) */
 .games-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }

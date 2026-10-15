@@ -62,6 +62,7 @@
       </div>
       <div id="header-lepton" class="telemetry-chip lepton missing" style="display:none;"></div>
       <button id="header-perf" class="telemetry-chip perf-chip" style="display:none;" onclick="openPerformanceCard()" title="CPU and memory use"></button>
+      <button id="header-show-game" class="telemetry-chip show-chip" style="display:none;" onclick="showRunningGame()" title="Close Steam's menu so the running game is in front"></button>
       <button id="header-stop-game" class="telemetry-chip stop-chip" style="display:none;" onclick="stopRunningGames()" title="Stop the running game"></button>
       <button id="header-porting" class="telemetry-chip porting-chip" style="display:none;" onclick="openPortingModal()" title="Show porting progress"></button>
       <div id="header-update-alert" class="telemetry-chip update-alert clickable" style="display:none;" onclick="openUpdateModal()" title="FrameLoad Update Available!">
@@ -483,6 +484,16 @@
           </div>
           <div id="access-devices" style="margin-bottom:12px;"></div>
           <button id="btn-access-code" class="btn-primary compact" onclick="showPairingCode()">Show Pairing Code</button>
+        </div>
+
+        <!-- What happens when a VR game starts -->
+        <div class="sys-card">
+          <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:12px;">Starting Games</h3>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            A VR game comes to the front once it shows its first picture. If you only hear it, press <strong>Show</strong> and the game's name in FrameLoad's header or on the game's page.
+          </p>
+          <label class="check-row"><input type="checkbox" id="close-on-vr-start" onchange="setCloseOnVrStart(this.checked)"> <span>Close FrameLoad's window when a VR game shows its first picture</span></label>
+          <p class="tuning-micro-note" style="margin-top:6px;">Then nothing of FrameLoad stays in front of the game. Open FrameLoad again from your Steam library: downloads, installs and ports keep running, and Stop still works.</p>
         </div>
 
         <!-- Default game settings -->

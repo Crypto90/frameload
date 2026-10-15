@@ -214,6 +214,7 @@ body.page-scrolls .main-content {
 .telemetry-chip.lepton.missing { color: var(--warn); border-color: rgb(var(--warn-rgb) / 0.4); background: rgb(var(--warn-rgb) / 0.1); }
 .telemetry-chip.stop-chip { background: #ffffff; color: var(--accent-ink); border-color: #ffffff; font-weight: 700; }
 .telemetry-chip.stop-chip:hover { background: #efe9e2; }
+.telemetry-chip.show-chip { background: var(--ok); color: var(--accent-ink); border-color: var(--ok); }
 .telemetry-chip.porting-chip { color: #ffffff; background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.22); font-size: 0.85rem; }
 .telemetry-chip.update-alert { color: #ffffff; background: rgb(var(--warn-rgb) / 0.18); border-color: rgb(var(--warn-rgb) / 0.5); box-shadow: none; animation: none; }
 .telemetry-chip.kofi-chip { justify-content: center; width: 44px; padding: 0; background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.16); color: #ffb3b1; }
@@ -910,6 +911,9 @@ a { color: inherit; }
 .sp-round.stop,
 .sp-round.stop:hover { background: #ffffff; color: var(--accent-ink); border-color: #ffffff; }
 .sp-round.update { background: var(--warn); color: #2a1800; border-color: var(--warn); }
+/* A running VR game: Show beside Stop */
+.sp-round.show { right: 78px; }
+.sp-card:has(.sp-round.show) .sp-card-info { right: 142px; }
 
 /* Every game and app: rounded-square icons with the name below, like a headset's home screen */
 .sp-grid {

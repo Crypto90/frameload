@@ -102,7 +102,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
   - A downloaded cover is used for the poster where there is one.
   - The dashboard draws whatever is still missing from the icon, the cover and the title.
 - **New games:** Steam loads new shortcuts only when it starts. FrameLoad shows which games are waiting, starts them itself in the meantime, and offers **Restart Steam Now**.
-- **Steam's menu:** Steam opens its Resume / Exit menu over a game that has just started. When a ported game shows its first frame, its launcher closes that menu.
+- **Steam's menu:** Steam opens its Resume / Exit menu over a game that has just started. When a ported game shows its first frame, its launcher closes that menu. If you only hear a VR game, **Show** brings it in front of FrameLoad's window. See [Steam's menu over a game that just started](#steams-menu-over-a-game-that-just-started).
 
 ### 💾 Storage: internal, microSD and USB
 - **Only real drives are listed:** the internal storage, a microSD card and USB drives. Drives are classified by the bus the kernel reports, so the Frame's own system partitions never appear.
@@ -310,9 +310,26 @@ Command line: `frameload port --setup`, `frameload port <package>`, `frameload p
 
 ### Steam's menu over a game that just started
 
-When a ported game shows its first frame, Steam opens its own menu (Resume / Exit game) on top of it. FrameLoad's launcher closes that menu through Steam's own interface, and stops as soon as you open the menu yourself with the controller's Steam button.
+FrameLoad's window lives in SteamVR's dashboard, the same layer as Steam's menu. A VR game appears behind it, so until that layer is closed you stay in FrameLoad and only hear the game.
 
-To switch this off for one game, put `FRAMELOAD_KEEP_DASHBOARD=1 %command%` in its launch options in Steam (game → Properties).
+**Show &lt;game&gt;.** While a VR game runs, FrameLoad offers **Show** with the game's name:
+- next to the **Stop** chip (Showcase and Daylight leave it out on the Library, where their "playing now" area has it);
+- on the game's page;
+- where each look shows the running game: **Show** replaces Resume in Big Picture, Showcase and Command Center, and sits beside Stop in Spatial, Neon and Daylight.
+
+Show closes Steam's menu the way Steam's own Resume does, then checks a second later that it stayed closed. If it did not, FrameLoad says: "Steam's menu could not be closed from here. Press the Steam button on your controller." The toast after **Play** of a VR game points at it too. If the headset shows black after Show, the game itself is not drawing.
+
+**Automatically.** When a ported game shows its first frame, its launcher closes Steam's menu by itself:
+- It sees the first frame in the game's log. If Lepton stops copying that log into `launch.log` (it can, while the game keeps running), the launcher asks the game's container directly every 2 seconds.
+- It stops as soon as you open the menu yourself with the controller's Steam button. Presses made while the game was still loading do not count.
+- If the menu comes back ten times within 15 seconds, it gives up and the Launch Log says so.
+- `dashboard.log` in the game's folder ends with one line on what happened (`result: hidden 1`, `no-frames`, `player`, `keeps-reopening` or `error ...`). The game's **Launch Log** explains it in plain words, and says when FrameLoad started the game directly because Steam had not loaded it yet.
+
+A game that was not ported has no FrameBridge and does not report its first frame, so for it only Show helps.
+
+**Close FrameLoad's window when a VR game shows its first picture** (System → Starting Games, off by default) closes FrameLoad's window at the game's first frame, or when Steam's menu keeps coming back. Then nothing of FrameLoad stays in front of the game. Open FrameLoad again from your Steam library: downloads, installs and ports keep running in the background, and Stop still works.
+
+To switch the automatic closing of Steam's menu off for one game, put `FRAMELOAD_KEEP_DASHBOARD=1 %command%` in its launch options in Steam (game → Properties).
 
 If Steam's "Exit game" does not end a game, use **Stop** in FrameLoad. That happens when FrameLoad started the game itself because Steam had not loaded its shortcut yet: the game was installed (or moved to another drive) while Steam was running. A game Steam already had in its library stays there when it is ported or updated, and starts through Steam.
 
@@ -527,6 +544,7 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `frameport-venv/`, `frameport-home/` | FramePort and its tools (Java, OVRPort, apksigner, signing keys) |
 | `bin/` | 7-Zip |
 | `chromium-profile/`, `firefox-profile/` | Window profiles for a Chrome, Chromium or Firefox that is not a Flatpak |
+| `window.lock`, `window.pid` | Held and written by `run.sh` while FrameLoad's window is open (one window at a time; a game's launcher closes it when System → Starting Games asks for that) |
 | `server.log` | Server output when it runs without systemd (with systemd: `journalctl --user -u frameload`) |
 
 **One game: `~/Applications/quest-frame/<package>/`** (on a microSD card or USB drive: `<drive>/quest-frame/<package>/`)
@@ -537,7 +555,8 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `deployment.json` | What FrameLoad knows about the game |
 | `settings.conf` | FrameBridge settings |
 | `artwork/` | Steam artwork, the APK's own icon and `artwork.json` |
-| `launch.log`, `dashboard.log` | Output of the last start |
+| `launch.log`, `dashboard.log` | Output of the last start; `dashboard.log` ends with what became of Steam's menu over the game |
+| `.last_launch` | How FrameLoad started the game last: through Steam, or directly because Steam had not loaded it |
 | `.last_played`, `.playtime` | Play history |
 | `.session_end`, `.launch_error` | How the last session ended (start, end, exit status), and why the launcher could not start Lepton |
 | `unported.apk` | The original APK of a ported game |
@@ -554,6 +573,7 @@ Almost everything is set in the dashboard. FrameLoad keeps its settings in `~/.l
 | Key | Default | Meaning |
 | :--- | :--- | :--- |
 | `ui.skin` / `ui.daylight` | `"a"` / `"light"` | The look (`a`-`f`) and Daylight's mode (System → Appearance) |
+| `ui.close_on_vr_start` | `false` | Close FrameLoad's window when a VR game shows its first picture (System → Starting Games) |
 | `porting.auto` | `true` | Port Quest games automatically after installing them |
 | `porting.auto_setup` | `true` | Download and update the porting tools automatically |
 | `porting.frameport_cli` | `""` | Use this FramePort executable instead of FrameLoad's own copy (a path, or a list such as `["python3", "-m", "frameport"]`) |

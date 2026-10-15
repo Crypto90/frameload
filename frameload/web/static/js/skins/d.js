@@ -79,7 +79,7 @@
         <div class="recent-info">
           <div class="recent-title" title="${ctx.esc(game.title)}">${ctx.esc(game.title)}</div>
           <div class="recent-meta" title="${ctx.esc(meta)}">${ctx.esc(meta)}</div>
-          <div class="recent-actions">${ctx.primaryButton(game)}</div>
+          <div class="recent-actions">${ctx.showButton(game, "card-btn play", { short: true })}${ctx.primaryButton(game)}</div>
         </div>
       </div>`;
   }

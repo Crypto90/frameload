@@ -260,7 +260,7 @@ function setupTabs() {
       if (targetId === "catalog") loadCatalog();
       else if (targetId === "library") { loadInstalled(); loadSteamStatus(); }
       else if (targetId === "storage") loadStorageOverview();
-      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); }
+      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); loadStartingGames(); }
       if (targetId === "system") startPerfLive(); else stopPerfLive();
 
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
@@ -1066,7 +1066,7 @@ function recentCardHtml(game) {
       <div class="recent-info">
         <div class="recent-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
         <div class="recent-meta">${escapeHtml(playedLabel(game))}${total ? ` · ${escapeHtml(total)}` : ""}</div>
-        <div class="recent-actions">${libraryPrimaryButton(game)}</div>
+        <div class="recent-actions">${showButtonHtml(game, "card-btn play", { short: true })}${libraryPrimaryButton(game)}</div>
       </div>
     </div>`;
 }
@@ -1170,8 +1170,13 @@ async function launchGame(pkg) {
     } else if (port && port.needed) {
       showToast(`${name} needs porting before it can start. Open the game and press Port & Play.`, "warning");
     } else if (data.success) {
-      showToast(data.launched_via_steam ? "Starting through Steam..."
-        : data.in_steam_library === false ? "Starting directly: Steam has not loaded this game yet. Use Stop in FrameLoad to close it."
+      // A VR game appears when it shows its first picture; until then (or if Steam's menu stays
+      // over it) it can only be heard, and Show brings it to the front.
+      const direct = !data.launched_via_steam && data.in_steam_library === false;
+      showToast(game && game.is_vr
+        ? `Starting ${name}. If you only hear it, press Show ${name}.${direct ? " Steam has not loaded it yet, so end it with Stop here." : ""}`
+        : data.launched_via_steam ? "Starting through Steam..."
+        : direct ? "Starting directly: Steam has not loaded this game yet. Use Stop in FrameLoad to close it."
         : "Starting...", "success");
       loadInstalled();
       [4000, 12000, 25000].forEach(delay => setTimeout(refreshRunningGames, delay));
@@ -1183,13 +1188,60 @@ async function launchGame(pkg) {
   }
 }
 
-// A game FrameLoad started itself has no "exit" in Steam, so the dashboard always offers Stop.
+// A game FrameLoad started itself has no "exit" in Steam, so the dashboard always offers Stop. A
+// running VR game also gets Show: it can play behind Steam's menu and this window (see showGame).
 function renderStopChip() {
-  const chip = document.getElementById("header-stop-game");
-  if (!chip) return;
   const running = (state.installed || []).filter(g => g.is_running);
-  chip.style.display = running.length ? "" : "none";
-  chip.textContent = running.length === 1 ? `Stop ${running[0].title}` : `Stop ${running.length} Games`;
+  const chip = document.getElementById("header-stop-game");
+  if (chip) {
+    chip.style.display = running.length ? "" : "none";
+    chip.textContent = running.length === 1 ? `Stop ${running[0].title}` : `Stop ${running.length} Games`;
+  }
+  const show = document.getElementById("header-show-game");
+  if (show) {
+    const vr = running.filter(g => g.is_vr);
+    show.style.display = vr.length ? "" : "none";
+    show.textContent = vr.length === 1 ? `Show ${vr[0].title}` : "Show Game";
+    show.title = vr.length === 1 ? `Close Steam's menu so ${vr[0].title} is in front` : "Close Steam's menu so the running game is in front";
+  }
+}
+
+const MENU_LEFT_OPEN = "Steam's menu could not be closed from here. Press the Steam button on your controller.";
+
+// Show <game>: a VR game draws behind SteamVR's dashboard, where this window lives, until the
+// dashboard is closed. The server closes it through Steam's own interface, as Steam's Resume does.
+async function showGame(pkg) {
+  const game = (state.installed || []).find(g => g.package === pkg);
+  const name = game ? game.title : pkg;
+  let res;
+  try {
+    res = await apiPost("/api/installed/show-game", { package: pkg });
+  } catch (e) {
+    showToast(MENU_LEFT_OPEN, "error");
+    return;
+  }
+  if (res.success) {
+    showToast(`${name} is in front now.`, "success");
+  } else if (res.running === false) {
+    showToast(res.error || `${name} is not running.`, "warning");
+    refreshRunningGames();
+  } else {
+    showToast(res.error || MENU_LEFT_OPEN, "error");
+  }
+}
+
+function showRunningGame() {
+  const game = (state.installed || []).find(g => g.is_running && g.is_vr);
+  if (game) showGame(game.package);
+}
+window.showGame = showGame;
+window.showRunningGame = showRunningGame;
+
+// The button a running VR game gets next to Stop on its card, page or a look's "playing now" area.
+function showButtonHtml(game, cls, opts = {}) {
+  if (!game.is_running || !game.is_vr) return "";
+  const label = opts.short ? "Show" : `Show ${escapeHtml(game.title)}`;
+  return `<button type="button" class="${cls}" title="Close Steam's menu so ${escapeHtml(game.title)} is in front"${opts.short ? ` aria-label="Show ${escapeHtml(game.title)}"` : ""} onclick="event.stopPropagation(); showGame(${jsArg(game.package)})">${opts.icon || ""}${label}</button>`;
 }
 
 async function refreshRunningGames() {
@@ -1579,7 +1631,7 @@ function openGameModal(id, mode = "catalog") {
     const lepton = game.kind === "quest" || game.kind === "flat";
     const needsPort = game.kind === "quest" && game.compat && game.compat.level === "needs_port";
     const primary = game.is_running
-      ? `<button class="btn-danger" onclick="closeModal(); stopGame(${arg})">Stop</button>`
+      ? `${showButtonHtml(game, "btn-primary")}<button class="btn-danger" onclick="closeModal(); stopGame(${arg})">Stop</button>`
       : needsPort
       ? (game.port_failed
           ? `<button class="btn-primary" onclick="closeModal(); portGame(${arg})">Port Again</button>`
@@ -4495,10 +4547,36 @@ async function setKeepAwakeWhileBusy(enabled) {
 }
 window.setKeepAwakeWhileBusy = setKeepAwakeWhileBusy;
 
+// === Starting games ===
+// The game's launcher reads this setting itself (system/steam_ui.py) when the game shows its first picture.
+async function loadStartingGames() {
+  const box = document.getElementById("close-on-vr-start");
+  if (!box) return;
+  try {
+    const cfg = await apiGet("/api/config");
+    box.checked = !!(cfg.ui && cfg.ui.close_on_vr_start === true);
+  } catch (e) {
+    /* next visit */
+  }
+}
+
+async function setCloseOnVrStart(enabled) {
+  try {
+    const res = await apiPost("/api/ui/starting", { close_on_vr_start: !!enabled });
+    showToast(res.close_on_vr_start
+      ? "FrameLoad's window now closes when a VR game shows its first picture."
+      : "FrameLoad's window now stays open when a game starts.", "success");
+  } catch (e) {
+    showToast(e.message, "error");
+    loadStartingGames();
+  }
+}
+window.setCloseOnVrStart = setCloseOnVrStart;
+
 document.addEventListener("DOMContentLoaded", () => {
   loadPerf();
   state.perf.chipTimer = setInterval(() => { if (!state.perf.timer) loadPerf(); }, 5000);
-  if (state.activeTab === "system") { startPerfLive(); loadGuard(); loadKeepAwake(); }
+  if (state.activeTab === "system") { startPerfLive(); loadGuard(); loadKeepAwake(); loadStartingGames(); }
   setInterval(() => { if (state.activeTab === "system") { loadGuard(); loadKeepAwake(); } }, 6000);
 });
 
@@ -4876,6 +4954,7 @@ const ICONS = {
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   update: '<path d="M12 20V9M7 13.5l5-5 5 5M5 4.5h14"/>',
   wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.8 12.6a9.2 9.2 0 0 1 12.4 0M9 16.1a4.5 4.5 0 0 1 6 0"/><circle cx="12" cy="19.4" r="1.1" fill="currentColor" stroke="none"/>',
+  show: '<path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
 };
 function icon(name, cls = "") {
   return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -4923,6 +5002,8 @@ function skinContext() {
     playtime: formatPlaytime,
     ago: timeAgo,
     primaryButton: libraryPrimaryButton,
+    // showButton(game, cls, {short, icon}): Show for a running VR game, "" for anything else.
+    showButton: showButtonHtml,
     updateFor: libraryUpdateFor,
     cardHtml: libraryCardHtml,
     sortSelect: () => {

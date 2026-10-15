@@ -5,6 +5,7 @@ Steam Frame; anything else is shown as the raw log.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any, Dict, List
@@ -46,7 +47,27 @@ RULES = [
      "FrameBridge reported frames being shown."),
     (r"Early-exit", "warn", "The container stopped early",
      "Lepton ended before the app was running. The lines above that message usually say why."),
+    (r"logcat: Unexpected EOF!|Logcat read failure", "warn", "Lepton stopped copying the game's log",
+     "The game itself may have kept running; its later lines are missing here. FrameLoad then asks the game's "
+     "container directly whether it shows a picture. If you only heard the game, press Show on its page in FrameLoad."),
 ]
+
+# The last line steam_ui writes to dashboard.log: "result: <what happened to Steam's menu>".
+DASHBOARD_RESULTS = {
+    "no-frames": ("info", "FrameLoad saw no VR picture from the game",
+                  "So Steam's menu and FrameLoad's window were left in front of it. If you only heard the game, press "
+                  "Show {title} in FrameLoad (in its header or on the game's page). If the headset then stays black, "
+                  "the game itself does not draw."),
+    "player": ("info", "You opened Steam's menu yourself",
+               "FrameLoad stops closing Steam's menu once you press the Steam button, so it stayed open."),
+    "keeps-reopening": ("warn", "Steam's menu kept coming back over the game",
+                        "FrameLoad closed it ten times within seconds. Turn on \"Close FrameLoad's window when a VR game "
+                        "shows its first picture\" under System > Starting Games, or start the game from your Steam library."),
+    "error": ("info", "Steam's menu could not be closed from here",
+              "FrameLoad could not reach Steam's interface. Press the Steam button on your controller to get to the game."),
+}
+NO_FRAMEBRIDGE = (" This game was not ported, so it does not report its first picture: FrameLoad cannot close "
+                  "Steam's menu for it by itself.")
 
 
 def read_log(package_name: str) -> Dict[str, Any]:
@@ -65,14 +86,73 @@ def read_log(package_name: str) -> Dict[str, Any]:
             lines = f.read().splitlines()
     except OSError as e:
         raise OSError(f"Could not read the launch log: {e}") from e
+    findings = diagnose(lines) + session_findings(base, dep)
+    if len(findings) > 1:  # "nothing known" is only true when nothing else was found
+        findings = [f for f in findings if f["title"] != NOTHING_FOUND]
     return {
         "package": package_name,
         "exists": True,
         "modified": os.path.getmtime(path),
         "lines": [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines[-MAX_LINES:]],
         "truncated": len(lines) > MAX_LINES,
-        "findings": diagnose(lines),
+        "findings": findings,
     }
+
+
+def _read_json(path: str) -> Dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _started_at(base: str) -> float:
+    """When launch.sh last started the game (.last_played), 0 if unknown."""
+    try:
+        with open(os.path.join(base, ".last_played"), "r", encoding="utf-8") as f:
+            return float(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0.0
+
+
+def session_findings(base: str, dep: Dict[str, Any]) -> List[Dict[str, str]]:
+    """What the last start's other files say: how FrameLoad started it (.last_launch) and what became
+    of Steam's menu over it (the result line steam_ui ends dashboard.log with)."""
+    findings: List[Dict[str, str]] = []
+    title = dep.get("title") or dep.get("package") or "the game"
+    started = _started_at(base)
+
+    launch = _read_json(os.path.join(base, ".last_launch"))
+    # Only when that record belongs to the last start: a start from the Steam library writes none.
+    if launch.get("via") == "direct" and (not started or 0 <= started - float(launch.get("time") or 0) <= 120):
+        findings.append({
+            "severity": "info", "title": "Started directly (Steam had not loaded it)",
+            "advice": "It was installed or moved while Steam was running, so Steam has no entry for it yet: Steam shows "
+                      "no Resume or Exit for it. End it with Stop in FrameLoad. After Steam restarts, Play starts it "
+                      "through Steam."})
+
+    path = os.path.join(base, "dashboard.log")
+    try:
+        if started and os.path.getmtime(path) < started - 5:
+            return findings  # from an earlier start
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            results = [line.strip()[len("result:"):].strip() for line in f if line.strip().startswith("result:")]
+    except OSError:
+        return findings
+    if not results:
+        return findings
+    kind = results[-1].split(" ", 1)[0]
+    if kind in DASHBOARD_RESULTS:
+        severity, head, advice = DASHBOARD_RESULTS[kind]
+        if kind == "no-frames" and dep.get("is_vr", True) and dep.get("xr_runtime") not in (None, "", "framebridge"):
+            advice += NO_FRAMEBRIDGE
+        findings.append({"severity": severity, "title": head, "advice": advice.format(title=title)})
+    return findings
+
+
+NOTHING_FOUND = "No known problem found in the log"
 
 
 def diagnose(lines: List[str]) -> List[Dict[str, str]]:
@@ -97,6 +177,6 @@ def diagnose(lines: List[str]) -> List[Dict[str, str]]:
     if any(f["severity"] == "error" for f in findings):
         findings = [f for f in findings if f["severity"] != "ok"]
     if not findings:
-        findings.append({"severity": "info", "title": "No known problem found in the log",
+        findings.append({"severity": "info", "title": NOTHING_FOUND,
                          "advice": "If the game does not work, the raw log below is what to share when asking for help."})
     return findings

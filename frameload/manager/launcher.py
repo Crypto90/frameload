@@ -1,6 +1,7 @@
 """Game launch and termination coordinator for Steam Frame."""
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -12,6 +13,7 @@ from .installed import InstalledManager
 
 
 CONTAINER_PREFIX = "lepton-steamlaunch-"
+LAST_LAUNCH = ".last_launch"
 
 
 class GameLauncher:
@@ -82,6 +84,7 @@ class GameLauncher:
                 env=dict(os.environ, FRAMELOAD_DETACHED="1"),
                 start_new_session=True
             )
+        GameLauncher._note_launch(dep.get("base") or anchor, launched_via_steam, not in_library)
 
         return {
             "success": True,
@@ -91,6 +94,34 @@ class GameLauncher:
             "in_steam_library": in_library,
             "gameid": gid,
         }
+
+    @staticmethod
+    def _note_launch(base: str, via_steam: bool, pending: bool) -> None:
+        """How FrameLoad started the game last (<base>/.last_launch), for its Launch Log: a game
+        started directly is one Steam does not know, so Steam shows no Resume or Exit for it."""
+        record = {"time": int(time.time()), "via": "steam" if via_steam else "direct", "pending": pending}
+        try:
+            with open(os.path.join(base, LAST_LAUNCH), "w", encoding="utf-8") as f:
+                json.dump(record, f)
+        except OSError:
+            pass
+
+    @staticmethod
+    def show(package_name: str) -> Dict[str, Any]:
+        """Show <game>: closes SteamVR's dashboard, where FrameLoad's window lives, so the running VR
+        game is in front. For when the game plays its sound behind FrameLoad."""
+        dep = InstalledManager.get_game(package_name)
+        if not dep:
+            return {"success": False, "package": package_name, "error": "Game not found"}
+        title = dep.get("title", package_name)
+        base = {"package": package_name, "title": title}
+        if not dep.get("is_vr", True):
+            return {**base, "success": False, "error": f"{title} is a 2D app: it has a window of its own."}
+        appid = dep.get("appid")
+        if not appid or f"{CONTAINER_PREFIX}{appid}" not in GameLauncher.running_containers():
+            return {**base, "success": False, "running": False, "error": f"{title} is not running."}
+        from ..system import steam_ui
+        return {**base, "running": True, **steam_ui.show_game()}
 
     @staticmethod
     def running_containers() -> List[str]:

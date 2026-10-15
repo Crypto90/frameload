@@ -67,7 +67,9 @@
     const lv = level(g);
     const out = [];
     if (g.is_running) {
-      out.push(`<button type="button" class="c-play" onclick="launchGame(${pkg})">${ctx.icon("play")}Resume</button>`);
+      // A VR game resumes by closing Steam's menu over it (Show); a 2D app is a window of its own.
+      out.push(g.is_vr ? ctx.showButton(g, "c-play", { short: true, icon: ctx.icon("play") })
+        : `<button type="button" class="c-play" onclick="launchGame(${pkg})">${ctx.icon("play")}Resume</button>`);
       out.push(`<button type="button" class="c-glass" onclick="stopGame(${pkg})">${ctx.icon("stop")}Stop</button>`);
     } else if (lv === "needs_port" && g.kind === "quest") {
       out.push(g.port_failed

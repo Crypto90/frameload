@@ -61,6 +61,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "add_grid_artwork": True,
     },
     # The dashboard's look (System > Appearance): a..f, and Daylight's light or dark version.
+    # Also "close_on_vr_start" (System > Starting Games, off unless set): a VR game's launcher closes
+    # FrameLoad's window when the game shows its first picture (system/steam_ui.py).
     "ui": {"skin": "a", "daylight": "light"},
     "storage": {
         "default_device_id": "internal",
