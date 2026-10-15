@@ -83,6 +83,7 @@ class TestApkIcon(Case):
         self.assertTrue(saved.endswith("apk_icon.png"))
         with open(saved, "rb") as f:
             self.assertEqual(f.read(), PNG_LARGE)
+        self.assertEqual(artwork.apk_icon_kind(self.art), "full")
 
     def test_an_adaptive_icon_gives_its_foreground(self):
         adaptive = build_axml(("adaptive-icon", {}, [("background", {"drawable": ref(BG_ID)}, []),
@@ -95,6 +96,7 @@ class TestApkIcon(Case):
             "res/drawable-xxhdpi/ic_bg.png": PNG_SMALL})
         saved = artwork.extract_apk_icon(path, self.art)
         self.assertTrue(saved.endswith("apk_icon.webp"))
+        self.assertEqual(artwork.apk_icon_kind(self.art), "foreground")  # a glyph without its background
 
     def test_without_a_resource_table_the_usual_file_names_are_used(self):
         path = apk(os.path.join(self.tmp, "c.apk"), icon="res/missing.png", files={
@@ -155,6 +157,7 @@ class TestIconSource(Case):
         os.makedirs(self.art)
         with open(os.path.join(self.art, "apk_icon.png"), "wb") as f:
             f.write(PNG_LARGE)
+        artwork.write_state(self.art, {"apk_icon": "full"})
         info = self.ensure()
         self.assertTrue(os.path.isfile(os.path.join(self.art, "poster.jpg")))
         self.assertFalse(os.path.exists(os.path.join(self.art, "icon.jpg")))
@@ -179,7 +182,10 @@ class TestIconSource(Case):
         self.assertNotIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])  # no APK icon: keep it
         with open(os.path.join(self.art, "apk_icon.webp"), "wb") as f:
             f.write(b"RIFF\x10\x00\x00\x00WEBPVP8 fake")
+        artwork.write_state(self.art, {"apk_icon": "full"})
         self.assertIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])
+        # The shortcut already names the file the dashboard is about to write; icon.jpg goes away then.
+        self.assertEqual(artwork.steam_icon(self.art), os.path.join(self.art, "icon.png"))
         artwork.save_composed(self.art, "icon", PNG_SMALL)  # the dashboard's drawing replaces the copy
         self.assertFalse(os.path.exists(os.path.join(self.art, "icon.jpg")))
         self.assertNotIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])
@@ -188,9 +194,44 @@ class TestIconSource(Case):
         os.makedirs(self.art)
         with open(os.path.join(self.art, "icon.webp"), "wb") as f:
             f.write(b"RIFF\x10\x00\x00\x00WEBPVP8 fake")
-        artwork.write_state(self.art, {"icon": "downloaded"})
-        self.assertEqual(artwork.steam_icon(self.art), "")
-        self.assertIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])
+        with open(os.path.join(self.art, "apk_icon.png"), "wb") as f:
+            f.write(PNG_LARGE)
+        artwork.write_state(self.art, {"icon": "downloaded", "apk_icon": "full"})
+        self.assertEqual(artwork.steam_icon(self.art), os.path.join(self.art, "icon.png"))
+        info = artwork.artwork_info(self.art, "com.art.game")
+        self.assertIn("icon", info["pending"])
+        self.assertEqual(info["icon_from"], "icon")  # converted, not swapped for the APK's icon
+
+    def test_a_foreground_layer_alone_does_not_replace_the_cover(self):
+        os.makedirs(self.art)
+        with open(os.path.join(self.art, "apk_icon.webp"), "wb") as f:
+            f.write(b"RIFF\x10\x00\x00\x00WEBPVP8 fake")
+        artwork.write_state(self.art, {"apk_icon": "foreground"})
+        info = self.ensure()
+        with open(os.path.join(self.art, "icon.jpg"), "rb") as f:
+            self.assertEqual(f.read(), self.JPEG_COVER)
+        self.assertNotIn("icon", info["pending"])
+        self.assertTrue(info["icon_layer"])  # without a cover, the dashboard puts colours behind it
+
+    def test_icons_taken_out_by_older_versions_are_looked_at_once_more(self):
+        anchor = os.path.join(self.tmp, "com.art.game")
+        art = os.path.join(anchor, "artwork")
+        os.makedirs(os.path.join(anchor, "lepton-app"))
+        arsc = build_arsc({(2, 0, 640): "res/mipmap-xxxhdpi/app_icon.png"})
+        apk(os.path.join(anchor, "lepton-app", "game.apk"), arsc=arsc, files={"res/mipmap-xxxhdpi/app_icon.png": PNG_LARGE})
+        os.makedirs(art)
+        for name, data in (("apk_icon.png", PNG_LARGE), ("poster.jpg", self.JPEG_COVER), ("icon.jpg", self.JPEG_COVER)):
+            with open(os.path.join(art, name), "wb") as f:
+                f.write(data)
+        artwork.write_state(art, {"poster": "downloaded", "icon": "downloaded"})  # v1.3.6: no "apk_icon" kind
+        self.assertIn("icon", artwork.artwork_info(art, "com.art.game")["pending"])
+        self.assertEqual(artwork.read_state(art)["apk_icon"], "full")
+
+        # Without the APK nothing can be learnt: the cover stays the icon, and the APK is not looked for again.
+        os.remove(os.path.join(anchor, "lepton-app", "game.apk"))
+        artwork.write_state(art, {"apk_icon": ""})
+        self.assertNotIn("icon", artwork.artwork_info(art, "com.art.game")["pending"])
+        self.assertEqual(artwork.read_state(art)["apk_icon"], "unknown")
 
     def test_an_install_points_the_shortcut_at_an_icon_that_exists(self):
         from frameload.installer.lepton_quest import LeptonInstaller
@@ -295,6 +336,28 @@ class TestSteamGrid(Case):
         own = entries["FrameLoad"]["appid"]
         self.assertEqual(sorted(g for g in grid if g.startswith(str(own))),
                          sorted(f"{own}{s}.png" for s in ("p", "", "_hero", "_logo", "_icon")))
+
+
+    def test_restart_steam_leaves_frameloads_own_tile_alone_when_it_is_there(self):
+        from frameload.manager.installed import InstalledManager
+        from frameload.system import steam_session
+        app = os.path.join(self.tmp, "FrameLoad")
+        os.makedirs(os.path.join(app, "frameload"))
+        open(os.path.join(app, "run.sh"), "w").close()
+        open(os.path.join(app, "frameload", "cli.py"), "w").close()
+        exe = '"' + os.path.join(app, "run.sh") + '"'
+        with open(self.vdf, "wb") as f:  # renamed in Steam, with a cover the player picked
+            f.write(vdf_encode({"shortcuts": {"0": {"appid": 3000000003, "appname": "Sideloader", "Exe": exe}}}))
+        grid = os.path.join(self.steam, "userdata", "111", "config", "grid")
+        os.makedirs(grid)
+        with open(os.path.join(grid, "3000000003p.png"), "wb") as f:
+            f.write(b"the player's own cover")
+        with patch.object(steam_session, "APP_DIR", app), patch.object(InstalledManager, "list_installed", return_value=[]):
+            self.assertEqual(steam_session.resync_shortcuts(), 0)
+        with open(self.vdf, "rb") as f:
+            self.assertEqual([e["appname"] for e in vdf_decode(f.read())["shortcuts"].values()], ["Sideloader"])
+        with open(os.path.join(grid, "3000000003p.png"), "rb") as f:
+            self.assertEqual(f.read(), b"the player's own cover")
 
 
 class TestUploadRoute(Case):

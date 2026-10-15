@@ -106,7 +106,10 @@ def slot_file(output_dir: str, slot: str) -> Optional[str]:
 
 def steam_icon(output_dir: str) -> str:
     """The icon file a Steam shortcut points at: icon.png or icon.jpg, '' when there is none Steam can
-    show. The dashboard always redraws the icon as icon.png, so a placeholder's path stays valid."""
+    show. The dashboard always draws the icon as icon.png, so an icon it is about to draw is named by
+    that path already (the file it replaces is deleted then)."""
+    if icon_redraw(output_dir):
+        return os.path.join(output_dir, "icon.png")
     for ext in (".png", ".jpg"):
         path = os.path.join(output_dir, "icon" + ext)
         if os.path.isfile(path):
@@ -122,6 +125,38 @@ def _same_content(a: Optional[str], b: Optional[str]) -> bool:
             return fa.read() == fb.read()
     except OSError:
         return False
+
+
+def apk_icon_kind(output_dir: str) -> str:
+    """'full' for a complete launcher icon taken from the APK, 'foreground' for only the foreground layer
+    of an adaptive icon (a glyph without its background), '' when there is no APK icon. Icons taken out
+    by versions up to v1.3.6 are looked at once more in the game's APK."""
+    if not slot_file(output_dir, "apk_icon"):
+        return ""
+    kind = read_state(output_dir).get("apk_icon", "")
+    if not kind:
+        apk = os.path.join(os.path.dirname(output_dir), "lepton-app", "game.apk")
+        if os.path.isfile(apk) and extract_apk_icon(apk, output_dir):
+            kind = read_state(output_dir).get("apk_icon", "")
+        if not kind:
+            kind = "unknown"
+            write_state(output_dir, {"apk_icon": kind})  # not opened again on every page load
+    return kind if kind in ("full", "foreground") else ""
+
+
+def icon_redraw(output_dir: str) -> str:
+    """Why the icon slot is drawn again although it holds a picture: 'webp' (Steam cannot show it),
+    'apk' (a copy of the cover, which versions up to v1.3.6 put there although the APK has a complete
+    icon of its own), '' when it is kept."""
+    icon = slot_file(output_dir, "icon")
+    if not icon:
+        return ""
+    if icon.endswith(".webp"):
+        return "webp"
+    if (read_state(output_dir).get("icon") == "downloaded" and _same_content(icon, slot_file(output_dir, "poster"))
+            and apk_icon_kind(output_dir) == "full"):
+        return "apk"
+    return ""
 
 
 def slot_sources(output_dir: str, package_name: str, title: str = "") -> Dict[str, str]:
@@ -176,6 +211,7 @@ def extract_apk_icon(apk_path: str, output_dir: str) -> Optional[str]:
                 return None
 
             best = raster(paths)
+            kind = "full"
             if not best and arsc:
                 for xml in (p for p in paths if p.endswith(".xml") and p in names):
                     try:
@@ -187,10 +223,13 @@ def extract_apk_icon(apk_path: str, output_dir: str) -> Optional[str]:
                     if isinstance(drawable, ResRef):
                         best = raster([p for _, p in resource_files(arsc, int(drawable))])
                     if best:
+                        kind = "foreground"  # an adaptive icon's foreground: no background of its own
                         break
             if not best:  # no resource table, or an icon that is only a vector drawing
                 matches = [n for n in names if ICON_NAMES.match(n)]
                 best = max(matches, key=lambda n: zf.getinfo(n).file_size, default=None)
+                if best and "foreground" in best.rsplit("/", 1)[-1]:
+                    kind = "foreground"
             if not best or zf.getinfo(best).file_size > MAX_ICON_BYTES:
                 return None
             data = zf.read(best)
@@ -208,6 +247,7 @@ def extract_apk_icon(apk_path: str, output_dir: str) -> Optional[str]:
     path = os.path.join(output_dir, "apk_icon" + ext)
     with open(path, "wb") as f:
         f.write(data)
+    write_state(output_dir, {"apk_icon": kind})
     return path
 
 
@@ -216,19 +256,18 @@ def artwork_info(output_dir: str, package_name: str, title: str = "") -> Dict[st
     which pictures it can draw them from."""
     sources = slot_sources(output_dir, package_name, title)
     has = lambda name: bool(slot_file(output_dir, name))  # noqa: E731
-    icon_file = slot_file(output_dir, "icon")
-    # The app's own launcher icon beats a copy of the cover, which versions up to v1.3.6 put into the
-    # icon slot; and Steam cannot show a WebP icon. The dashboard redraws either case as icon.png.
-    redraw_icon = bool(icon_file) and (icon_file.endswith(".webp") or (
-        has("apk_icon") and sources.get("icon") == "downloaded" and _same_content(icon_file, slot_file(output_dir, "poster"))))
+    redraw = icon_redraw(output_dir)  # the dashboard draws these as icon.png
     pending = [slot for slot in COMPOSED_SLOTS
                if sources.get(slot) == "generated" or (slot == "logo" and "logo" not in sources)
-               or (slot != "logo" and not slot_file(output_dir, slot)) or (slot == "icon" and redraw_icon)]
+               or (slot != "logo" and not slot_file(output_dir, slot)) or (slot == "icon" and bool(redraw))]
     top, bottom = app_colours(package_name or title)
     return {
         "pending": pending if os.path.isdir(output_dir) else [],
         "cover": sources.get("poster") == "downloaded",
         "icon": has("apk_icon") or sources.get("icon") == "downloaded",
+        # A downloaded WebP icon is converted, not swapped for the APK's; a foreground layer gets a backdrop.
+        "icon_from": "icon" if redraw == "webp" else "apk_icon",
+        "icon_layer": apk_icon_kind(output_dir) == "foreground",
         "colors": ["#%02x%02x%02x" % top, "#%02x%02x%02x" % bottom],
     }
 
@@ -315,9 +354,10 @@ class ArtworkManager:
                 if image_extension(cover):
                     art["poster"] = write("poster", cover)
                     state["poster"] = "downloaded"
-                    # Without an icon of its own the cover is the best icon there is. With the APK's
-                    # launcher icon, the slot stays a placeholder and the dashboard draws that icon.
-                    if "icon" not in art and not slot_file(output_dir, "apk_icon"):
+                    # Without a complete icon of its own (none, or only an adaptive icon's foreground
+                    # layer) the cover is the best icon there is. With the APK's launcher icon, the
+                    # slot stays a placeholder and the dashboard draws that icon.
+                    if "icon" not in art and apk_icon_kind(output_dir) != "full":
                         art["icon"] = write("icon", cover)
                         state["icon"] = "downloaded"
 

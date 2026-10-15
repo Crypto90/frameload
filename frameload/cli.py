@@ -159,7 +159,7 @@ def main() -> None:
     stop_parser.add_argument("package", nargs="?", default="", help="Package name; leave out to stop every running game")
 
     subparsers.add_parser("doctor", help="Check that this Steam Frame has everything FrameLoad needs")
-    subparsers.add_parser("sync-shortcuts", help="Write the Steam shortcuts of FrameLoad and every installed game again")
+    subparsers.add_parser("sync-shortcuts", help="Write every installed game's Steam shortcut again, and FrameLoad's own if it is missing")
 
     host_parser = subparsers.add_parser("allow-host", help="Let the dashboard be opened under an extra host name")
     host_parser.add_argument("name", help="Host name, e.g. frame.home.arpa")

@@ -4298,7 +4298,13 @@ async function composeArtwork(game) {
   const info = game.artwork;
   if (!info || !info.pending || !info.pending.length) return false;
   const base = `/api/installed/artwork/${encodeURIComponent(game.package)}`;
-  const icon = info.icon ? (await loadArtImage(`${base}?slot=apk_icon`)) || (await loadArtImage(`${base}?slot=icon`)) : null;
+  let icon = null, iconSlot = "";
+  for (const slot of info.icon ? (info.icon_from === "icon" ? ["icon", "apk_icon"] : ["apk_icon", "icon"]) : []) {
+    icon = await loadArtImage(`${base}?slot=${slot}`);
+    if (icon) { iconSlot = slot; break; }
+  }
+  // Only the foreground layer of an adaptive icon: it needs a background behind it.
+  const iconLayer = !!info.icon_layer && iconSlot === "apk_icon";
   const cover = info.cover ? await loadArtImage(`${base}?slot=poster`) : null;
   const art = cover || icon;
   const colors = info.colors || ["#123456", "#0a1020"];
@@ -4347,7 +4353,16 @@ async function composeArtwork(game) {
       slots.logo = c.toDataURL("image/png");
     } else if (slot === "icon") {
       const [c, ctx] = artCanvas(256, 256);
-      if (icon) {
+      if (icon && iconLayer) {
+        roundRectPath(ctx, 8, 8, 240, 240, 52);
+        ctx.save();
+        ctx.clip();
+        artBackdrop(ctx, 256, 256, colors, null, 0);
+        const scale = Math.min(240 / icon.naturalWidth, 240 / icon.naturalHeight);
+        const w = icon.naturalWidth * scale, h = icon.naturalHeight * scale;
+        ctx.drawImage(icon, (256 - w) / 2, (256 - h) / 2, w, h);
+        ctx.restore();
+      } else if (icon) {
         const scale = Math.min(256 / icon.naturalWidth, 256 / icon.naturalHeight);
         const w = icon.naturalWidth * scale, h = icon.naturalHeight * scale;
         ctx.drawImage(icon, (256 - w) / 2, (256 - h) / 2, w, h);

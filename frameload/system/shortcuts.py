@@ -10,7 +10,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..config import ANCHOR_DIR, HOME, STEAM_DIR
-from .steam_vdf import shortcut_appid, vdf_decode, vdf_encode
+from .steam_vdf import VdfError, shortcut_appid, vdf_decode, vdf_encode
 
 MAX_VDF_BACKUPS = 5
 
@@ -276,13 +276,27 @@ def refresh_grid_artwork(launch_script_path: str, artwork_dir: str) -> Dict[str,
         try:
             with open(vdf_path, "rb") as f:
                 root = vdf_decode(f.read())
-        except (OSError, ValueError):
+        except (OSError, ValueError, VdfError):
             continue
         for entry in (root.get("shortcuts") or {}).values():
             if isinstance(entry, dict) and entry.get("Exe") == exe and entry.get("appid"):
                 done[user] = install_grid_artwork(user, int(entry["appid"]) & 0xFFFFFFFF, artwork_dir)
                 break
     return done
+
+
+def frameload_listed() -> bool:
+    """True when every Steam user's shortcut list holds FrameLoad's own entry, under whatever name."""
+    users = get_steam_users()
+    for user in users:
+        try:
+            with open(os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf"), "rb") as f:
+                entries = (vdf_decode(f.read()).get("shortcuts") or {}).values()
+        except (OSError, ValueError, VdfError):
+            return False
+        if not any(isinstance(e, dict) and is_frameload_itself(e) for e in entries):
+            return False
+    return bool(users)
 
 
 def register_frameload(app_dir: str) -> Dict[str, Any]:

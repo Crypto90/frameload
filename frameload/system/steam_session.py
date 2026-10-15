@@ -103,14 +103,16 @@ APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file
 
 
 def resync_shortcuts() -> int:
-    """Writes the shortcuts of FrameLoad itself and of every installed game again. Run while Steam
-    is stopped: a Steam that exits writes back the list it read at its start, which can lack them."""
+    """Writes the shortcut of every installed game again, and FrameLoad's own when it is missing. Run
+    while Steam is stopped: a Steam that exits writes back the list it read at its start, which can lack
+    them. FrameLoad's own entry is left alone when it is there (the player may have renamed it or given
+    it other pictures)."""
     from ..installer.artwork import steam_icon
     from ..manager.installed import InstalledManager
-    from .shortcuts import register_frameload, register_game_in_steam
+    from .shortcuts import frameload_listed, register_frameload, register_game_in_steam
 
     count = 0
-    if os.path.isfile(os.path.join(APP_DIR, "run.sh")):
+    if os.path.isfile(os.path.join(APP_DIR, "run.sh")) and not frameload_listed():
         count += 1 if register_frameload(APP_DIR).get("success") else 0
     for game in InstalledManager.list_installed():
         anchor = game.get("anchor", "")
