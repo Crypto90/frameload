@@ -2,7 +2,7 @@
 
 ![FrameLoad Banner](docs/images/banner.jpg)
 
-**All-in-One On-Device VR Sideloading, Catalog Downloader & Library Manager for the Steam Frame**
+**Install, port, play and manage Android VR games and apps on the Steam Frame, from inside the headset.**
 
 [![Steam Frame](https://img.shields.io/badge/Steam%20Frame-Supported-1b2838?logo=steam&logoColor=white)](https://github.com/Crypto90/frameload)
 [![GitHub Release](https://img.shields.io/github/v/release/Crypto90/frameload?color=00f2fe&logo=github&logoColor=white)](https://github.com/Crypto90/frameload/releases)
@@ -13,117 +13,21 @@
 
 ---
 
-## 🌟 Overview
+FrameLoad runs on the Steam Frame itself (SteamOS on ARM64), so no PC is needed. It:
+- installs Android apps into Valve's Lepton container, the Frame's own Android runtime;
+- ports games built for Meta's Quest runtime with [FramePort](https://github.com/spoopyghosty0/frameport);
+- adds everything to your Steam library with artwork;
+- watches storage, memory and play time.
 
-**FrameLoad** brings the best of both worlds directly to your **Steam Frame VR device**:
-- The **on-device browsing, downloading, and catalog engine** of **Rookie Sideloader** and **QRookie**
-- The **Steam Frame Lepton container compatibility layer, OpenXR translation, and Steam shortcuts integration** of **FramePort** and **FrameDrop**
+Its dashboard is built for the controller's laser pointer in the headset. You can also open it from a phone or PC on the same Wi-Fi.
 
-Unlike PC-dependent companion tools, **FrameLoad runs directly ON-DEVICE on the Steam Frame** (which runs standalone SteamOS / Linux ARM64). You can browse thousands of VR titles, download them, automatically apply Lepton container patches, and register them into your Steam library with high-resolution vertical grid posters—**all from inside your headset without ever needing a companion PC!**
-
----
-
-## ⚡ Key Features
-
-- **🎮 100% On-Device & Standalone:**
-  - Runs natively on SteamOS (ARM64 / aarch64) with **zero companion PC required**.
-  - **Zero-Browser Standalone Window:** Launches as a dedicated native desktop application window (`PyQt6`, `WebKit2GTK`, `pywebview`, or chromeless `--kiosk` profile) with **zero tabs, zero address bars, and zero external browser UI**.
-  - Open it directly in SteamVR Gaming Mode or Desktop Mode, or from a phone, tablet or PC on the same Wi-Fi after approving that device once with a pairing code.
-- **📲 Upload From a Phone or PC, or Pick Files in the Headset:**
-  - On another device, open the dashboard, choose an APK (and its OBB files) and it is sent straight to the headset and installed.
-  - In the headset, a file browser covers the home folder, Downloads and any microSD card or USB drive, so nobody has to type a path with a VR keyboard.
-- **🎨 Six Looks:** Big Picture (default), Spatial, Showcase, Neon, Command Center and Daylight (light and dark). Switch under System → Appearance; each arranges the library its own way.
-- **🕹️ Dual Input Engine (VR Laser Pointer + Gamepad Navigation):**
-  - Built-in HTML5 Gamepad & VR Pointer API navigator (`gamepad.js`):
-    - **Momentum Drag-to-Scroll:** Grab and flick lists, catalog grids, and modal dialogs with realistic inertial physics friction.
-    - **Laser-Aim Targeted Scrolling:** Point your controller laser at any specific area (card notes, categories carousel, log drawer) and tilt the Right Stick to scroll that exact container smoothly.
-    - **Laser-Aim Contextual Navigation:** Pointing at any element anchors D-Pad / Left Stick directional movement directly to that card.
-    - **True 2D Spatial Vector Navigation:** Seamless joystick movement between cards, chips, search, and action buttons.
-    - **Modal Focus Trapping & VR HUD:** Cleanly traps focus inside open dialogs (B/Grip button exits) with an on-screen VR controller guide bar.
-- **🥽 Per-Game Settings That Reach the Headset:**
-  - **Foveated rendering:** follow gaze (Valve's default), fixed, or off, through the Vulkan-layer variables Lepton passes to the game.
-  - **Typing in VR apps** and a **hidden Android navigation bar** for 2D apps.
-  - **For games ported with FramePort** (they contain the FrameBridge adapter): resolution scale (0.5x-2.0x), refresh rate (72-144 Hz), vibration strength, space warp and play-space options.
-  - Settings Lepton cannot apply (device spoofing, MSAA, CPU/GPU levels) are not offered. See the [settings guide](#-per-game-settings-guide).
-- **🖐️ Hand Tracking, As the Frame Provides It:**
-  - The Steam Frame has no camera hand tracking. Its OpenXR runtime builds the 26-joint hand skeleton (`XR_EXT_hand_tracking`) from the controllers' finger sensors.
-  - FrameLoad reads each APK's manifest, recognises games that support or require hands, and for FramePort-ported games switches between **Controllers** and **Hands** (FrameBridge's `controller_fix`). Games that require hands get them automatically.
-- **🔎 Compatibility Check Before You Install:**
-  - Reads the real binary manifest and native libraries of an APK and tells you whether it is ready (FramePort port, native OpenXR, 2D app), needs porting first (Meta OVRPlugin / VrApi, no launcher activity), or cannot run (32-bit only, split APK).
-- **🌐 Direct Mirror & Catalog Integration:**
-  - **Progressive Fuzzy Catalog Browser:** Infinite smooth scrolling eliminating cumbersome Next/Prev buttons, optimized for huge catalogs (2,900+ titles) with zero DOM reflow stutters.
-  - **Pause & Resume Downloads:** Native HTTP Range and archive resumption with live Pause / Resume buttons in both the queue and bottom drawer.
-  - **Live Extraction Progression:** Real-time percentage decompression feedback (`-bsp1` stream) for multi-gigabyte 7z and zip archives.
-  - **1-Click Launch from Downloads:** Instant "Play Now" action for finished installs plus "Clear Completed" task management.
-  - Multi-part archive download with auto-resumption (`Range: bytes`), download speed metrics (EMA), and ETA calculations.
-- **📦 Automated Lepton Container Setup:**
-  - Installs games to `~/Applications/quest-frame/<package>/`.
-  - Configures Valve's Lepton Android container runtime (`lepton-app/`, `lepton-data/`, `lepton-shaders/`).
-  - Auto-repairs Android external permissions (`/sdcard/Android/data/<package>/files/`).
-  - Automatically isolates containers and cleans up rootless podman keyring quota leaks (`keyring = false`).
-- **🔧 What Runs:**
-  - Quest games already ported for the Frame with [FramePort](https://github.com/spoopyghosty0/frameport) (OVRPort + FrameBridge), native OpenXR 1.0 Android apps, and 2D Android apps.
-  - **On-headset porting (experimental):** a game built for Meta's runtime is flagged "Needs porting first" and is ported automatically when you sideload it (or with its **Port for Steam Frame** button). FrameLoad runs [FramePort](https://github.com/spoopyghosty0/frameport)'s command line on the headset (OVRPort conversion, FrameBridge adapter, signing) and swaps in the result, keeping saves and OBB files. Nothing to set up: FrameLoad fetches the porting tools by itself.
-  - 2D Android apps get Lepton's `lepton-show-flatscreen` marker and open as a flat window in the headset.
-  - PCVR Games: Compatibility with Proton ARM64, Revive, and WineOpenXR.
-- **🎨 Steam Library Integration:**
-  - Pure Python binary `shortcuts.vdf` parser & serializer with automatic backups.
-  - Artwork for every slot Steam shows: portrait `600x900`, banner `920x430`, hero `1920x620`, logo and icon. FrameLoad takes the app's own launcher icon from its APK (the sharpest version; for an adaptive icon its foreground), uses a downloaded cover where there is one, and the dashboard draws the rest from icon, cover and title. Grid files are written under the id Steam actually has for the shortcut.
-  - **Honest about Steam's limits:** Steam only loads new shortcuts when it starts. FrameLoad tells you which games are waiting, starts them itself in the meantime, and offers a safe one-press Steam restart (stop Steam, write the shortcuts, start it again).
-- **💾 Saves, Logs & Game Management:**
-  - Save backup and restore covering both places a Lepton app keeps data (its private storage and shared storage), including files owned by the container.
-  - **Launch log with a diagnosis:** each game's last start, with the usual failures explained in plain words (no launcher activity, podman keyring quota, rejected APK, OpenXR 1.1, missing card).
-  - Per-game settings editor (hand input, resolution scale, refresh rate, foveated rendering).
-  - **Recently Played** row at the top of the library, with when you last played and for how long (recorded by each game's launcher, also for games started from Steam), and sorting by recently played, name, install date or size.
-  - Clean uninstaller: stops the container, removes the game's files and its Steam shortcut.
-- **🎵 Mod & Custom Content Injector:**
-  - **Beat Saber Custom Songs:** Drop any custom song `.zip` directly from the Web UI or CLI; FrameLoad extracts it into `CustomSongs/`, repairs container permissions (`0777`), and makes it immediately available in game.
-  - **Mod Packs & Textures:** Inject mods directly into `lepton-data/external/Android/data/<package>/files/` with auto-repair permissions, inspection, and deletion.
-- **🛍️ 2D App Store (F-Droid):**
-  - Browse, search and filter by category the free and open-source Android apps from F-Droid that Lepton can run (64-bit ARM, Android API 34 or lower).
-  - Offers F-Droid's suggested release, verifies every download against the catalog's SHA-256 before installing, and marks installed apps and available updates.
-  - Apps open as a flat window in the headset with Android's navigation bar hidden.
-  - An app's page shows its screenshots (tap one to see it large) and its trailer, from the app's own F-Droid metadata.
-- **🪟 Windows & 🐧 Linux Apps (experimental):**
-  - Sideload a Windows `.exe` or a Linux `.AppImage` / ELF binary; FrameLoad writes a launcher and a Steam shortcut.
-  - These launchers are not yet verified on a Steam Frame. PC VR titles in particular need FramePort's OpenXR layer; use FramePort for those.
-- **🔗 Install Links (`frameload://`):**
-  - `frameload://install?url=https://…/app.apk&title=<title>`, `frameload://sideload?path=<file>&title=<title>`, `frameload://launch?package=<package>`.
-  - A link never installs by itself: FrameLoad shows what it is and where it comes from, and waits for you to confirm in the dashboard.
-- **💾 microSD Card & USB Drive Storage:**
-  - **Only real drives:** the internal storage, a microSD card in the slot and USB drives on the USB-C port. The Frame's own system partitions are not offered (FrameLoad asks the kernel which bus a disk is on, not what it is called). Cards formatted as FAT, exFAT or NTFS are shown but refused for games: Lepton data needs a Linux filesystem.
-  - **Asked like Steam asks:** with more than one drive that can hold games, installing asks where to put the game, shows free space, and can remember the choice as the default. Updates stay on the drive the game is on.
-  - **1-Click Game Migration:** Move installed games between Internal Storage and MicroSD Card. The copy is checked before the original is removed, nothing at the destination is overwritten, and the launcher, settings and Steam shortcut follow the game.
-  - **Multi-Drive Library Scanning:** Browse all installed games across all connected drives with clear MicroSD badges.
-- **📦 Universal Package & Multi-Format Sideloading:**
-  - **Bundles:** Install `.xapk`, `.apks` and `.zip` archives that hold one complete APK and its OBB data. Lepton installs a single APK, so an app delivered only as split APKs is reported as not installable.
-  - **Loose Directory Sideloading:** Point to or drag an extracted game folder from a USB drive or MicroSD card; FrameLoad automatically pairs APKs with matching `com.pkg/` OBB folders.
-  - **Pre-Install Package Inspection:** Inspect package name, title, engine (Unity, Unreal, Godot), VR requirements, and OBB status before installing.
-- **📊 Steam-Style Storage Manager:**
-  - Designed after Steam's storage settings with horizontal drive switcher cards (Internal SSD, MicroSD card).
-  - Multi-colored segmented bar visualizer: Blue (Games), Teal (Saves & Data), Amber (Shaders & Cache), Purple (System), and Grey (Free Space).
-  - Instant disk space breakdown per game (App APKs, saves, shader caches, artwork).
-  - Multi-selection checkboxes with floating batch action bar and space reclaimed calculation.
-  - Safe batch uninstallation with automatic save game archiving.
-  - 1-click download cache cleanup and Lepton shader cache reset.
-- **🧊 Freeze Guard:**
-  - A game that uses up the headset's memory makes everything stop, even the Steam button. FrameLoad limits each game's memory so SteamVR keeps 2.5 GB, watches memory pressure while a game runs, and ends the game before the headset locks up. You get a notice saying which game it was.
-  - A game that stops drawing frames is reported; stopping it automatically is a switch (off by default, because taking the headset off pauses games too).
-- **🔋 Keep Awake & Performance:**
-  - The headset is kept awake while FrameLoad downloads, installs or ports (SteamOS's sleep inhibitor), and on request for an hour or until switched off.
-  - CPU and memory use in the header; System → Performance shows CPU, memory, swap, GPU clock and temperatures live.
-- **⚡ In-Headset Updates:**
-  - Checks GitHub Releases a few times a day and shows a badge and banner when a new version is out.
-  - **Verified updates:** the update package is checked against the release's `SHA256SUMS` before anything is replaced; a mismatch changes nothing.
-  - One press updates FrameLoad and restarts its service.
-  - **F-Droid apps:** an "Update N Apps" button appears in the app store when installed apps have newer versions.
-  - **Catalog games:** installed titles are compared against the mirror catalog and can be upgraded while keeping save data.
+**Contents:** [Looks](#-six-looks) · [Features](#-features) · [Install](#-install) · [Opening FrameLoad](#-opening-frameload) · [Updating](#-updating) · [Uninstalling](#-uninstalling) · [Guide](#-guide) · [Controls](#-controls) · [Command line](#-command-line) · [Files and folders](#-files-and-folders) · [Configuration](#-configuration) · [Support](#-support-the-project)
 
 ---
 
 ## 🎨 Six Looks
 
-FrameLoad comes in six looks. Pick one under **System → Appearance**; it changes at once and is remembered on the headset. **Big Picture** is the default. Each look arranges the library its own way, and every other screen follows its colours and type.
+FrameLoad comes in six looks. Pick one under **System → Appearance**. It changes at once and is remembered on the headset. **Big Picture** is the default. Each look arranges the library its own way, and every other screen follows its colours and type.
 
 | A · Big Picture (default) | B · Spatial |
 |:---:|:---:|
@@ -144,215 +48,226 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 
 ---
 
-## 🎨 Steam Grid Artwork & Visual Assets
+## ⚡ Features
 
-FrameLoad includes high-resolution, pixel-perfect artwork tailored for **SteamOS Gaming Mode**, **SteamVR**, and the **Steam Library** in all official Steam formats:
+### 📚 Library
+- All your games and apps in one place. The library starts with the games you played last (**Recent games** in Big Picture), with when you last played and for how long. Each game's launcher records its sessions, so games started from Steam count too.
+- Sort by recently played, name, install date or size. Search filters as you type.
+- A game's page has **Launch in VR** (**Open** for a 2D app), **Settings**, **Launch Log**, **Backup Saves** and **Uninstall**.
+- A running game gets a **Stop** button, plus a Stop chip that stays on screen while it runs.
+- A Quest game that still needs porting shows **Port & Play**: it is ported first and starts by itself when that is done.
 
-### 🎮 Steam Grid Formats & Posters
+### 📥 Installing apps
+- **Install File:** install an APK, an XAPK, APKS or ZIP bundle, or an extracted game folder.
+  - The built-in file browser covers Home, Downloads, the microSD card and USB drives, so you never type a path on a VR keyboard.
+  - OBB files beside the APK are installed with it: loose `main.` / `patch.<version>.<package>.obb` files, or a folder named after the package.
+- **Upload from a phone or PC:** open the dashboard on a paired device and choose the APK and its OBB files. They are sent to the headset and inspected, and **Install and Add to Steam Library** installs them.
+- **Compatibility check before you install:** FrameLoad reads the APK's binary manifest and its native libraries and gives one of four verdicts:
 
-| 📱 Steam Frame Device Poster (`600x900`) | 🌌 Portal Edition Poster (`600x900`) | 🏷️ Steam Grid Banner (`920x430`) |
-|:---:|:---:|:---:|
-| ![Device Poster](docs/images/steam/capsule_device.png) | ![Portal Poster](docs/images/steam/poster.png) | ![Steam Banner](docs/images/steam/banner.png) |
-| *Steam Frame Headset Capsule* | *Vibrant SteamVR Portal Edition* | *Steam Library Grid Banner (460x215)* |
+  | Verdict | When |
+  | :--- | :--- |
+  | *Ready for Steam Frame* | Ported with FramePort, or a 2D app |
+  | *Should run* | Native OpenXR |
+  | *Needs porting first* | Built for Meta's runtime, or no launcher activity |
+  | *Cannot run* | 32-bit only, needs a newer Android than Lepton's (Android 14), delivered as split APKs, or checks its own signature |
+- **Browse** has two catalogs:
+  - VR games from the catalog mirror set under System → Mirror Manager
+  - free Android apps from F-Droid
 
-| 🥽 Steam Frame Headset Icon (`512x512`) | ⚡ FrameLoad Hologram Icon (`512x512`) | 🏷️ Transparent Title Logo |
-|:---:|:---:|:---:|
-| ![Headset Icon](docs/images/steam/icon_device.png) | ![Hologram Icon](docs/images/steam/icon.png) | ![Title Logo](docs/images/steam/logo.png) |
-| *Headset Device App Icon* | *Cyan VR Vortex Glyph* | *Transparent Overlay Logo* |
+  Downloads can be paused, resume after an interruption and install by themselves when they finish. The Downloads tab shows each one with its picture, its state (Downloading, Unpacking, Installing, Installed, Failed) and the time left.
+- **F-Droid store:**
+  - Lists only apps Lepton can run: 64-bit ARM, Android 14 or older.
+  - Offers F-Droid's suggested version and checks every download against the catalog's SHA-256 before installing.
+  - Each app's page shows its screenshots, and its trailer where it has one.
+  - **Update N Apps** appears when installed apps have newer versions.
+  - Apps open as a flat window with Android's navigation bar hidden.
+- **Install links:** `frameload://install?url=…` (an https link to an `.apk`), `frameload://sideload?path=…` and `frameload://launch?package=…`. A link never installs anything by itself: the dashboard shows where it comes from and waits for you to press **Install**. A launch link starts the game right away.
 
-### 🖼️ Steam Hero Backgrounds (`1920x620`)
+### 🔧 Quest games, ported on the headset
+- Games built for Meta's Quest runtime are converted for the Frame on the headset with [FramePort](https://github.com/spoopyghosty0/frameport): OVRPort conversion, the FrameBridge adapter, and signing.
+- FrameLoad does the setup and upkeep for you:
+  - downloads FramePort and its tools by itself and keeps FramePort current;
+  - ports a game right after it is installed;
+  - keeps the original APK, so the game can be ported again.
+- A progress bar shows the step the port is on. A port keeps running in the background, with its percentage in the dashboard. See [Porting a Quest game](#porting-a-quest-game).
 
-**Steam Frame Hardware Edition Hero:**
-![Steam Frame Device Hero](docs/images/steam/hero_device.png)
+### 🥽 Per-game settings
+- **Every Android app, ported or not:** foveated rendering (follow gaze, fixed or off) and typing for VR apps, the navigation bar for 2D apps.
+- **Games ported with FramePort:** hand input, resolution scale, refresh rate (72-144 Hz), vibration strength, space warp and play space, with the presets *Sharper*, *120 Hz* and *Battery saver*.
+- Only settings the headset actually reads are offered. Defaults for all games are under System → Default Game Settings. Details are in the [settings guide](#per-game-settings).
 
-**SteamVR Cosmic Portal Edition Hero:**
-![Portal Edition Hero](docs/images/steam/hero.png)
+### 🎮 Steam library
+- **Artwork:** every install becomes a non-Steam game with a poster, banner, hero image, logo and icon.
+  - A downloaded cover is used where there is one.
+  - The app's own launcher icon is taken from its APK.
+  - The dashboard draws whatever is still missing from the icon, the cover and the title.
+- **New games:** Steam loads new shortcuts only when it starts. FrameLoad shows which games are waiting, starts them itself in the meantime, and offers **Restart Steam Now**.
+- **Steam's menu:** Steam opens its Resume / Exit menu over a game that has just started. When a ported game shows its first frame, its launcher closes that menu.
 
-### 🌟 Concept Banner Artworks
+### 💾 Storage: internal, microSD and USB
+- **Only real drives are listed:** the internal storage, a microSD card and USB drives. Drives are classified by the bus the kernel reports, so the Frame's own system partitions never appear.
+- **FAT, exFAT and NTFS:** cards in these formats are shown but cannot hold games. Lepton needs a Linux filesystem such as ext4.
+- **Choosing a drive:** with more than one drive that can hold games, installing from Browse asks where to put the game, like Steam does. It can remember your choice as the default.
+- **Moving games:** games move between drives, and the copy is checked before the original is removed.
+- **The Storage tab** shows each drive's space split into games, saves, shaders and other, and lists every game's size. You can select several games to move or uninstall them, clean the download cache, or reset the shader caches of games on internal storage.
 
-| 🌊 Stream Edition | 🛠️ Hardware Edition | 🚪 Gateway Edition |
-|:---:|:---:|:---:|
-| ![Stream Edition](docs/images/banner_option1_stream.jpg) | ![Hardware Edition](docs/images/banner_option2_hardware.jpg) | ![Gateway Edition](docs/images/banner_option3_gateway.jpg) |
-| *Data Stream & Wireless Sideloading* | *Industrial Steam Frame Device* | *Dimensional VR Portal Gateway* |
+### 🧊 Freeze Guard, Keep Awake and Performance
+- **Freeze Guard:** a game that uses up the headset's memory freezes everything, even the Steam button. FrameLoad prevents that:
+  - It limits each game's memory so SteamVR keeps 2.5 GB.
+  - It watches memory pressure while a game runs, ends the game before the headset locks up, and tells you which game it was.
+- **Keep Awake:** FrameLoad holds SteamOS's sleep inhibitor while it downloads from Browse, installs those downloads or ports a game. You can also keep the headset awake for an hour, or until you switch it off. Whether Steam's own sleep timer on the Frame honours the inhibitor is not confirmed yet.
+- **Performance:** System → Performance shows CPU, memory, swap, GPU clock and temperatures live. Neon, Spatial, Command Center and Daylight also show CPU use in their status area.
+
+### 📱 Phone & PC access
+- Open `http://<headset-ip>:5050` on another device on the same network. Pair it once with a six-digit code shown in the headset, and it can browse, install and upload like the headset can.
+
+### 🧩 Saves, mods and logs
+- **Save backups** hold the app's private storage, where most games save, and its shared storage. Uninstalling a game in the dashboard makes a backup first.
+- **Mods and Beat Saber custom songs** go into the game's shared storage from its page or the command line.
+- **Launch Log** explains the usual reasons a game does not start, in plain words.
+- **Self-test:** checks everything FrameLoad relies on. It runs by itself when the dashboard opens and only speaks up when something is wrong.
+
+### ⚡ Updates
+- **In-headset updates:** FrameLoad tells you when a new version is out and updates itself with one press in the headset. Release downloads are checked against the release's `SHA256SUMS`.
+
+### 🪟 Windows and 🐧 Linux apps (experimental)
+- A Windows `.exe` or a Linux AppImage / ELF binary gets a launcher and a Steam shortcut.
+  - The `.exe` runs with a Proton from your Steam libraries, or Wine.
+- These launchers have not been verified on a Steam Frame yet.
+- Per-game settings, the Freeze Guard and Stop do not cover them.
+
+| Porting on the headset | Choosing the drive |
+|:---:|:---:|
+| [![Porting](docs/images/features/porting.jpg)](docs/images/features/porting.jpg) | [![Install location](docs/images/features/install-drive.jpg)](docs/images/features/install-drive.jpg) |
+| **Per-game settings** | **Downloads** |
+| [![Settings](docs/images/features/settings.jpg)](docs/images/features/settings.jpg) | [![Downloads](docs/images/features/downloads.jpg)](docs/images/features/downloads.jpg) |
+
+*Big Picture look with example games and drives.*
+
+> [!NOTE]
+> Only install games and apps you own or are otherwise allowed to use.
 
 ---
 
-## 🚀 Quick Start (On Your Steam Frame)
+## 🚀 Install
 
-### ⚡ 1-Click Install (Single Command)
-
-Open **Konsole** in SteamOS Desktop Mode (or connect via SSH) and run:
+On the Steam Frame, open a terminal (Konsole in Desktop Mode, or SSH) and run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/install.sh | bash
 ```
 
-> [!TIP]
-> Click the **Copy** button on the top right of the code block above to copy the command directly to your clipboard!
+This puts FrameLoad in `~/Applications/FrameLoad` and sets it up. It makes a git checkout when git is available, and otherwise downloads the latest release. Run it as your normal user, not with `sudo`.
 
----
-
-### 📦 Alternative: Self-Extracting Offline Installer
-
-If you prefer downloading a single pre-built installer package without needing `git`:
+**Or with the release installer.** It needs no git. Run it as a file, not through a pipe:
 
 ```bash
-# Grep latest release tag and download the standalone installer:
-TAG=$(curl -s https://api.github.com/repos/Crypto90/frameload/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
-curl -fsSLO "https://github.com/Crypto90/frameload/releases/download/${TAG:-v1.3.6}/frameload-installer.sh"
+curl -fsSLO https://github.com/Crypto90/frameload/releases/latest/download/frameload-installer.sh
 bash frameload-installer.sh
 ```
 
-*(Or via GitHub's direct latest redirect: `curl -fsSLO https://github.com/Crypto90/frameload/releases/latest/download/frameload-installer.sh`)*
-
----
-
-### 🔧 Alternative: Manual Git Clone
+**Or from a git clone:**
 
 ```bash
-cd ~/
-git clone https://github.com/Crypto90/frameload.git
-cd frameload
-./install.sh
+git clone https://github.com/Crypto90/frameload.git ~/Applications/FrameLoad
+bash ~/Applications/FrameLoad/install.sh
 ```
 
----
+To install somewhere else, give the folder to `bash`: `curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/install.sh | FRAMELOAD_INSTALL_DIR=<folder> bash`, or `FRAMELOAD_INSTALL_DIR=<folder> bash frameload-installer.sh`. See [Uninstalling](#-uninstalling) for removing such an install.
 
-### What the Installer Does Automatically:
-1. Configures `~/.config/containers/containers.conf` to stop rootless podman leaking kernel keyrings (`keyring = false`).
-2. Installs standalone static 7-Zip (`7za`) archive extraction tools.
-3. Creates the desktop launcher `~/.local/share/applications/frameload.desktop` and the `frameload` command in `~/.local/bin`.
-4. Enables the background user service `frameload.service` on port `5050`.
-5. Adds **FrameLoad** to your Steam library as a Non-Steam Game shortcut with artwork.
+### What the installer sets up
 
-Lepton itself ships with the Steam Frame; FrameLoad only locates it.
+1. `keyring = false` in `~/.config/containers/containers.conf`. Without it, rootless podman runs out of kernel keyrings after about 200 game starts.
+2. A static 7-Zip in `~/.local/share/frameload/bin/` when none is installed. It unpacks XAPK, APKS and ZIP bundles.
+3. The desktop entry, which also opens `frameload://` links, and the `frameload` command in `~/.local/bin`.
+4. The background service `frameload.service` (a systemd user service on port 5050). Where the user's systemd cannot be reached, an autostart entry starts it instead.
+5. **FrameLoad** in your Steam library, with its artwork. If Steam was running, restart it (or switch to Gaming Mode) to see it.
 
----
-
-### 🎮 Launching FrameLoad
-
-- **In VR / Gaming Mode:** Open your Steam Library and select **FrameLoad**.
-- **In Desktop Mode:** Open Application Launcher → **Games** → **FrameLoad**.
-- **From Any Web Browser:** Navigate to:
-  ```
-  http://localhost:5050
-  ```
-  or from your phone / tablet / PC on the same Wi-Fi:
-  ```
-  http://<steam-frame-ip>:5050
-  ```
-  The first time, that device shows a pairing page. In the headset open **System → Phone & PC Access → Show Pairing Code** and type the six digits on the device. Paired devices are listed there and can be removed.
+Lepton comes with the Steam Frame; FrameLoad only looks for it. FrameLoad downloads the porting tools by itself later (see [Porting a Quest game](#porting-a-quest-game)).
 
 ---
 
-## 🗑️ Clean Uninstallation
+## 🥽 Opening FrameLoad
 
-If you ever wish to completely remove FrameLoad and all its traces from your device:
+- **In the headset or Gaming Mode:** select **FrameLoad** in your Steam library.
+- **In Desktop Mode:** application launcher → Games → **FrameLoad**, or run `frameload` in a terminal.
+- **In a browser on the headset:** `http://localhost:5050`.
+- **From a phone, tablet or PC** on the same network: `http://<headset-ip>:5050`. The first time, that device shows a pairing page. In the headset, open **System → Phone & PC Access → Show Pairing Code** and type the six digits on the device.
 
-### ⚡ 1-Click Clean Uninstall (Single Command)
+FrameLoad opens exactly one window, and closing that window closes it. The service keeps running in the background. The window is the first of these that is available:
+1. a native window, if Qt WebEngine or WebKit2GTK is installed
+2. Chrome or Chromium in app mode
+3. Firefox with a profile of its own (full screen in Gaming Mode)
+4. the default browser (closing it does not end FrameLoad in Steam; use Steam's Exit)
+
+Starting FrameLoad again while its window is open does not open a second one.
+
+---
+
+## 🔄 Updating
+
+FrameLoad checks GitHub at most every six hours; **Check for Updates** under System → FrameLoad Updates checks right away. When a new version is out, an **Update** chip appears in the header and a banner on top.
+
+To install it, press **Review & Update** in the banner (or the **Update** chip) and then **Update and Restart**, or press **Update Now** under System → FrameLoad Updates. FrameLoad updates itself and restarts its service, and the page reloads.
+
+- **A git install** updates with `git pull` from `main`, so it also gets fixes between releases.
+- **A release install** downloads the new release archive and checks it against the release's `SHA256SUMS`. If it does not match, nothing is changed.
+
+---
+
+## 🧹 Uninstalling
+
+**In the headset:** go to System → **Clean Uninstallation** → **Uninstall FrameLoad...**.
+1. Choose whether to delete the installed games too (off by default) and whether to keep the save backups (on by default).
+2. Type `UNINSTALL` and confirm.
+
+**From a terminal:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/uninstall.sh | bash
 ```
 
-Or from your terminal if already installed:
+It asks the same questions. To answer them on the command line instead, pass options like this: `curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/uninstall.sh | bash -s -- --yes`.
 
-```bash
-bash ~/Applications/FrameLoad/uninstall.sh
-```
-
-### Options & Flags:
-
-| Option | Description |
+| Option | Effect |
 | :--- | :--- |
-| **`./uninstall.sh`** | Interactive mode (asks whether to keep games and save backups). |
-| **`-y` / `--yes`** | Skips prompts; cleanly removes daemon, desktop launcher, Steam shortcuts, and caches while preserving installed games and saves. |
-| **`--purge-games`** | Also deletes all sideloaded VR games in `~/Applications/quest-frame/` and on MicroSD cards. |
-| **`--purge-all`** | Total clean wipe: removes app, caches, games, saves, and backups. |
-| **`--keep-backups`** | Preserves game save backups in `~/.local/share/frameload/backups/` *(default: yes)*. |
+| `-y`, `--yes` | Do not ask; keep games and save backups unless the options below say otherwise |
+| `--purge-games` | Also delete every installed game (internal storage, microSD card, USB drives) |
+| `--purge-backups` | Also delete the save backups |
+| `--purge-all` | Same as `--yes --purge-games --purge-backups` |
 
-### What the Uninstaller Cleans Up Automatically:
-1. Stops and deletes the background systemd service (`frameload.service`).
-2. Removes the Desktop launcher (`~/.local/share/applications/frameload.desktop`).
-3. Removes FrameLoad and all 5 Grid artwork files from Steam (`shortcuts.vdf` and `userdata/*/config/grid/`).
-4. Kills any lingering Lepton container shims.
-5. Deletes caches, metadata, and temporary files (`~/.local/share/frameload/`).
-6. Optionally deletes installed VR games and preserves or removes save game backups according to your choice.
+`bash uninstall.sh` in the FrameLoad folder does the same. `frameload uninstall-app [--yes] [--purge-games] [--purge-backups]` asks only one y/N question (none with `--yes`): games and save backups are kept unless you pass the options.
 
----
+If you installed into another folder, run `curl -fsSL https://raw.githubusercontent.com/Crypto90/frameload/main/uninstall.sh | FRAMELOAD_INSTALL_DIR=<folder> bash`, then delete that folder yourself.
 
-## 🛠️ Command-Line Interface (CLI)
+**What is removed:**
+- the service, the desktop entry and the `frameload` command
+- FrameLoad's own Steam shortcut and its artwork
+- `~/.local/share/frameload` (except the save backups, when kept)
+- the browser profile of FrameLoad's window
+- `~/Applications/FrameLoad`
 
-FrameLoad includes a full-featured CLI for on-device management and scripting:
+Installed games and their Steam shortcuts stay unless you choose to delete the games. While Steam is running it keeps its own copy of the shortcut list and can write FrameLoad's entry back when it exits; if FrameLoad is still in your library after a Steam restart, remove it there (Manage → Remove non-Steam game).
 
-```bash
-# Start Web Server & REST API
-frameload serve --host 0.0.0.0 --port 5050
-
-# Launch as a dedicated standalone desktop application window (Zero-Browser Chrome)
-frameload window
-
-# Display Steam Frame system, Lepton, Proton, and battery telemetry
-frameload info
-
-# List installed games
-frameload list
-
-# List presets and every setting
-frameload tune --list
-
-# Apply a preset (default, sharp, smooth, battery)
-frameload tune com.beatgames.beatsaber --preset sharp
-
-# Set individual values
-frameload tune com.beatgames.beatsaber --scale 1.3 --refresh 90 --hands controllers --set foveation=fixed
-
-# Batch-apply an optimization preset across ALL installed games
-frameload tune --batch default
-
-# Synchronize VR catalog metadata from mirror
-frameload sync
-
-# Search catalog
-frameload search "Beat Saber"
-
-# Install a local package (Quest APK, Windows Proton EXE, Linux AppImage)
-frameload install /path/to/game.xapk --title "My Game"
-
-# Install as 2D Flat Android window with customized preset
-frameload install /path/to/app.apk --flat --window-preset tablet
-
-# Inject Beat Saber custom song or mod package
-frameload inject-mod com.beatgames.beatsaber /path/to/song.zip --name "SongName"
-
-# Handle a frameload:// deep link URL directly
-frameload handle-url "frameload://launch?pkg=com.beatgames.beatsaber"
-
-# Launch an installed game
-frameload launch com.beatgames.beatsaber
-
-# Cleanly uninstall a game and remove its Steam shortcut
-frameload uninstall com.beatgames.beatsaber --keep-saves
-
-# Completely uninstall FrameLoad itself and remove all system traces
-frameload uninstall-app --keep-backups
-```
+The signing keys of ported games are always copied to `~/Documents/FrameLoad-signing-keys` first. An update of a ported game must be signed with the same key, and FrameLoad's next porting setup imports the keys again.
 
 ---
 
-## 🥽 Per-Game Settings Guide
+## 📖 Guide
 
-Open a game in **Library** and press **Settings**. Every control maps to something the headset reads.
+### Per-game settings
 
-### For every Android app (Lepton)
+Open a game in the **Library** and press **Settings**. Every control maps to something the headset reads. **System → Default Game Settings → Edit Defaults** sets the values for every game whose Settings you have not saved yet. Once you save a game's Settings (or pick a preset there), its values are its own and the defaults no longer change them.
+
+**For every Android app (Lepton)**
 
 | Setting | What it does | How |
 | :--- | :--- | :--- |
-| Foveated rendering | *Follow gaze* (default), *Fixed* (cures one-eye jitter in some games) or *Off* | `FDM_DEBUG=disable_offsets` / `VK_INSTANCE_LAYERS=""` for `lepton start` |
-| Allow typing (VR) | Shows the app's Android window behind its VR view so Steam's keyboard reaches it | `lepton-show-flatscreen` marker |
-| Hide navigation bar (2D) | Removes Android's back / home / recents bar | `qemu.hw.mainkeys=1` boot property |
+| Foveated rendering (VR) | *Follow gaze* (default), *Fixed* (cures one-eye jitter in some games) or *Off* | `FDM_DEBUG=disable_offsets` / `VK_INSTANCE_LAYERS=""` for `lepton start` |
+| Allow typing (VR) | Shows the app's Android window behind its VR view, so Steam's keyboard reaches it | `lepton-show-flatscreen` marker |
+| Hide Android navigation bar (2D, on by default) | Removes Android's back / home / recents bar | `qemu.hw.mainkeys=1` boot property |
 
-### For games ported with FramePort (FrameBridge adapter)
+**For games ported with FramePort (FrameBridge adapter)**
 
 | Setting | Values | FrameBridge key |
 | :--- | :--- | :--- |
@@ -363,105 +278,286 @@ Open a game in **Library** and press **Settings**. Every control maps to somethi
 | Turn off space warp | on / off | `hide_space_warp` |
 | Keep the play space still | on / off | `stable_local` |
 
-FrameLoad writes only the values you change into `settings.conf` and `framebridge.conf`, and leaves every other line of those files alone. For an APK without the adapter these controls are shown greyed out, because nothing would read them.
+FrameLoad writes only the keys whose value differs from the adapter's default into `settings.conf` and `framebridge.conf`, and leaves every other line of those files alone. For an APK without the adapter these controls are greyed out, because nothing would read them.
 
-**Presets:** *Game defaults*, *Sharper* (1.3x), *120 Hz*, *Battery saver* (0.85x at 72 Hz).
+**Presets:** *Game defaults*, *Sharper* (1.3x), *120 Hz*, *Battery saver* (0.85x at 72 Hz). A preset sets scale, refresh rate and foveation and keeps everything else.
 
-### What is deliberately not here
+**What is deliberately not here:** Lepton writes its own Android system properties (`ro.product.model=Lepton`) and offers no per-game override. So a launcher cannot spoof a Quest model, force MSAA or anisotropic filtering, or set CPU/GPU levels. Earlier FrameLoad versions showed such controls; they changed nothing and were removed in v1.3.2.
 
-Lepton writes its own Android system properties (`ro.product.model=Lepton`) and offers no per-game override, so a launcher cannot spoof a Quest model, force MSAA or anisotropic filtering, or set CPU/GPU levels. Earlier FrameLoad versions showed such controls; they changed nothing and were removed in v1.3.2.
+### Porting a Quest game
 
-### Porting a Quest game on the headset
+There is no setup step. Shortly after FrameLoad starts on a Steam Frame, it downloads the porting tools in the background, once (about 310 MB on disk in total):
+- FramePort's command line, into `~/.local/share/frameload/frameport-venv`
+- a Java runtime, OVRPort and apksigner, into `~/.local/share/frameload/frameport-home`
 
-There is no setup step. Shortly after FrameLoad starts on a Steam Frame it downloads the porting tools in the background, once: FramePort's command line into `~/.local/share/frameload/frameport-venv`, and a Java runtime, OVRPort and apksigner into `~/.local/share/frameload/frameport-home` (about 310 MB on disk in total). It checks weekly for a newer FramePort, because that is where per-game fixes arrive.
+It checks weekly for a newer FramePort, because that is where per-game fixes arrive.
 
-1. Sideload a Quest game, or press **Port & Play** on one that is already in your library. If it was built for Meta's runtime it is ported right after it is installed (or before it starts); the dialog shows a progress bar with the step it is on (FramePort's own output is behind **Show Details**), and a big game takes several minutes. You can close the dialog: the job keeps running, a chip in the header shows its progress, and a game you pressed Play on starts by itself when it is done. If the tools are not there yet (first minutes after installing FrameLoad, or no network), they are fetched first and the game is ported as soon as they are ready.
-2. **Port for Steam Frame** on a game in your library does the same by hand, to retry or after a FramePort update.
-3. The original APK is kept as `unported.apk` next to the game, so it can be ported again with a newer FramePort.
+1. **Start a port.** Install a Quest game, or press **Port & Play** on one that is already in your library. If it was built for Meta's runtime, it is ported right after it is installed, or before it starts.
+2. **Follow it, or don't.** The dialog shows a progress bar and the step the port is on, with FramePort's own output behind **Show Details**. A big game takes several minutes.
+   - You can close the dialog with **Run in Background**: the port keeps going, and its progress stays on screen (a chip in the header, or the look's status area).
+   - A game you pressed Port & Play on starts by itself when the port is done, as long as FrameLoad's window stays open.
+   - If the tools are not there yet (in the first minutes after installing FrameLoad, or without a network), they are fetched first and the game is ported as soon as they are ready.
+3. **If a port fails,** the game shows **Port Again**. FrameLoad does not retry it by itself until FramePort has been updated.
+4. **The original APK is kept** as `unported.apk` next to the game. `frameload port <package>` ports it again by hand.
 
-Two switches on the **Quest Game Porting** card turn off the automatic port and the automatic download (for a metered connection); **Set Up Now** then fetches the tools on request.
+Two switches on the **Quest Game Porting** card in System turn off the automatic port and the automatic download of the tools (useful on a metered connection). With them off, nothing is ported or downloaded until you press **Port & Play** on a game or **Set Up Now** on the card.
 
-When a ported game shows its first frame, Steam opens its own menu (Resume / Exit game) on top of it. FrameLoad's launcher closes that menu for you through Steam's own interface, and leaves it alone as soon as you open it yourself with the controller's Steam button. To switch this off for a game, put `FRAMELOAD_KEEP_DASHBOARD=1 %command%` in its Steam launch options. If Steam's "Exit game" does not end a game (it cannot when FrameLoad started the game itself because Steam had not loaded its shortcut yet), use **Stop** in FrameLoad.
+One of FramePort's dependencies cannot be installed on the Frame: it needs a C compiler, which SteamOS does not ship. So FramePort's "Unity: turn off MSAA" fix is unavailable there; everything else works. Whether a given game runs after porting is decided by FramePort's patches for it, so game-specific fixes belong in FramePort's catalog.
 
-On the Frame one of FramePort's dependencies cannot be installed (it needs a C compiler SteamOS does not ship), so FramePort's "Unity: turn off MSAA" fix is unavailable there; everything else works.
+Command line: `frameload port --setup`, `frameload port <package>`, `frameload port --status`. To use an existing FramePort install instead, set `porting.frameport_cli` in `config.json`.
 
-Command line: `frameload port --setup`, `frameload port <package>`, `frameload port --status`. An existing FramePort install can be used instead by setting `porting.frameport_cli` in `config.json`.
+### Steam's menu over a game that just started
 
-The automatic setup, update, analysis and the start of the build were run against the real FramePort command line in Linux x86-64 and ARM64 containers. It has not yet been run on a Steam Frame, and whether a given game then starts is decided by FramePort's patches for it; game-specific fixes belong in FramePort's catalog.
+When a ported game shows its first frame, Steam opens its own menu (Resume / Exit game) on top of it. FrameLoad's launcher closes that menu through Steam's own interface, and stops as soon as you open the menu yourself with the controller's Steam button.
 
-### Self-test
+To switch this off for one game, put `FRAMELOAD_KEEP_DASHBOARD=1 %command%` in its launch options in Steam (game → Properties).
 
-You never have to run this: the dashboard runs it by itself each time it opens and shows a notice only if something is wrong. To see the full list, `frameload doctor` (or **System > Run Self-Test**) checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library, every installed game and the porting setup, and lists the cameras the system exposes. Include its output when you report a problem.
+If Steam's "Exit game" does not end a game, use **Stop** in FrameLoad. That happens when FrameLoad started the game itself because Steam had not loaded its shortcut yet: after a new install, and right after a game was ported or updated while Steam was running.
 
 ### Hand tracking
 
-The Frame does not track bare hands with its cameras. Its runtime exposes `XR_EXT_hand_tracking` with a skeleton driven by the controllers' capacitive finger sensors, so hand-tracking games are played holding the controllers. *Hand input: Hands* passes that skeleton to a FramePort-ported game; *Controllers* reports Touch controllers instead; *Automatic* chooses Hands only for games whose manifest requires hand tracking.
+The Frame does not track bare hands with its cameras. Its runtime exposes `XR_EXT_hand_tracking` with a skeleton driven by the controllers' finger sensors, so hand-tracking games are played holding the controllers. For a game ported with FramePort, the *Hand input* setting decides what the game sees:
+- *Hands* passes that skeleton through.
+- *Controllers* reports Touch controllers instead.
+- *Automatic* chooses Hands only for games whose manifest requires hand tracking.
 
-Playing with bare hands and no controllers is not possible today: it needs a tracker that reads the headset's cameras and feeds SteamVR, which neither Valve nor FrameLoad ships. Community projects are working on one. Because FrameLoad passes the runtime's own hand skeleton through, a game set to *Hands* should pick up such a tracker without changes here once one exists.
+System → **Hand Tracking in Games** lists the games that use hands.
 
-### Opening the dashboard from another device
-
-Requests from the headset itself are trusted. Every other device must be paired once with a six-digit code shown in the headset (**System → Phone & PC Access**); the code is valid for five minutes and works once. Only someone at the headset can create codes or remove devices.
-
-The dashboard answers under an IP address, `localhost` and the headset's own name. To use another host name, run `frameload allow-host <name>` on the Frame (`--remove` undoes it).
+Playing with bare hands and no controllers is not possible today. It needs a tracker that reads the headset's cameras and feeds SteamVR, which neither Valve nor FrameLoad ships. Community projects are working on one. Because FrameLoad passes the runtime's own hand skeleton through, a game set to *Hands* should pick up such a tracker without changes here once one exists.
 
 ### When a new game is missing from Steam
 
-Steam reads its shortcut list only when it starts. After an install, FrameLoad shows which games are waiting. You can start them right away with **Launch** in FrameLoad's library, or press **Restart Steam Now**, which closes FrameLoad's window and any running game, rewrites the shortcuts while Steam is stopped, and starts Steam again.
-
-### When a game freezes
-
-If a game uses up the memory, the headset stops responding entirely. With the **Freeze Guard** on (System tab, on by default), FrameLoad ends the game before that happens and tells you. A game that keeps running but stops drawing is reported after 90 seconds; press **Stop**, or switch on "Also stop games that show no new frame" to have FrameLoad do it. Both only cover games started through FrameLoad's launcher (from FrameLoad or from Steam).
+Steam reads its shortcut list only when it starts. After an install, a banner shows which games are waiting.
+- You can start them right away with **Play** in FrameLoad's library.
+- Or press **Restart Steam Now**, which appears when FrameLoad can restart Steam safely. It closes FrameLoad's window and any running game, rewrites the shortcuts while Steam is stopped, and starts Steam again.
 
 ### Stopping a game
 
-A running game has a **Stop** button on its card and page, and a red **Stop** chip in FrameLoad's header. Use it for any game FrameLoad started itself: Steam only offers "exit" for games it started. From a terminal: `frameload stop` (all running games) or `frameload stop <package>`.
+A running game has a **Stop** button on its card and page, and a red **Stop** chip in FrameLoad's header. Use it for any game FrameLoad started itself, because Steam only offers "exit" for games it started. From a terminal: `frameload stop` stops all running games, `frameload stop <package>` stops one.
 
-### Apps that cannot be ported
+### When a game freezes
 
-Some apps verify their own signing certificate when they start. Porting has to re-sign the APK, so such an app stops at its loading screen (SteamVR shows "Waiting"). FrameLoad marks the ones it knows (currently SKYBOX VR Player) as **Cannot run** and does not start them. Working around this would mean defeating the app's tamper check, which FrameLoad does not do.
+If a game uses up the memory, the headset stops responding entirely. The **Freeze Guard** (System tab, on by default) prevents that:
+- Each game's memory is limited so SteamVR keeps 2.5 GB.
+- When the headset is about to run out anyway, FrameLoad ends the game and tells you.
+
+A game ported with FramePort that keeps running but stops drawing frames is reported after 90 seconds. Press **Stop**, or switch on "Also stop games that show no new frame" to have FrameLoad do it. That switch is off by default, because taking the headset off pauses games too.
+
+The guard covers games started through FrameLoad's launcher, from FrameLoad or from Steam.
 
 ### When a game does not start
 
-Open the game in the library and press **Launch Log**. FrameLoad reads the log of the last start and names the cause when it recognises one; the raw log is shown below for everything else.
+Open the game and press **Launch Log**. FrameLoad reads the log of the last start and names the cause when it recognises one; the raw log is shown below it. Recognised causes include:
+- no launcher activity
+- a rejected APK
+- a game that asks for OpenXR 1.1 or for Meta's runtime
+- a crash
+- a missing microSD card
+- podman running out of kernel keyrings
+
+For everything around the game, run **System → Self-Test**, or `frameload doctor` in a terminal. It checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library, every installed game and the porting setup. Include its output when you report a problem.
+
+### Apps that cannot run
+
+Some apps verify their own signing certificate when they start. Porting has to re-sign the APK, so such an app stops at its loading screen (SteamVR shows "Waiting"). FrameLoad marks the ones it knows (currently SKYBOX VR Player) as **Cannot run** and does not start them. Working around this would mean defeating the app's tamper check, which FrameLoad does not do. The same label marks apps that are 32-bit only, need a newer Android than Lepton's, or come only as split APKs.
+
+### Opening the dashboard from another device
+
+Requests from the headset itself are trusted. Every other device must be paired once:
+- The six-digit code is shown in the headset under **System → Phone & PC Access**.
+- A code is valid for five minutes, works once, and is withdrawn after five wrong tries.
+- Only someone at the headset can create codes or remove paired devices.
+
+The dashboard answers under an IP address, `localhost` and the headset's own name. To use another host name, run `frameload allow-host <name>` on the Frame; `--remove` undoes it.
+
+### Mods and custom songs
+
+In a game's page, under **Mods & Custom Songs**, type the path of a zip, folder or file and press **Inject**, or use `frameload inject-mod <package> <path>`. Everything goes into the game's shared storage, `lepton-data/external/Android/data/<package>/files/`:
+- For Beat Saber, everything goes to `CustomSongs/<name>`.
+- For other games, a zip with an `info.dat` or `.ogg`/`.egg` files goes to `CustomSongs/<name>`, anything else to `mods/<name>`.
+- On the command line, `--subpath <folder>` picks another folder under `files/`.
+
+The folders are made writable for the container. Whether a game loads them is up to the game or its mod loader.
+
+### Save backups
+
+**Backup Saves** on a game's page writes `~/.local/share/frameload/backups/<package>_save_<date>_<time>.tar.gz`. It holds the app's private storage (`internal/`) and its shared storage (`external/`, without OBB files).
+- Uninstalling one game in the dashboard makes a backup first. The Storage tab's batch uninstall asks whether to make one.
+- Restoring is not in the dashboard yet. To restore by hand, install the game again if it was uninstalled, make sure it is stopped, and run:
+
+```bash
+podman unshare tar -xzf ~/.local/share/frameload/backups/<file>.tar.gz -C <game folder>/lepton-data
+```
+
+The game folder is `~/Applications/quest-frame/<package>`, or `<drive>/quest-frame/<package>` for a game on a microSD card or USB drive.
 
 ---
 
-## 📁 Storage Layout
+## 🎮 Controls
 
-| Directory | Purpose |
-|---|---|
-| `~/Applications/quest-frame/<pkg>/` | Game container anchor, `launch.sh`, `deployment.json`, artwork, and `.last_played` / `.playtime` (play history) |
-| `~/Applications/quest-frame/<pkg>/lepton-app/` | `game.apk` and `obb/` files |
-| `~/Applications/quest-frame/<pkg>/lepton-data/` | Container storage: `internal/<pkg>` (the app's private data, most saves) and `external/` (shared storage, `Android/data/<pkg>/files/`) |
-| `~/.local/share/frameload/data/` | Mirror catalog metadata (`VRP-GameList.txt`, thumbnails) |
-| `~/.local/share/frameload/cache/` | In-progress downloads |
-| `~/.local/share/frameload/backups/` | Exported save game archives |
-| `~/.local/share/frameload/uploads/` | Files received from a phone or PC, removed after install |
-| `~/Documents/FrameLoad-signing-keys/` | Signing keys of ported games, saved when FrameLoad is uninstalled |
-| `~/.local/share/Steam/userdata/<id>/config/` | Steam `shortcuts.vdf` and `grid/` artwork |
-
----
-
-## 🎮 VR Controller & Laser Pointer Bindings
-
-| Control / Gesture | Action |
-|---|---|
-| **Laser Pointer Drag & Flick** | **Momentum Drag-to-Scroll:** Grab any page, catalog grid, or modal and flick with natural inertial physics friction |
+| Control | Action |
+| :--- | :--- |
+| **Laser + trigger** | Click |
+| **Laser drag** | Drag a list, page or dialog to scroll it; a flick keeps it moving |
 | **Scroll arrows (right edge)** | Appear whenever a page or dialog is longer than the window: **back to top**, **up**, **down**. Tap for a step, hold to keep scrolling |
-| **Press the tab you are on** | Back to the top of that tab |
-| **Left / Right Trigger** | Page up / page down |
-| **Stick Click** | Back to the top |
-| **Laser Aim + Right Stick** | **Targeted Scrolling:** Point your laser at any specific card, release note, chips bar, or log drawer and tilt Right Stick to scroll it smoothly |
-| **Laser Aim + Left Stick / D-Pad** | **Contextual Navigation:** Pointing at any element anchors joystick movement directly to that card |
-| **Index Trigger / A Button** | Select / Open Game Details / Sideload / Confirm |
-| **Grip Button / B Button** | Back / Close Modal dialogs (Modal Focus Trap) |
-| **X Button** | Quick Action (Download / Launch) |
-| **Y Button** | Instant Search Focus |
-| **LB / RB (Bumpers)** | Previous / Next Tab switching |
-| **Keyboard** | Arrow keys move, Enter selects, Esc goes back, Page Up / Page Down / Home / End scroll |
+| **A** | Select (on a drop-down: the next option) |
+| **B** | Back: closes the top dialog or leaves a text field |
+| **X** | On a card with an action button (Browse in every look, the library in Neon and Daylight) it presses that button: Play, Download, Install, Update, Port & Play or Stop. Elsewhere it acts like A. On a text field it also opens Steam's keyboard while its auto-open switch is on |
+| **Y** | Search |
+| **LB / RB** | Previous / next tab |
+| **LT / RT** | Page up / page down |
+| **Stick click** | Back to the top |
+| **D-pad / left stick** | Move the focus. The first press starts at whatever the laser points at. On a slider, left and right change its value |
+| **Right stick** | Scroll whatever the laser points at, else the open dialog or the page |
+| **The tab you are on** | Press it again to return to its top |
+| **Keyboard** | Arrow keys move, Enter or Space selects, Esc goes back, Page Up / Page Down / Home / End scroll |
 
-If a stick or button does nothing, open **System → Controller Test**: it shows live what the controllers send to FrameLoad (gamepad axes and buttons, scroll events, pointer presses). A browser only reports a gamepad after its first button press.
+Big Picture shows the controller's buttons along the bottom. The other looks show a short button guide after you use the controller. The keyboard button next to the search box opens Steam's keyboard (Steam + X), and it can open by itself when a text field is selected (System → Steam Frame Virtual Keyboard).
+
+If a stick or button does nothing, open **System → Controller Test**. It shows live what the controllers send to FrameLoad: gamepad axes and buttons, scroll events, and pointer presses. A browser only reports a gamepad after its first button press. Until then, the scroll arrows work with the laser alone.
+
+---
+
+## 💻 Command line
+
+The installer puts a `frameload` command in `~/.local/bin`. If your shell does not find it, use the full path `~/.local/bin/frameload`.
+
+```bash
+frameload                      # open the dashboard window (starts the service if needed)
+frameload --daemon             # start the background server only
+frameload --kill               # stop the background server
+frameload doctor               # self-test of Lepton, podman, Steam, games and porting
+frameload info                 # device, Lepton, battery and storage as JSON
+
+# Games
+frameload list
+frameload install <file-or-folder> [--title "Name"] [--obb <file-or-folder>] [--device <drive-id>] [--flat]
+frameload launch <package>
+frameload stop [<package>]                       # all running games without a package
+frameload uninstall <package> [--keep-saves]     # --keep-saves: write a save backup first
+frameload storage                                # drives and their ids, as JSON
+frameload move <package> <internal|drive-id|folder>
+frameload sync-shortcuts                         # rewrite every game's Steam shortcut (while Steam is stopped)
+
+# Porting (FramePort)
+frameload port --status
+frameload port --setup
+frameload port <package>
+
+# Per-game settings
+frameload tune --list                            # presets and every setting
+frameload tune <package>                         # show a game's settings
+frameload tune <package> --preset sharp          # default, sharp, smooth (120 Hz), battery
+frameload tune <package> --scale 1.3 --refresh 90 --hands controllers --set foveation=fixed
+frameload tune --batch battery                   # one preset for every installed Quest game
+
+# Mods, links, access
+frameload inject-mod <package> <zip-or-folder> [--name "Song"] [--subpath <folder>]
+frameload handle-url "frameload://launch?package=<package>"
+frameload allow-host <name> [--remove]
+
+# Browse catalog
+frameload sync
+frameload search "<name>"
+
+# Rarely needed
+frameload serve [--host 0.0.0.0] [--port 5050]   # run the server in the foreground
+frameload window [--url <url>] [--fullscreen]    # native window only (Qt WebEngine or WebKit2GTK)
+frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
+```
+
+`frameload --help` lists the commands (all of them except `--daemon` and `--kill`), and `frameload <command> --help` shows a command's options. Drive ids are `internal` or `ext_<name>`, as listed by `frameload storage`.
+
+---
+
+## 📁 Files and folders
+
+**Program and system integration**
+
+| Path | What is there |
+| :--- | :--- |
+| `~/Applications/FrameLoad/` | The program (a git checkout, or the release files) |
+| `~/.config/systemd/user/frameload.service` | Background service on port 5050 |
+| `~/.config/autostart/frameload.desktop` | Starts the service instead, where systemd's user bus is not available |
+| `~/.local/share/applications/frameload.desktop` | Desktop entry and `frameload://` handler |
+| `~/.local/bin/frameload` | The `frameload` command |
+| `~/.config/containers/containers.conf` | `keyring = false` for rootless podman |
+| `~/.steam/steam/userdata/<id>/config/` | Steam's `shortcuts.vdf` (FrameLoad keeps the last 5 versions as `shortcuts.vdf.backup-*`) and `grid/` artwork, named by each shortcut's id |
+| `~/Documents/FrameLoad-signing-keys/` | Signing keys of ported games, saved when FrameLoad is uninstalled |
+| `~/.var/app/<flatpak-id>/frameload-profile/` | Profile of FrameLoad's window in the Firefox, Chromium or Chrome Flatpak |
+
+**FrameLoad's data: `~/.local/share/frameload/`**
+
+| Path | What is there |
+| :--- | :--- |
+| `config.json` | Settings (see [Configuration](#-configuration)) |
+| `paired_devices.json` | Paired phones and PCs (only hashes of their session tokens) |
+| `backups/` | Save backups |
+| `cache/` | Downloads in progress, porting work folders, update downloads |
+| `data/` | Catalog data, cover thumbnails, and the unpacked copy of each game downloaded from Browse (kept after install; safe to delete once the game is installed) |
+| `uploads/` | Files received from a phone or PC; removed after install, and unused ones when FrameLoad starts and they are older than 24 hours |
+| `frameport-venv/`, `frameport-home/` | FramePort and its tools (Java, OVRPort, apksigner, signing keys) |
+| `bin/` | 7-Zip |
+| `chromium-profile/`, `firefox-profile/` | Window profiles for a Chrome, Chromium or Firefox that is not a Flatpak |
+| `server.log` | Server output when it runs without systemd (with systemd: `journalctl --user -u frameload`) |
+
+**One game: `~/Applications/quest-frame/<package>/`** (on a microSD card or USB drive: `<drive>/quest-frame/<package>/`)
+
+| Path | What is there |
+| :--- | :--- |
+| `launch.sh` | The launcher Steam starts |
+| `deployment.json` | What FrameLoad knows about the game |
+| `settings.conf` | FrameBridge settings |
+| `artwork/` | Steam artwork, the APK's own icon and `artwork.json` |
+| `launch.log`, `dashboard.log` | Output of the last start |
+| `.last_played`, `.playtime` | Play history |
+| `unported.apk` | The original APK of a ported game |
+| `lepton-app/` | `game.apk` and `obb/` |
+| `lepton-data/` | The container's storage: `internal/<package>` (private data, most saves) and `external/` (shared storage, `Android/data/<package>/files/`) |
+| `lepton-shaders/` | Shader cache |
+
+---
+
+## 🔧 Configuration
+
+Almost everything is set in the dashboard. FrameLoad keeps its settings in `~/.local/share/frameload/config.json`. The running server writes this file back whenever a setting changes, so stop it before editing by hand (`frameload --kill`) and start it again afterwards (`frameload --daemon`).
+
+| Key | Default | Meaning |
+| :--- | :--- | :--- |
+| `ui.skin` / `ui.daylight` | `"a"` / `"light"` | The look (`a`-`f`) and Daylight's mode (System → Appearance) |
+| `porting.auto` | `true` | Port Quest games automatically after installing them |
+| `porting.auto_setup` | `true` | Download and update the porting tools automatically |
+| `porting.frameport_cli` | `""` | Use this FramePort executable instead of FrameLoad's own copy (a path, or a list such as `["python3", "-m", "frameport"]`) |
+| `guard.enabled`, `guard.memory_limit` | `true` | Freeze Guard and its memory limit |
+| `guard.stop_frozen`, `guard.frozen_seconds` | `false`, `90` | Stop games that show no new frame, and after how long |
+| `power.keep_awake_busy` | `true` | Stay awake while downloading, installing or porting |
+| `storage.default_device_id` | `"internal"` | Drive new games go to |
+| `server.allowed_hosts` | `[]` | Extra host names (`frameload allow-host`) |
+| `download.delete_cache_after_install` | `true` | Delete a download once it is installed |
+| `game_defaults` | `{}` | Default per-game settings (System → Default Game Settings) |
+
+**Environment variables**
+
+| Variable | Effect |
+| :--- | :--- |
+| `FRAMELOAD_INSTALL_DIR` | Where the one-line installer and `frameload-installer.sh` put FrameLoad |
+| `FRAMELOAD_PORT` | Port the `frameload` command uses to start and open the server (default 5050; the service itself always uses 5050) |
+| `FRAMELOAD_WINDOW` | `kiosk` or `normal`, for a Firefox window |
+| `FRAMELOAD_KEEP_DASHBOARD=1 %command%` | As a game's Steam launch options: leave Steam's menu open when the game starts |
+
+---
+
+## 🖼️ FrameLoad in your Steam library
+
+FrameLoad adds itself to Steam with its own artwork:
+
+| Poster (`600x900`) | Banner (`920x430`) | Icon (`512x512`) |
+|:---:|:---:|:---:|
+| ![Poster](docs/images/steam/poster.png) | ![Banner](docs/images/steam/banner.png) | ![Icon](docs/images/steam/icon.png) |
+
+![Hero](docs/images/steam/hero.png)
+
+If FrameLoad is missing from your Steam library, run `bash ~/Applications/FrameLoad/install.sh` again, best while Steam is stopped. `frameload sync-shortcuts` and **Restart Steam Now** only rewrite the games' shortcuts.
 
 ---
 
@@ -481,4 +577,4 @@ If you love using **FrameLoad** on your Steam Frame and want to support ongoing 
 
 ## 📜 License
 
-GPL-3.0, see [LICENSE](LICENSE). On-headset porting runs [FramePort](https://github.com/spoopyghosty0/frameport) (GPL-3.0), which FrameLoad downloads on request; the game folder layout follows FramePort's so both tools can manage the same library. Not affiliated with Valve or Meta.
+GPL-3.0, see [LICENSE](LICENSE). On-headset porting runs [FramePort](https://github.com/spoopyghosty0/frameport) (GPL-3.0), which FrameLoad downloads by itself; the game folder layout follows FramePort's, so both tools can manage the same library. Not affiliated with Valve or Meta.
