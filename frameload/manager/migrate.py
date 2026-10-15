@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 6
+LAYOUT_VERSION = 7  # 7: launch.sh records how a session ended (.session_end) and keeps Lepton's log dump
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (

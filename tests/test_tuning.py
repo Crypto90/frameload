@@ -129,6 +129,13 @@ class TestInstallAndApply(TuningTestCase):
         self.assertFalse(os.path.exists(os.path.join(self.anchor_root, "com.studio.vr", "lepton-data", "local.prop")))
         self.assertEqual(self.conf("com.studio.vr"), {})
 
+    def test_a_new_install_has_the_current_layout(self):
+        from frameload.manager import migrate
+        self.install("com.studio.layout")
+        dep = json.loads(self.read("com.studio.layout", "deployment.json"))
+        self.assertEqual(dep["layout_version"], migrate.LAYOUT_VERSION)  # else migrate rewrites it at once
+        self.assertIn("LEPTON_DUMP_LOGCAT=1", self.read("com.studio.layout", "launch.sh"))
+
     def test_flat_install_shows_window_and_hides_navbar(self):
         res = self.install("org.example.flat", categories=(LAUNCHER,))
         self.assertFalse(res["is_vr"])

@@ -684,6 +684,21 @@ class TestLaunchLog(TempCase):
         titles = [f["title"] for f in launchlog.diagnose(["FrameBridge: adapter loaded", "FrameBridge: pacing: 72 fps"])]
         self.assertEqual(titles, ["The game was running (72 fps)"])
 
+    def test_framebridges_real_pacing_line_counts(self):
+        # FrameBridge prints "%.1f fps"; the pattern used to want a whole number and never matched.
+        line = "10-15 12:00:05.123  1234  1250 I FrameBridge: FrameBridge: pacing: 71.9 fps, displayTime vs predicted: avg 1.2 ms"
+        self.assertEqual([f["title"] for f in launchlog.diagnose([line])], ["The game was running (72 fps)"])
+
+    def test_how_a_game_ended(self):
+        def titles(*lines):
+            return [f["title"] for f in launchlog.diagnose(list(lines))]
+
+        self.assertIn("Closed by its launcher", titles("Signal SIGTERM received, killing container..."))
+        self.assertIn("The graphics processor hung", titles("E MESA: error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)"))
+        self.assertIn("The game crashed", titles("I Zygote  : Process 1234 exited due to signal 11 (Segmentation fault)"))
+        # Killed (9) is how Android ends processes normally.
+        self.assertNotIn("The game crashed", titles("I Zygote  : Process 1234 exited due to signal 9 (Killed)"))
+
     def test_reads_the_tail_of_the_log(self):
         base = os.path.join(self.tmp, "game")
         self.patch(InstalledManager, "get_game", return_value={"package": "a.b", "base": base})

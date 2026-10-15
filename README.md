@@ -53,7 +53,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 ### 📚 Library
 - All your games and apps in one place. The library starts with the games you played last (**Recent games** in Big Picture), with when you last played and for how long. Each game's launcher records its sessions, so games started from Steam count too.
 - Sort by recently played, name, install date or size. Search filters as you type.
-- A game's page has **Launch in VR** (**Open** for a 2D app), **Settings**, **Launch Log**, **Backup Saves** and **Uninstall**.
+- A game's page has **Launch in VR** (**Open** for a 2D app), **Settings**, **Launch Log**, **Backup Saves** and **Uninstall**, and **What Happened** when its last session ended in a crash or a stop.
 - A running game gets a **Stop** button, plus a Stop chip that stays on screen while it runs.
 - A Quest game that still needs porting shows **Port & Play**: it is ported first and starts by itself when that is done.
 
@@ -112,9 +112,11 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 - **The Storage tab** shows each drive's space split into games, saves, shaders and other, and lists every game's size. You can select several games to move or uninstall them, clean the download cache, or reset the shader caches of the installed games on every drive.
 
 ### 🧊 Freeze Guard, Keep Awake and Performance
-- **Freeze Guard:** a game that uses up the headset's memory freezes everything, even the Steam button. FrameLoad prevents that:
+- **Freeze Guard:** a game that uses up the headset's memory, or whose picture freezes, can leave the whole headset unresponsive, even the Steam button. FrameLoad prevents that with three switches, all on by default:
   - It limits each game's memory so SteamVR keeps 2.5 GB.
   - It watches memory pressure while a game runs, ends the game before the headset locks up, and tells you which game it was.
+  - It stops a game whose picture has not changed for 30 seconds (15 s, 1 or 2 minutes can be chosen). It waits while the headset is asleep, the Steam menu is open or the game is still drawing.
+- **What happened:** when a game crashes, hangs the graphics processor, runs out of memory, is stopped by the Freeze Guard, cannot start or closes right after starting, FrameLoad opens a window with the cause in plain words, the log lines that show it, and **Copy Log** / **Save Log** for the full report.
 - **Keep Awake:** FrameLoad holds SteamOS's sleep inhibitor while it downloads from Browse, installs a game (a download, a file from the Install File tab or one sent from your phone or PC) or ports a game. You can also keep the headset awake for an hour, or until you switch it off. Whether Steam's own sleep timer on the Frame honours the inhibitor is not confirmed yet.
 - **Performance:** System → Performance shows CPU, memory, swap, GPU clock and temperatures live. Neon, Spatial, Command Center and Daylight also show CPU use in their status area.
 
@@ -124,7 +126,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 ### 🧩 Saves, mods and logs
 - **Save backups** hold the app's private storage, where most games save, and its shared storage. Uninstalling a game in the dashboard makes a backup first; if the backup fails, the game stays installed until you choose to uninstall it without one.
 - **Mods and Beat Saber custom songs** go into the game's shared storage from its page or the command line.
-- **Launch Log** explains the usual reasons a game does not start, in plain words.
+- **Launch Log** explains the usual reasons a game does not start, in plain words. **Copy Log** and **Save Log** hand out the log as a report to share when you ask for help.
 - **Self-test:** checks everything FrameLoad relies on. It runs by itself when the dashboard opens and only speaks up when something is wrong.
 
 ### ⚡ Updates
@@ -337,22 +339,47 @@ A running game has a **Stop** button on its card and page, and a red **Stop** ch
 
 ### When a game freezes
 
-If a game uses up the memory, the headset stops responding entirely. The **Freeze Guard** (System tab, on by default) prevents that:
-- Each game's memory is limited so SteamVR keeps 2.5 GB.
-- When the headset is about to run out anyway, FrameLoad ends the game and tells you.
+If a game uses up the memory, or hangs with a picture that sticks to your head, the headset can stop responding entirely. The **Freeze Guard** (System tab) has three switches that work on their own, all on by default:
+- **Stop a game before it runs the headset out of memory:** when the headset is about to run out, FrameLoad ends the game.
+- **Limit each game's memory** so SteamVR keeps 2.5 GB.
+- **Stop a game whose picture freezes** after 30 seconds (choose 15 seconds, 1 or 2 minutes). With 15 seconds a game that loads for a long time without drawing can be stopped.
 
-A game ported with FramePort that keeps running but stops drawing frames is reported after 90 seconds. Press **Stop**, or switch on "Also stop games that show no new frame" to have FrameLoad do it. That switch is off by default, because taking the headset off pauses games too.
+How FrameLoad tells that a picture froze:
+- A game ported with FramePort reports its frames about every 5 seconds. When the reports stop, FrameLoad still waits while the headset is asleep, while the Steam menu is open, and up to 2 minutes while the game is in the background. It also waits while the game keeps the graphics processor busy, for example on a loading screen.
+- Other VR games are judged by their graphics work. FrameLoad only stops one when it can tell that the headset is in use and the Steam menu is closed; otherwise it tells you, and you decide whether to press **Stop**.
+- 2D apps are never judged by their picture.
+- With the switch off, FrameLoad still tells you when a picture has frozen.
+
+Settings saved by v1.3.5 to v1.3.7 (off, 90 seconds) move to the new default (on, 30 seconds) once; switching it off again afterwards sticks.
 
 The guard covers games started through FrameLoad's launcher, from FrameLoad or from Steam.
 
+### When a game crashes or is stopped
+
+FrameLoad opens a **What happened** window when a game:
+- crashed, hung the graphics processor or ran out of memory
+- was stopped by the Freeze Guard
+- could not start, or closed within a minute without showing a VR picture
+- was running when the headset restarted
+
+It names the cause in plain words (for example "It crashed (SIGSEGV) in thread RenderThread, inside the headset's graphics driver (libgallium_dri.so)") and shows the log lines that say so. The window waits until no other dialog is open and no game is running. It also comes back later if FrameLoad was closed at the time, until you close it.
+
+The window's buttons:
+- **Copy Log** copies a report for a bug report or a forum post: what happened, the game and FrameLoad versions, SteamOS, Lepton, memory, the crash backtrace and the end of the log. Your home folder, host name, network and hardware addresses and Steam account ids are removed.
+- **Save Log** saves the full report: on the headset to `~/Downloads`, on a phone or PC as a download.
+- **Open Launch Log** shows the log of that session. FrameLoad keeps a copy, because the next start erases it.
+- **Don't Show for This Game** stops the window from opening by itself for that game.
+
+A game whose last session ended this way has a **What Happened** button on its page. Normal quits, Steam's Exit game and your own **Stop** are recorded without a window. Switch the window off under **System → Freeze Guard** ("Show what happened when a game crashes or is stopped").
+
 ### When a game does not start
 
-Open the game and press **Launch Log**. FrameLoad reads the log of the last start and names the cause when it recognises one; the raw log is shown below it. Recognised causes include:
+Open the game and press **Launch Log**. FrameLoad reads the log of the last start and names the cause when it recognises one; the raw log is shown below it. **Copy Log** and **Save Log** hand out the same report as the What happened window. Recognised causes include:
 - no launcher activity
 - a rejected APK
 - a game that asks for OpenXR 1.1 or for Meta's runtime
-- a crash
-- a missing microSD card
+- a crash, or a hung graphics processor
+- a missing microSD card, or Lepton not found
 - podman running out of kernel keyrings
 
 For everything around the game, run **System → Self-Test**, or `frameload doctor` in a terminal. It checks Lepton, podman and its keyring fix, the tools the launcher needs, your Steam library, every installed game and the porting setup. Include its output when you report a problem.
@@ -495,6 +522,7 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `backups/` | Save backups |
 | `cache/` | Downloads in progress, porting work folders, update downloads |
 | `data/` | Catalog data, cover thumbnails, and the unpacked copy of each game downloaded from Browse (kept after install; safe to delete once the game is installed) |
+| `data/sessions/` | How each game's last session ended (`<package>.json`) and the logs kept from it (`<package>/`, at most about 7 MB per game; removed when the game is uninstalled) |
 | `uploads/` | Files received from a phone or PC; removed after install, and unused ones when FrameLoad starts and they are older than 24 hours |
 | `frameport-venv/`, `frameport-home/` | FramePort and its tools (Java, OVRPort, apksigner, signing keys) |
 | `bin/` | 7-Zip |
@@ -511,6 +539,7 @@ frameload uninstall-app [--yes] [--purge-games] [--purge-backups]
 | `artwork/` | Steam artwork, the APK's own icon and `artwork.json` |
 | `launch.log`, `dashboard.log` | Output of the last start |
 | `.last_played`, `.playtime` | Play history |
+| `.session_end`, `.launch_error` | How the last session ended (start, end, exit status), and why the launcher could not start Lepton |
 | `unported.apk` | The original APK of a ported game |
 | `lepton-app/` | `game.apk` and `obb/` |
 | `lepton-data/` | The container's storage: `internal/<package>` (private data, most saves) and `external/` (shared storage, `Android/data/<package>/files/`) |
@@ -528,8 +557,9 @@ Almost everything is set in the dashboard. FrameLoad keeps its settings in `~/.l
 | `porting.auto` | `true` | Port Quest games automatically after installing them |
 | `porting.auto_setup` | `true` | Download and update the porting tools automatically |
 | `porting.frameport_cli` | `""` | Use this FramePort executable instead of FrameLoad's own copy (a path, or a list such as `["python3", "-m", "frameport"]`) |
-| `guard.enabled`, `guard.memory_limit` | `true` | Freeze Guard and its memory limit |
-| `guard.stop_frozen`, `guard.frozen_seconds` | `false`, `90` | Stop games that show no new frame, and after how long |
+| `guard.enabled`, `guard.memory_limit` | `true` | Freeze Guard's memory watchdog and its memory limit |
+| `guard.stop_frozen`, `guard.frozen_seconds` | `true`, `30` | Stop a game whose picture froze, and after how long (15, 30, 60 or 120 s) |
+| `guard.report_crashes` | `true` | Open "What happened" when a game crashes or is stopped |
 | `power.keep_awake_busy` | `true` | Stay awake while downloading, installing or porting |
 | `storage.default_device_id` | `"internal"` | Drive new games go to |
 | `server.allowed_hosts` | `[]` | Extra host names (`frameload allow-host`) |

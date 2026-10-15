@@ -77,6 +77,7 @@ class InstalledManager:
     @staticmethod
     def list_installed() -> List[Dict[str, Any]]:
         """Scans internal SSD and mounted MicroSD cards for installed games."""
+        from .sessions import summary as last_session  # sessions reads deployment.json through this module
         games = []
         try:
             running_containers = InstalledManager._get_running_lepton_containers()
@@ -154,6 +155,7 @@ class InstalledManager:
                         "port_error": str(dep.get("port_error", "")),
                         "is_running": is_running,
                         **play_stats(base, is_running),
+                        "last_session": last_session(pkg),  # how its last session ended (What Happened)
                         "artwork": artwork_info(art_dir, pkg, dep.get("title", pkg)) if os.path.isdir(art_dir) else None,
                         "thumbnail_url": f"/api/installed/artwork/{pkg}" if os.path.isdir(art_dir) else f"/api/thumbnail/{pkg}",
                     })

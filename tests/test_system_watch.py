@@ -188,11 +188,48 @@ class TestLocalInstallKeepsAwake(unittest.TestCase):
         self.assertEqual(self.update.call_args_list[-1].args, ("",))
 
 
+class TestGameGpuTime(Case):
+    """A game's own GPU time, from the DRM fdinfo of its processes (what Freeze Guard judges games by
+    when they have no FrameBridge, and what keeps a loading game from being stopped)."""
+
+    def process(self, pid, comm, cmdline, fdinfo=None):
+        self.write(f"proc/{pid}/comm", comm + "\n")
+        self.write(f"proc/{pid}/cmdline", cmdline.replace(" ", "\0") + "\0")
+        for fd, text in (fdinfo or {}).items():
+            self.write(f"proc/{pid}/fdinfo/{fd}", text)
+
+    def test_finds_the_apps_processes_and_their_gpu_time(self):
+        proc = os.path.join(self.tmp, "proc")
+        drm = "pos:\t0\nflags:\t02\ndrm-driver:\tmsm\ndrm-client-id:\t{id}\ndrm-engine-gpu:\t{ns} ns\n"
+        # The kernel keeps 15 characters of a process name (".intotheblue.vr"); cmdline has all of it.
+        pkg = "com.intotheblue.vr"
+        self.process(321, pkg[-15:], pkg, {
+            "3": "pos:\t0\nflags:\t0100002\n",            # an ordinary file
+            "7": drm.format(id=11, ns=4_000_000_000),
+            "8": drm.format(id=11, ns=4_000_000_000),     # the same device duplicated: counted once
+            "9": drm.format(id=12, ns=1_000_000_000)})
+        self.process(322, pkg[-15:], pkg + ":service", {"4": drm.format(id=20, ns=500)})
+        self.process(400, pkg[-15:], "com.other.intotheblue.vr")  # the same short name, another app
+        self.process(401, "bash", "bash -c x")
+        self.assertEqual(perf.app_pids(pkg, proc), [321, 322])
+        fds = {pid: perf.render_fds(pid, proc) for pid in perf.app_pids(pkg, proc)}
+        self.assertEqual(fds, {321: ["7", "8", "9"], 322: ["4"]})
+        self.assertEqual(perf.gpu_time_ns(fds, proc), 5_000_000_500)
+        self.assertIsNone(perf.gpu_time_ns({321: ["3"]}, proc))  # nothing readable: no veto
+        self.assertEqual(perf.app_pids(pkg, os.path.join(self.tmp, "nothing")), [])
+
+    def test_boot_time(self):
+        self.write("proc/stat", "cpu  1 2 3 4\nbtime 1790000000\nprocesses 5\n")
+        self.assertEqual(perf.boot_time(os.path.join(self.tmp, "proc")), 1790000000)
+        self.assertIsNone(perf.boot_time(os.path.join(self.tmp, "nothing")))
+
+
 class TestFreezeGuard(Case):
     def setUp(self):
         super().setUp()
         FreezeGuard.sessions, FreezeGuard._games, FreezeGuard._games_at = {}, [], 0.0
         FreezeGuard._psi, FreezeGuard._last_stop = deque(maxlen=10), 0.0
+        FreezeGuard._last_tick = FreezeGuard._swept_at = 0.0
         FreezeGuard.events.clear()
         self.proc = os.path.join(self.tmp, "proc")
         self.write("proc/meminfo", MEMINFO)
@@ -202,20 +239,61 @@ class TestFreezeGuard(Case):
             base = os.path.join(self.tmp, pkg)
             self.write(f"{pkg}/.launch.lock", "")
             self.write(f"{pkg}/launch.log", "boot\n")
-            self.games.append({"package": pkg, "title": pkg.upper(), "appid": 7, "base": base})
-        inode = os.stat(os.path.join(self.games[0]["base"], ".launch.lock")).st_ino
-        self.write("proc/locks", f"1: POSIX  ADVISORY  WRITE 99 00:1a:555 0 EOF\n"
-                                 f"2: FLOCK  ADVISORY  WRITE 1234 fd:01:{inode} 0 EOF\n"
-                                 f"3: -> FLOCK  ADVISORY  WRITE 1300 fd:01:{inode} 0 EOF\n")
-        self.stopped, self.limits = [], []
+            self.games.append({"package": pkg, "title": pkg.upper(), "appid": 7, "base": base,
+                               "vr": True, "framebridge": True})
+        self.lock_game(0)
+        self.stopped, self.limits, self.finalized = [], [], []
+        self.stop_result = {"success": True}
         self.settings = dict(guard.DEFAULT_SETTINGS)
+        self.hmd, self.dash, self.gpu = None, None, None  # unknown headset state, no answer from Steam, no GPU time
         patch.object(guard, "installed_games", return_value=self.games).start()
         patch.object(FreezeGuard, "settings", side_effect=lambda: dict(self.settings)).start()
         patch.object(guard, "apply_memory_limit", side_effect=lambda name, total: self.limits.append(name) or "").start()
+        patch.object(guard, "hmd_state", side_effect=lambda: self.hmd).start()
+        patch.object(guard, "dashboard_visible", side_effect=lambda: self.dash).start()
+        patch.object(guard, "kernel_gpu_lines", return_value=[]).start()
+        patch.object(guard.perf, "app_pids", side_effect=lambda pkg, proc: [4321] if self.gpu is not None else []).start()
+        patch.object(guard.perf, "render_fds", return_value=["7"]).start()
+        patch.object(guard.perf, "gpu_time_ns", side_effect=lambda fds, proc: None if self.gpu is None else int(self.gpu)).start()
+        patch.object(guard.records, "SESSION_DIR", os.path.join(self.tmp, "sessions")).start()
+        patch.object(guard.records, "finalize", side_effect=lambda pkg, state: self.finalized.append((pkg, state))).start()
+        patch.object(guard.records, "sweep", return_value=[]).start()
+        patch.object(FreezeGuard, "run_async", side_effect=lambda target, *a, **kw: target(*a, **kw)).start()
         self.addCleanup(patch.stopall)
 
+    def lock_game(self, *indexes):
+        lines = ["1: POSIX  ADVISORY  WRITE 99 00:1a:555 0 EOF"]
+        for n, i in enumerate(indexes):
+            inode = os.stat(os.path.join(self.games[i]["base"], ".launch.lock")).st_ino
+            lines.append(f"{n + 2}: FLOCK  ADVISORY  WRITE 1234 fd:01:{inode} 0 EOF")
+            lines.append(f"{n + 2}: -> FLOCK  ADVISORY  WRITE 1300 fd:01:{inode} 0 EOF")
+        self.write("proc/locks", "\n".join(lines) + "\n")
+
+    def stop(self, pkg):
+        self.stopped.append(pkg)
+        return self.stop_result
+
     def check(self, now):
-        return FreezeGuard.check(now=now, stop=self.stopped.append, proc=self.proc)
+        return FreezeGuard.check(now=now, stop=self.stop, proc=self.proc, wall=1_790_000_000 + now)
+
+    def log(self, text, game=0):
+        with open(os.path.join(self.games[game]["base"], "launch.log"), "a") as f:
+            f.write(text)
+
+    def ticks(self, start, end, step=2.0, gpu_share=None, at=None):
+        """Ticks every `step` s from start to end (inclusive); returns {time: events} of ticks that recorded
+        something. gpu_share: the GPU's busy share the game uses meanwhile. at: {time: callable} run first."""
+        out, t = {}, start
+        while t <= end + 1e-9:
+            if at and t in at:
+                at[t]()
+            if gpu_share is not None:
+                self.gpu = (self.gpu or 0) + gpu_share * step * 1e9
+            events = self.check(t)
+            if events:
+                out[t] = events
+            t += step
+        return out
 
     def test_lock_holders_are_read_without_taking_a_lock(self):
         inode = os.stat(os.path.join(self.games[0]["base"], ".launch.lock")).st_ino
@@ -230,59 +308,309 @@ class TestFreezeGuard(Case):
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.assertIn(os.stat(path).st_ino, guard.held_flock_inodes("/proc"))
 
-    def test_a_game_that_stops_drawing_is_reported_not_stopped(self):
-        self.assertEqual(self.check(1000.0), [])
-        self.assertEqual(self.check(1005.0), [])
+    def test_with_stopping_off_a_frozen_picture_is_reported_once(self):
+        self.settings["stop_frozen"] = False
+        self.ticks(1000, 1008)
         self.assertEqual(self.limits, ["lepton-steamlaunch-7"])  # once the container has had a moment
-        with open(os.path.join(self.games[0]["base"], "launch.log"), "a") as f:
-            f.write("FrameBridge: new layer: 0\nFrameBridge: pacing: 71.9 fps, displayTime vs predicted: avg 1.2 ms\n")
-        self.check(1010.0)
-        self.assertEqual(FreezeGuard.status()["games"][0]["fps"], 71.9)
-        self.assertEqual(self.check(1060.0), [])  # 50 s without a frame: could be a loading screen
-        events = self.check(1101.0)
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["kind"], "frozen")
-        self.assertIn("press Stop", events[0]["message"])
+        self.log("FrameBridge: new layer: 0\nFrameBridge: pacing: 71.9 fps, displayTime vs predicted: avg 1.2 ms\n")
+        self.check(1010)
+        self.assertEqual(FreezeGuard.status(now=1010)["games"][0]["fps"], 71.9)
+        events = self.ticks(1012, 1100)
+        self.assertEqual(sorted(events), [1040])  # 30 s without a new picture, then never again
+        self.assertEqual(events[1040][0]["kind"], "frozen")
+        self.assertIn("press Stop", events[1040][0]["message"])
+        self.assertFalse(events[1040][0]["stopped"])
         self.assertEqual(self.stopped, [])
-        self.assertEqual(self.check(1200.0), [])  # reported once
+        self.log("FrameBridge: pacing: 72.0 fps\n")  # drawing again: a new freeze is reported again
+        self.assertEqual(sorted(self.ticks(1102, 1140)), [1132])
 
-        self.settings["stop_frozen"] = True
-        with open(os.path.join(self.games[0]["base"], "launch.log"), "a") as f:
-            f.write("FrameBridge: pacing: 72 fps\n")
-        self.check(1300.0)
-        events = self.check(1395.0)
+    def test_by_default_a_frozen_picture_is_stopped_after_30_s(self):
+        self.assertTrue(self.settings["stop_frozen"])
+        self.assertEqual(self.settings["frozen_seconds"], 30)
+        self.ticks(1000, 1008)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1010, 1038)
+        self.assertEqual(self.stopped, [])  # 28 s: not yet
+        events = self.check(1040)
         self.assertEqual(self.stopped, ["com.game.a"])
-        self.assertIn("stopped", events[0]["message"])
+        self.assertTrue(events[0]["stopped"])
+        self.assertIn("was stopped: its picture had not changed for 30 s", events[0]["message"])
+        with open(os.path.join(self.tmp, "sessions", "com.game.a.stop.json"), encoding="utf-8") as f:
+            marker = json.load(f)
+        self.assertEqual((marker["by"], marker["kind"]), ("guard", "frozen"))
 
-    def test_memory_exhaustion_stops_the_game(self):
-        self.check(1000.0)
+    def test_15_s_never_stops_a_game_that_reports_every_5_s(self):
+        self.settings["frozen_seconds"] = 15
+        pacing = {float(t): (lambda: self.log("FrameBridge: pacing: 72.0 fps\n")) for t in range(1000, 1121, 5)}
+        events = {}
+        for t in range(1000, 1121):  # pacing lines every 5 s, guard ticks every 2 s
+            if t in pacing:
+                pacing[t]()
+            if t % 2 == 0:
+                events.update({t: e for e in [self.check(float(t))] if e})
+        self.assertEqual(events, {})
+        last_line = 1120
+        events = self.ticks(1122, 1150)
+        self.assertEqual(self.stopped, ["com.game.a"])
+        self.assertTrue(15 <= min(events) - last_line <= 17, min(events))
+
+    def test_a_game_in_the_background_is_waited_for_up_to_2_minutes(self):
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.check(1002)
+        self.log("FrameBridge: focus: lost (state 4)\n")
+        self.ticks(1004, 1100)
+        self.assertEqual(self.stopped, [])  # a minute and more in the background: not frozen
+        self.assertEqual(FreezeGuard.status(now=1100)["games"][0]["paused"], "it is in the background")
+        self.ticks(1102, 1124)
+        self.assertEqual(self.stopped, [])
+        self.ticks(1126, 1156)  # after 2 minutes a game that never came back is judged
+        self.assertEqual(self.stopped, ["com.game.a"])
+
+    def test_coming_back_from_the_background_starts_the_wait_again(self):
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\nFrameBridge: focus: lost (state 4)\n")
+        self.ticks(1002, 1018)
+        self.log("FrameBridge: focus: back after 16000 ms (lost to state 4)\n")
+        self.ticks(1020, 1048)
+        self.assertEqual(self.stopped, [])
+        self.check(1050)
+        self.assertEqual(self.stopped, ["com.game.a"])
+
+    def test_an_asleep_headset_is_never_stopped(self):
+        self.hmd = "Standby"
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1002, 1300)
+        self.assertEqual(self.stopped, [])
+        self.assertEqual(FreezeGuard.sessions["com.game.a"]["paused"], "the headset is asleep")
+        self.hmd = "Active"  # back on: the full wait again
+        events = self.ticks(1302, 1340)
+        self.assertEqual(self.stopped, ["com.game.a"])
+        self.assertTrue(1302 < min(events) <= 1332, min(events))
+
+    def test_an_open_steam_menu_is_never_stopped(self):
+        self.dash = True
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1002, 1400)
+        self.assertEqual(self.stopped, [])
+        self.assertEqual(FreezeGuard.sessions["com.game.a"]["paused"], "the Steam menu is open")
+
+    def test_a_long_gap_between_ticks_is_not_a_freeze(self):
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1002, 1020)
+        self.assertEqual(self.check(1120), [])  # 100 s without a tick: the headset slept
+        self.ticks(1122, 1148)
+        self.assertEqual(self.stopped, [])
+        self.check(1150)
+        self.assertEqual(self.stopped, ["com.game.a"])
+
+    def test_a_large_backlog_is_skipped_to_its_newest_lines(self):
+        self.ticks(1000, 1000)
+        self.log(("x" * 1023 + "\n") * 3 * 1024 + "FrameBridge: pacing: 64.0 fps\n")  # 3 MiB of spam, then a frame
+        self.check(1002)
+        self.assertEqual(FreezeGuard.sessions["com.game.a"]["fps"], 64.0)
+        self.assertEqual(FreezeGuard.sessions["com.game.a"]["last_frame"], 1002)
+
+    def test_a_game_still_drawing_without_frame_reports_is_not_stopped(self):
+        self.gpu = 0.0
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        events = self.ticks(1002, 1200, gpu_share=0.10)  # the logcat mirror ended, the game draws on
+        self.assertEqual(self.stopped, [])
+        infos = [e for evs in events.values() for e in evs]
+        self.assertEqual([e["kind"] for e in infos], ["info"])  # said once
+        self.assertIn("still drawing", infos[0]["message"])
+
+    def test_a_game_whose_gpu_went_quiet_is_stopped(self):
+        self.gpu = 0.0
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1002, 1040, gpu_share=0.0)
+        self.assertEqual(self.stopped, ["com.game.a"])
+
+    def test_a_game_not_found_yet_is_looked_for_every_10_s(self):
+        # Finding a game's processes reads the name of every process on the headset.
+        self.ticks(1000, 1030)
+        self.assertEqual(guard.perf.app_pids.call_count, 4)
+
+    def test_without_gpu_readings_the_frames_decide(self):
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1002, 1040)
+        self.assertIsNone(FreezeGuard.sessions["com.game.a"].get("gpu"))
+        self.assertEqual(self.stopped, ["com.game.a"])
+
+    def test_a_stop_that_failed_says_so(self):
+        self.stop_result = {"success": False, "error": "The game's container could not be stopped."}
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        events = [e for evs in self.ticks(1002, 1040).values() for e in evs]
+        self.assertIn("could not be stopped", events[0]["message"])
+        self.assertFalse(events[0]["stopped"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "sessions", "com.game.a.stop.json")))
+
+    def test_2d_apps_are_never_judged(self):
+        self.games[0]["vr"] = False
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.assertEqual(self.ticks(1002, 1300), {})
+        self.assertEqual(self.stopped, [])
+
+    def test_vr_games_without_framebridge_are_judged_by_their_gpu_time(self):
+        self.games[0]["framebridge"] = False
+        self.gpu = 0.0
+        self.ticks(1000, 1010, gpu_share=0.02)  # loading, little drawing: not armed yet
+        self.ticks(1012, 1020, gpu_share=0.30)  # three ticks and more of real drawing
+        self.assertTrue(FreezeGuard.sessions["com.game.a"]["gpu_drawing"])
+        # Frozen, but the headset's state is unknown: told, not stopped.
+        events = self.ticks(1022, 1060, gpu_share=0.0)
+        self.assertEqual(self.stopped, [])
+        message = [e for evs in events.values() for e in evs][0]["message"]
+        self.assertIn("has not drawn anything", message)
+        self.assertIn("could not confirm", message)
+
+        self.ticks(1062, 1070, gpu_share=0.30)  # drawing again
+        self.hmd, self.dash = "Active", False  # in use, no Steam menu: sure enough to stop it
+        self.ticks(1072, 1110, gpu_share=0.005)
+        self.assertEqual(self.stopped, ["com.game.a"])
+
+    def test_memory_exhaustion_stops_the_game_and_leaves_the_guards_marker_first(self):
+        markers = []
+
+        def stop(pkg):
+            with open(os.path.join(self.tmp, "sessions", f"{pkg}.stop.json"), encoding="utf-8") as f:
+                markers.append(json.load(f))
+            self.stopped.append(pkg)
+            return {"success": True}
+
+        self.check(1000)
         self.write("proc/pressure/memory", "some avg10=80.00\nfull avg10=35.00\n")
-        self.assertEqual(self.check(1002.0), [])
-        self.assertEqual(self.check(1004.0), [])
-        events = self.check(1006.0)  # third sample in a row above the limit
+        self.assertEqual(FreezeGuard.check(now=1002, stop=stop, proc=self.proc), [])
+        self.assertEqual(FreezeGuard.check(now=1004, stop=stop, proc=self.proc), [])
+        events = FreezeGuard.check(now=1006, stop=stop, proc=self.proc)  # third sample in a row above the limit
         self.assertEqual(self.stopped, ["com.game.a"])
+        self.assertEqual((markers[0]["by"], markers[0]["kind"]), ("guard", "memory"))
         self.assertEqual(events[0]["kind"], "memory")
         self.assertIn("would have frozen", events[0]["message"])
 
         # Nearly no memory left and swap full also counts, even before pressure builds up.
         self.write("proc/pressure/memory", "some avg10=0.00\nfull avg10=0.00\n")
         self.write("proc/meminfo", MEMINFO.replace("8000000 kB", "300000 kB").replace("SwapFree:        3000000", "SwapFree:         100000"))
-        self.check(1040.0)
+        FreezeGuard.check(now=1040, stop=stop, proc=self.proc)
         self.assertEqual(self.stopped, ["com.game.a", "com.game.a"])
 
-    def test_nothing_happens_without_a_running_game_or_when_switched_off(self):
+    def test_the_three_switches_are_independent(self):
+        self.settings.update(enabled=False, stop_frozen=False)  # memory watchdog off: the rest still works
+        self.write("proc/pressure/memory", "some avg10=90.00\nfull avg10=90.00\n")
+        self.ticks(1000, 1008)
+        self.assertEqual(self.limits, ["lepton-steamlaunch-7"])
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        events = self.ticks(1010, 1040)
+        self.assertEqual(self.stopped, [])
+        self.assertEqual([e["kind"] for evs in events.values() for e in evs], ["frozen"])
+
+        FreezeGuard.sessions.clear()
+        self.limits.clear()
+        self.settings.update(enabled=True, memory_limit=False)
+        self.write("proc/pressure/memory", "some avg10=0.00\nfull avg10=0.00\n")
+        self.ticks(1042, 1060)
+        self.assertEqual(self.limits, [])
+
+    def test_ended_sessions_are_recorded_even_with_every_switch_off(self):
+        self.settings.update(enabled=False, memory_limit=False, stop_frozen=False)
+        self.ticks(1000, 1000)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.ticks(1002, 1010)
+        self.write("proc/locks", "")  # the launcher let go of its lock: the game ended
+        self.check(1012)
+        self.assertEqual(len(self.finalized), 1)
+        pkg, state = self.finalized[0]
+        self.assertEqual(pkg, "com.game.a")
+        self.assertEqual((state["fps"], state["drew"], state["last_frame_age"]), (72.0, True, 10))
+        self.assertEqual(FreezeGuard.sessions, {})
+
+    def test_nothing_happens_without_a_running_game(self):
         self.write("proc/locks", "")
         self.write("proc/pressure/memory", "some avg10=90.00\nfull avg10=90.00\n")
-        for t in range(5):
-            self.check(1000.0 + t * 2)
-        self.assertEqual((self.stopped, self.limits), ([], []))
-        self.settings["enabled"] = False
-        self.assertEqual(self.check(2000.0), [])
+        self.ticks(1000, 1008)
+        self.assertEqual((self.stopped, self.limits, self.finalized), ([], [], []))
 
     def test_memory_limit_keeps_room_for_the_headset(self):
         gib = 1024 ** 3
         self.assertEqual(guard.memory_limit_bytes(16 * gib), int(13.5 * gib))
         self.assertEqual(guard.memory_limit_bytes(5 * gib), 4 * gib)
+
+
+class TestHeadsetState(Case):
+    def test_headset_state_comes_from_steamvrs_log(self):
+        steam = os.path.join(self.tmp, "steam")
+        with patch.object(guard, "STEAM_DIR", steam), patch.object(guard, "HOME", self.tmp):
+            self.assertIsNone(guard.hmd_state())  # no SteamVR log: unknown, which counts as awake
+            self.write("steam/logs/vrserver.txt", "Thu Oct 15 2026 12:00:00.1 - [CCVTrackedHmdDriver] in StateActive\n"
+                                                   "Thu Oct 15 2026 12:05:00.1 - [CCVTrackedHmdDriver] in StateStandby\n")
+            self.assertEqual(guard.hmd_state(), "Standby")
+
+    def test_the_steam_menu_is_only_asked_about(self):
+        from frameload.system import steam_ui
+        asked = []
+        self.assertTrue(steam_ui.dashboard_visible(evaluate=lambda expr, timeout: asked.append(expr) or True))
+        self.assertEqual(asked, ["SteamClient.OpenVR.VROverlay.IsDashboardVisible()"])  # never HideDashboard
+
+        def unreachable(expr, timeout):
+            raise ConnectionError("no devtools port")
+        self.assertIsNone(steam_ui.dashboard_visible(evaluate=unreachable))
+        self.assertIsNone(steam_ui.dashboard_visible(evaluate=lambda expr, timeout: {"error": "x"}))
+
+
+class FakeConfig:
+    def __init__(self, raw):
+        self.raw, self.saves = raw, 0
+
+    def get(self, key=None, default=None):
+        return self.raw.get(key, default)
+
+    def save(self):
+        self.saves += 1
+
+
+class TestFreezeGuardSettings(unittest.TestCase):
+    def use(self, raw):
+        from frameload.config import Config
+        cfg = FakeConfig(raw)
+        p = patch.object(Config, "get", return_value=cfg)
+        p.start()
+        self.addCleanup(p.stop)
+        return cfg
+
+    def test_defaults(self):
+        self.use({})
+        self.assertEqual(FreezeGuard.settings(), {"enabled": True, "memory_limit": True, "stop_frozen": True,
+                                                  "frozen_seconds": 30, "report_crashes": True})
+
+    def test_what_v135_to_v137_saved_gives_way_to_the_new_defaults_once(self):
+        # Those versions saved every key on every change, so their "off, 90 s" is not a choice anyone made.
+        cfg = self.use({"guard": {"enabled": True, "memory_limit": False, "stop_frozen": False, "frozen_seconds": 90}})
+        settings = FreezeGuard.settings()
+        self.assertEqual((settings["stop_frozen"], settings["frozen_seconds"]), (True, 30))
+        self.assertFalse(settings["memory_limit"])  # other choices are kept
+
+        FreezeGuard.save_settings({"memory_limit": True})  # a change to something else keeps the new default
+        self.assertEqual(cfg.raw["guard"]["version"], 2)
+        self.assertNotIn("stop_frozen", cfg.raw["guard"])
+        self.assertTrue(FreezeGuard.settings()["stop_frozen"])
+
+        FreezeGuard.save_settings({"stop_frozen": False, "frozen_seconds": 20})  # now an Off sticks
+        settings = FreezeGuard.settings()
+        self.assertEqual((settings["stop_frozen"], settings["frozen_seconds"]), (False, 15))
+        self.assertEqual(cfg.saves, 2)
+
+    def test_wait_is_one_of_the_offered_choices(self):
+        for value, expected in (("", 30), (None, 30), (0, 30), (-5, 30), ("abc", 30), (float("nan"), 30),
+                                (15, 15), (20, 15), (30, 30), (45, 60), (90, 120), (1000, 120), ("60", 60)):
+            self.assertEqual(guard.snap_frozen_seconds(value), expected, value)
 
 
 if __name__ == "__main__":

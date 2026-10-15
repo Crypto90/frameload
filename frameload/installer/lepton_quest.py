@@ -32,7 +32,9 @@ LAUNCH_SCRIPT_TEMPLATE = r"""#!/usr/bin/env bash
 set -euo pipefail
 
 app_dir={base_q}
-[[ -d "$app_dir/lepton-app" ]] || {{ echo "Game files missing at $app_dir (storage not mounted?)" >&2; exit 1; }}
+# Why a start failed, for FrameLoad's "What happened" dialog (Steam keeps this script's output to itself).
+fail() {{ echo "$1" >&2; {{ echo "$1" > "$app_dir/.launch_error"; }} 2>/dev/null || true; exit 1; }}
+[[ -d "$app_dir/lepton-app" ]] || fail "Game files missing at $app_dir (storage not mounted?)"
 
 # One launcher per game: a second Lepton started while the first still boots stops its container.
 exec 9>"$app_dir/.launch.lock"
@@ -46,7 +48,8 @@ if [[ ! -x "$lepton" ]]; then
         if [[ -x "$candidate" ]]; then lepton="$candidate"; break; fi
     done
 fi
-[[ -x "$lepton" ]] || {{ echo "Lepton runtime not found on this system." >&2; exit 1; }}
+[[ -x "$lepton" ]] || fail "Lepton runtime not found on this system."
+rm -f "$app_dir/.launch_error"
 
 # Some games create folders the app inside Lepton cannot write to (it writes through the folder's
 # group), which breaks saving. Repair them before and during every launch.
@@ -77,13 +80,17 @@ export LEPTON_ENV_FRAMEBRIDGE_CONFIG="$app_dir/settings.conf"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 export IS_PARENT=true
+# Lepton keeps Android's logs (with crash backtraces) only when a game ends within 30 s; keep them after every session.
+export LEPTON_DUMP_LOGCAT=1
 {extra_env}
 child=''
 started=''
 stop() {{
-    trap - EXIT INT TERM
+    local rc=$?; trap - EXIT INT TERM; local ended; ended=$(date +%s)
     # One line per session (start end) for FrameLoad's "last played" and play time.
-    [[ -n "$started" ]] && printf '%s %s\n' "$started" "$(date +%s)" >> "$app_dir/.playtime" 2>/dev/null || true
+    [[ -n "$started" ]] && printf '%s %s\n' "$started" "$ended" >> "$app_dir/.playtime" 2>/dev/null || true
+    # How it ended (start end exit-status), for FrameLoad's "What happened" dialog.
+    [[ -n "$started" ]] && printf '%s %s %s\n' "$started" "$ended" "$rc" > "$app_dir/.session_end" 2>/dev/null || true
     kill $permfix 2>/dev/null || true
     [[ -n "$child" ]] && kill -TERM -- "-$child" 2>/dev/null || true
     podman kill "lepton-steamlaunch-$SteamAppId" >/dev/null 2>&1 || true
@@ -281,7 +288,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 6,
+            "layout_version": 7,
             "time": time.time(),
         }
         with open(dep_path, "w", encoding="utf-8") as f:

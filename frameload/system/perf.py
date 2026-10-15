@@ -4,6 +4,9 @@ Everything here is a handful of small file reads, cheap enough to sample every c
 seconds. On the Steam Frame (SteamOS 0.4.x, kernel 6.18) the GPU clock is the devfreq device
 3d00000.gpu and the thermal zones are typed cpu*, gpuss*, ddr*, max1720x (battery); FramePort's
 monitor reads the same sources. Missing files (another machine, a container) give None.
+
+A game's own GPU time comes from the DRM fdinfo of its processes (`drm-engine-gpu: <ns> ns`), which
+FramePort documents as readable by the headset's user for Lepton games (docs/FRAME_RUNTIME.md).
 """
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ import glob
 import os
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 PROC = "/proc"
 SYS = "/sys"
@@ -139,6 +142,76 @@ def gpu(sys_root: str = SYS) -> Dict[str, Any]:
     if busy.isdigit():
         out["busy"] = int(busy)
     return out
+
+
+def app_pids(package: str, proc: str = PROC) -> List[int]:
+    """Processes of an Android app running in a Lepton container, as the host sees them. The kernel keeps
+    15 characters of a process name (Android's is the package), the full name is in cmdline; an app's
+    extra processes are named <package>:<name>."""
+    names = {package[-15:], package[:15]}
+    pids = []
+    try:
+        entries = os.listdir(proc)
+    except OSError:
+        return pids
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        if _read(os.path.join(proc, entry, "comm")).strip() not in names:
+            continue
+        first = _read(os.path.join(proc, entry, "cmdline")).split("\0", 1)[0]
+        if first == package or first.startswith(package + ":"):
+            pids.append(int(entry))
+    return sorted(pids)
+
+
+def render_fds(pid: int, proc: str = PROC) -> List[str]:
+    """File descriptors of a process that are a GPU device: their fdinfo carries per-engine busy time."""
+    fdinfo = os.path.join(proc, str(pid), "fdinfo")
+    try:
+        fds = os.listdir(fdinfo)
+    except OSError:
+        return []
+    return [fd for fd in sorted(fds) if "drm-engine-gpu:" in _read(os.path.join(fdinfo, fd))]
+
+
+def gpu_time_ns(fds: Dict[int, List[str]], proc: str = PROC) -> Optional[int]:
+    """GPU time used so far by these processes ({pid: [fd, ...]}), in ns; None when none could be read.
+    A device opened once and duplicated shows one client id in several fds and is counted once."""
+    total, seen, read_any = 0, set(), False
+    for pid, numbers in fds.items():
+        for fd in numbers:
+            text = _read(os.path.join(proc, str(pid), "fdinfo", fd))
+            busy, client = None, None
+            for line in text.splitlines():
+                name, _, value = line.partition(":")
+                if name == "drm-engine-gpu":
+                    try:
+                        busy = int(value.split()[0])
+                    except (IndexError, ValueError):
+                        busy = None
+                elif name == "drm-client-id":
+                    client = value.strip()
+            if busy is None:
+                continue
+            read_any = True
+            key = client if client is not None else (pid, fd)
+            if key in seen:
+                continue
+            seen.add(key)
+            total += busy
+    return total if read_any else None
+
+
+def boot_time(proc: str = PROC) -> Optional[int]:
+    """When the system booted (unix time), from /proc/stat."""
+    for line in _read(os.path.join(proc, "stat")).splitlines():
+        if line.startswith("btime "):
+            try:
+                return int(line.split()[1])
+            except (IndexError, ValueError):
+                return None
+    return None
 
 
 def snapshot() -> Dict[str, Any]:

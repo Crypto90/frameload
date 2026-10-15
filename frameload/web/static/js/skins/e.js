@@ -191,6 +191,7 @@
       </div>
       <div class="e-more${view.moreOpen ? " open" : ""}" id="e-more">
         ${lepton ? `<button type="button" class="e-mi" onclick="openLogModal(${pkg})">Launch log</button>` : ""}
+        ${lepton && g.last_session && g.last_session.abnormal ? `<button type="button" class="e-mi" onclick="eLook.more(false); openSessionDialog(${pkg})">What happened</button>` : ""}
         <button type="button" class="e-mi" onclick="backupSaves(${pkg})">Back up saves</button>
         <button type="button" class="e-mi danger" onclick="eLook.more(false); uninstallGame(${pkg})">Uninstall</button>
       </div>

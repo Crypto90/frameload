@@ -117,8 +117,9 @@ class GameLauncher:
         return name not in GameLauncher.running_containers()
 
     @staticmethod
-    def stop(package_name: str) -> Dict[str, Any]:
-        """Stops the running game and its container."""
+    def stop(package_name: str, by: str = "player") -> Dict[str, Any]:
+        """Stops the running game and its container. `by` is noted first, so the session's record says
+        who stopped it rather than calling it a crash (see sessions.mark_stop)."""
         dep = InstalledManager.get_game(package_name)
         if not dep:
             return {"success": False, "error": "Game not found"}
@@ -126,13 +127,25 @@ class GameLauncher:
         name = f"{CONTAINER_PREFIX}{appid}"
         if not appid or name not in GameLauncher.running_containers():
             return {"success": True, "package": package_name, "stopped": False, "message": "It is not running."}
+        if by:
+            from . import sessions
+            sessions.mark_stop(package_name, by)
         stopped = GameLauncher._stop_container(name)
+        if not stopped and by:
+            from . import sessions
+            sessions.clear_stop(package_name)
         return {"success": stopped, "package": package_name, "stopped": stopped,
                 "error": "" if stopped else "The game's container could not be stopped."}
 
     @staticmethod
-    def stop_all() -> Dict[str, Any]:
+    def stop_all(by: str = "player") -> Dict[str, Any]:
         """Stops every running Lepton game, whoever started it."""
         names = GameLauncher.running_containers()
+        if by and names:
+            from . import sessions
+            from .guard import installed_games
+            for game in installed_games():
+                if f"{CONTAINER_PREFIX}{game.get('appid')}" in names:
+                    sessions.mark_stop(game["package"], by)
         stopped = [name for name in names if GameLauncher._stop_container(name)]
         return {"success": len(stopped) == len(names), "stopped": len(stopped), "running": len(names)}

@@ -429,15 +429,16 @@
             <span id="guard-badge" class="badge" style="background:rgb(var(--fg-rgb) / 0.08); color:var(--text-muted);">Checking...</span>
           </div>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
-            When a game uses up the headset's memory, everything stops responding, even the Steam button. FrameLoad watches running games and ends one before that happens.
+            A game that uses up the headset's memory, or whose picture freezes, can leave the whole headset unresponsive, even the Steam button. FrameLoad watches running games and ends such a game before that happens.
           </p>
           <label class="check-row"><input type="checkbox" id="guard-enabled" onchange="saveGuardSettings()"> <span>Stop a game before it runs the headset out of memory</span></label>
           <label class="check-row"><input type="checkbox" id="guard-limit" onchange="saveGuardSettings()"> <span>Limit each game's memory so SteamVR keeps <span id="guard-reserve">2.5 GB</span></span></label>
-          <label class="check-row"><input type="checkbox" id="guard-frozen" onchange="saveGuardSettings()"> <span>Also stop games that show no new frame for
+          <label class="check-row"><input type="checkbox" id="guard-frozen" onchange="saveGuardSettings()"> <span>Stop a game whose picture freezes for
             <select id="guard-frozen-seconds" class="select-styled compact" onchange="saveGuardSettings()" onclick="event.stopPropagation()">
-              <option value="60">1 minute</option><option value="90">90 seconds</option><option value="120">2 minutes</option><option value="180">3 minutes</option>
+              <option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option>
             </select></span></label>
-          <p class="tuning-micro-note" style="margin-bottom:10px;">Off by default: a headset you take off pauses the game too. Without it, FrameLoad tells you and you choose whether to press Stop.</p>
+          <p class="tuning-micro-note" style="margin-bottom:10px;">On by default. FrameLoad waits while the headset is asleep, the Steam menu is open or the game is still drawing, for example on a loading screen. With 15 seconds, a game that loads for a long time can be stopped. Games ported with FramePort report every frame; other VR games are judged by their graphics work and only stopped when FrameLoad can tell that the headset is in use. When this is off, FrameLoad still tells you about a frozen picture.</p>
+          <label class="check-row"><input type="checkbox" id="guard-report" onchange="saveGuardSettings()"> <span>Show what happened when a game crashes or is stopped</span></label>
           <div id="guard-games"></div>
           <div id="guard-events"></div>
         </div>
@@ -1095,15 +1096,36 @@
     </div>
   </div>
 
+  <!-- What happened: how a game's last session ended (manager/sessions.py). Opens by itself after a
+       crash or a Freeze Guard stop, before the launch log so that one opens on top of it. -->
+  <div id="session-modal" class="modal-backdrop">
+    <div class="modal-content" style="max-width:720px;" role="alertdialog" aria-labelledby="session-title" aria-describedby="session-meta">
+      <h2 id="session-title" style="font-size:1.25rem; font-weight:800; color:var(--text-strong); margin-bottom:10px;">What Happened</h2>
+      <p id="session-meta" class="session-meta"></p>
+      <div id="session-findings"></div>
+      <h3 class="session-subhead">What the log says</h3>
+      <pre id="session-excerpt" class="job-log session-excerpt"></pre>
+      <div class="session-actions">
+        <button type="button" id="session-copy" class="btn-primary" onclick="copySessionReport(this)">Copy Log</button>
+        <button type="button" class="btn-secondary" onclick="saveSessionReport()">Save Log</button>
+        <button type="button" class="btn-secondary" onclick="openSessionLog()">Open Launch Log</button>
+        <button type="button" id="session-mute" class="btn-secondary" onclick="toggleSessionMute()">Don't Show for This Game</button>
+        <button type="button" class="btn-secondary" data-back onclick="closeSessionDialog()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Launch log -->
   <div id="log-modal" class="modal-backdrop">
     <div class="modal-content" style="max-width:720px;">
       <button class="modal-close" onclick="closeLogModal()">&times;</button>
       <h2 id="log-modal-title" style="font-size:1.25rem; font-weight:800; color:var(--text-strong); margin-bottom:12px;">Launch Log</h2>
       <div id="log-findings" style="margin-bottom:12px;"></div>
-      <pre id="log-lines" class="job-log" tabindex="0"></pre>
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
-        <button type="button" class="btn-secondary" onclick="closeLogModal()">Close</button>
+      <pre id="log-lines" class="job-log log-modal-lines" tabindex="0"></pre>
+      <div class="session-actions">
+        <button type="button" class="btn-secondary" onclick="copyLogReport(this)">Copy Log</button>
+        <button type="button" class="btn-secondary" onclick="saveLogReport()">Save Log</button>
+        <button type="button" class="btn-primary" data-back onclick="closeLogModal()">Close</button>
       </div>
     </div>
   </div>

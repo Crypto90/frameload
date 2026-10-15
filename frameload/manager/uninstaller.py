@@ -68,6 +68,9 @@ class Uninstaller:
 
         # 4. Unregister from Steam
         steam_removed = unregister_game_from_steam(launch_script, appid)
+        if removed:
+            from . import sessions
+            sessions.forget(package_name)  # its last session's record and kept logs
 
         return {
             "success": removed,

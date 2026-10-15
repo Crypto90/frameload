@@ -617,9 +617,11 @@ class StorageManager:
             if "Insufficient" in str(e):
                 raise
 
-        # 1. Kill running container if any
+        # 1. Kill running container if any (noted first, so its session is not taken for a crash)
         appid = dep.get("appid")
         if appid:
+            from . import sessions
+            sessions.mark_stop(package_name, "frameload", "move", "FrameLoad stopped it to move it to another drive.")
             try:
                 subprocess.run(["podman", "kill", f"lepton-steamlaunch-{appid}"], capture_output=True)
             except OSError:

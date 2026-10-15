@@ -52,6 +52,7 @@ from .installer.lepton_quest import LeptonInstaller
 from .installer.package_loader import PackageLoader
 from .manager import files as file_manager
 from .manager import launchlog
+from .manager import sessions
 from .manager.backup import SaveBackupManager
 from .manager.guard import FreezeGuard
 from .manager.installed import InstalledManager
@@ -195,6 +196,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             summary = get_system_summary()
             summary["guard_event"] = FreezeGuard.events[-1] if FreezeGuard.events else None
             summary["keep_awake"] = power.KeepAwake.status()
+            # Games whose last session ended abnormally: the dashboard opens "What happened" for them.
+            summary["session_dialog"] = FreezeGuard.settings()["report_crashes"]
+            summary["session_alerts"] = sessions.pending() if summary["session_dialog"] else []
             self.send_json(summary)
         elif path == "/api/system/perf":
             self.send_json(perf.snapshot())
@@ -344,6 +348,28 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": str(e)}, status=HTTPStatus.FORBIDDEN)
         elif path == "/api/catalog/updates":
             self.send_json({"updates": self.fdroid.available_updates()})
+        elif path.startswith("/api/sessions/"):
+            # "What happened": a game's last session (?source=live: its current launch log) and the report.
+            rest = urllib.parse.unquote(path[len("/api/sessions/"):].strip())
+            download = rest.endswith("/report.txt")
+            pkg = rest[:-len("/report.txt")] if download else rest
+            source = "live" if params.get("source", [""])[0] == "live" else "session"
+            if not is_valid_package(pkg):
+                self.send_json({"error": "Invalid package name"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not InstalledManager.get_game(pkg):
+                self.send_json({"error": f"Game {pkg} is not installed."}, status=HTTPStatus.NOT_FOUND)
+                return
+            if download:
+                self.send_text(sessions.report_text(pkg, full=True, source=source), sessions.report_name(pkg))
+                return
+            try:
+                info = sessions.detail(pkg, source)
+            except (FileNotFoundError, OSError) as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
+                return
+            info["client_local"] = self.client_is_local()
+            self.send_json(info)
         elif path.startswith("/api/installed/log/"):
             pkg = urllib.parse.unquote(path.replace("/api/installed/log/", "").strip())
             if not is_valid_package(pkg):
@@ -872,6 +898,28 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json({"success": True, "while_busy": keep_awake_while_busy(), **power.KeepAwake.status()})
         elif path == "/api/guard/settings":
             self.send_json({"success": True, "settings": FreezeGuard.save_settings(body)})
+        elif path == "/api/sessions/seen":
+            pkg = body.get("package", "")
+            if not pkg:
+                self.send_json({"error": "Missing package"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            mute = body.get("mute")
+            self.send_json({"success": sessions.acknowledge(pkg, body.get("end"),
+                                                            None if mute is None else bool(mute))})
+        elif path == "/api/sessions/save":
+            # On the headset the server saves the report to ~/Downloads: no browser file dialog in VR.
+            # Another device downloads report.txt instead.
+            pkg = body.get("package", "")
+            if not self.client_is_local():
+                self.send_json({"error": "This can only be done on the headset."}, status=HTTPStatus.FORBIDDEN)
+            elif not pkg or not InstalledManager.get_game(pkg):
+                self.send_json({"error": "Game not found"}, status=HTTPStatus.NOT_FOUND)
+            else:
+                try:
+                    saved = sessions.save_report(pkg, "live" if body.get("source") == "live" else "session")
+                    self.send_json({"success": True, "path": saved, "name": os.path.basename(saved)})
+                except OSError as e:
+                    self.send_json({"error": f"Could not save the report: {e}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/storage/default":
             self.send_json(StorageManager.set_default_device(str(body.get("device_id", ""))))
         elif path == "/api/storage/batch-uninstall":
@@ -1161,6 +1209,21 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def send_text(self, text: str, filename: str) -> None:
+        """A plain-text download (a session report)."""
+        body = text.encode("utf-8")
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def serve_file(self, file_path: str, content_type: str) -> None:
         try:
             with open(file_path, "rb") as f:
@@ -1289,6 +1352,18 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
 
     threading.Thread(target=migrate, daemon=True, name="migrate-installs").start()
     file_manager.clean_stale_uploads()
+
+    def record_missed_sessions() -> None:
+        """Sessions that ended while FrameLoad was not running, and ones the headset's restart cut off."""
+        from .manager.guard import installed_games, running_games
+        try:
+            games = installed_games()
+            live = {g["package"] for g in running_games(games)}
+            sessions.catch_up(games, live, boot=perf.boot_time())
+        except Exception as e:
+            print(f"[FrameLoad] Could not look at earlier game sessions: {e}")
+
+    threading.Thread(target=record_missed_sessions, daemon=True, name="session-catch-up").start()
 
     def porting_maintenance() -> None:
         try:

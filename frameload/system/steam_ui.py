@@ -85,6 +85,16 @@ def steam_js(expression: str, timeout: float = 5.0, address: Tuple[str, int] = D
                 return ((message.get("result") or {}).get("result") or {}).get("value")
 
 
+def dashboard_visible(timeout: float = 3.0, evaluate: Optional[Callable[..., Any]] = None) -> Optional[bool]:
+    """Whether SteamVR's dashboard (the Steam menu) is open over the game. Only asks, never changes it;
+    None when Steam cannot be asked (no devtools port, Steam restarting)."""
+    try:
+        value = (evaluate or steam_js)("SteamClient.OpenVR.VROverlay.IsDashboardVisible()", timeout=timeout)
+    except Exception:
+        return None
+    return value if isinstance(value, bool) else None
+
+
 def _user_opened_dashboard(ui_log: str, pos: Optional[int]) -> Tuple[bool, Optional[int]]:
     """(opened since pos, new position). A missing log answers no."""
     try:

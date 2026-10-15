@@ -3260,3 +3260,13 @@ html { scrollbar-gutter: stable; }
 /* Storage menu entries are buttons (the controller reaches buttons) that look like rows. */
 button.dropdown-item { width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .search-osk-btn svg { display: block; }
+
+/* What happened (session dialog) and the launch log. Their logs flow in the dialog, which the scroll
+   arrows move, instead of scrolling in a box of their own that only a laser drag reaches. */
+.session-meta { color: var(--text-muted); font-size: 0.88rem; line-height: 1.5; margin: -4px 0 12px; }
+.session-subhead { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted); margin: 14px 0 8px; }
+.session-excerpt, .log-modal-lines { max-height: none; overflow: visible; }
+.session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+/* Copy Log without the clipboard API (a phone on http://<ip>): text is selected in this hidden block,
+   never in a text field, which would open the Steam keyboard. */
+.copy-buffer { position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; -webkit-user-select: text; user-select: text; white-space: pre; }

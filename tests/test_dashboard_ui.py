@@ -152,5 +152,130 @@ class TestGamePage(unittest.TestCase):
             self.assertTrue(re.search(r'"kind": "(pcvr|linux_native)"', text), installer)
 
 
+def run_node(script):
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "check.js")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(script)
+        return subprocess.run(["node", path], capture_output=True, text=True, encoding="utf-8",
+                              check=True, timeout=60).stdout
+
+
+class TestFreezeGuardCard(unittest.TestCase):
+    def setUp(self):
+        self.page = read(WEB, "templates", "index.html")
+        self.app = read(WEB, "static", "js", "app.js")
+
+    def test_the_wait_offers_what_the_server_keeps(self):
+        from frameload.manager.guard import DEFAULT_SETTINGS, FROZEN_CHOICES
+        select = re.search(r'<select id="guard-frozen-seconds".*?</select>', self.page, re.S).group(0)
+        self.assertEqual(tuple(int(v) for v in re.findall(r'<option value="(\d+)"', select)), FROZEN_CHOICES)
+        self.assertNotIn("Off by default", self.page)
+        self.assertIn("On by default", self.page)
+        body = declaration(self.app, "saveGuardSettings")
+        for key in DEFAULT_SETTINGS:
+            self.assertIn(f"{key}:", body)
+        self.assertIn('id="guard-report"', self.page)
+        self.assertIn("Show what happened when a game crashes or is stopped", self.page)
+
+
+class TestSessionDialog(unittest.TestCase):
+    def setUp(self):
+        self.page = read(WEB, "templates", "index.html")
+        self.app = read(WEB, "static", "js", "app.js")
+
+    def modal(self, modal_id):
+        start = self.page.index(f'<div id="{modal_id}"')
+        return self.page[start:self.page.index("\n  </div>\n", start)]
+
+    def test_dialog_markup(self):
+        modal = self.modal("session-modal")
+        self.assertIn('role="alertdialog" aria-labelledby="session-title"', modal)
+        labels = [re.sub(r"\s+", " ", label).strip() for label in re.findall(r"<button[^>]*>([^<]+)</button>", modal)]
+        self.assertEqual(labels, ["Copy Log", "Save Log", "Open Launch Log", "Don't Show for This Game", "Close"])
+        self.assertRegex(modal, r'<button[^>]*data-back[^>]*>Close</button>')  # B / Back closes it
+        self.assertIn('class="job-log session-excerpt"', modal)
+        # The launch log opens from it and must lie on top of it.
+        self.assertLess(self.page.index('id="session-modal"'), self.page.index('id="log-modal"'))
+        log = self.modal("log-modal")
+        self.assertIn(">Copy Log<", log)
+        self.assertIn(">Save Log<", log)
+        self.assertIn('class="job-log log-modal-lines"', log)
+
+    def test_logs_move_with_the_scroll_arrows(self):
+        # ScrollAssist scrolls the dialog itself; a log with a scroll box of its own was out of its reach.
+        css = read(WEB, "static", "css", "style.css")
+        rule = re.search(r"\.session-excerpt, \.log-modal-lines \{([^}]*)\}", css).group(1)
+        self.assertIn("max-height: none", rule)
+        self.assertIn("overflow: visible", rule)
+        added = css[css.index("/* What happened (session dialog)"):]
+        self.assertIsNone(re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d", added), "colours come from tokens")
+
+    def test_copy_never_uses_a_text_field(self):
+        # Focusing a text field opens the Steam keyboard (SteamOSK).
+        body = declaration(self.app, "copyText") + declaration(self.app, "copyWithSelection")
+        for part in ("isSecureContext", "writeText", 'execCommand("copy")', "createRange"):
+            self.assertIn(part, body)
+        self.assertNotIn("textarea", body.lower())
+        self.assertNotIn(".focus(", body)
+
+    def test_no_browser_dialogs(self):
+        for name in ("openSessionDialog", "closeSessionDialog", "noteSessionAlerts", "copyReport", "saveReport",
+                     "openLogModal", "noteGuardEvent", "loadGuard", "saveGuardSettings"):
+            self.assertIsNone(re.search(r"\b(alert|confirm)\(", declaration(self.app, name)), name)
+
+    def test_game_page_offers_what_happened_after_an_abnormal_end(self):
+        body = declaration(self.app, "openGameModal")
+        self.assertIn("game.last_session.abnormal", body)
+        self.assertIn("openSessionDialog(${arg})\">What Happened</button>", body)
+        self.assertIn("openSessionDialog(", read(WEB, "static", "js", "skins", "e.js"))
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_copy_in_an_insecure_context_selects_a_hidden_block(self):
+        script = declaration(self.app, "copyText") + "\n" + declaration(self.app, "copyWithSelection") + """
+const made = [], calls = [];
+var window = { isSecureContext: false, getSelection: () => ({ removeAllRanges() { calls.push("clear"); }, addRange(r) { calls.push("select:" + r.node.textContent); } }) };
+var navigator = {};
+var document = {
+  body: { appendChild(el) { calls.push("append:" + el.className); } },
+  createElement(tag) { const el = { tag, className: "", textContent: "", remove() { calls.push("remove"); } }; made.push(tag); return el; },
+  createRange() { return { selectNodeContents(node) { this.node = node; } }; },
+  execCommand(cmd) { calls.push("exec:" + cmd); return true; },
+};
+const result = copyText("report text");
+calls.push("sync");  // execCommand must run inside the click, before anything is awaited
+result.then(ok => {
+  window.isSecureContext = true;
+  navigator.clipboard = { writeText: async (t) => { calls.push("clipboard:" + t); } };
+  return copyText("secure").then(ok2 => process.stdout.write(JSON.stringify({ ok, ok2, made, calls })));
+});
+"""
+        out = json.loads(run_node(script))
+        self.assertTrue(out["ok"] and out["ok2"])
+        self.assertEqual(out["made"], ["div"])
+        self.assertEqual(out["calls"], ["append:copy-buffer", "clear", "select:report text", "exec:copy", "clear",
+                                        "remove", "sync", "clipboard:secure"])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_dialog_waits_for_a_free_moment(self):
+        script = declaration(self.app, "noteSessionAlerts") + """
+var state = { installed: [], sessions: { handled: new Set() } };
+let openModal = null;
+var document = { querySelector: () => openModal };
+const opened = [];
+function openSessionDialog(pkg, options) { opened.push([pkg, options.auto]); }
+const alerts = [{ package: "a.game", end: 2 }, { package: "b.game", end: 1 }];
+noteSessionAlerts(alerts);                                           // the library has not loaded yet
+state.installedLoaded = true;
+openModal = {};  noteSessionAlerts(alerts);                          // another dialog is open
+opened.push("game");
+openModal = null; state.installed = [{ is_running: true }]; noteSessionAlerts(alerts);  // a game runs
+opened.push("free");
+state.installed = []; noteSessionAlerts(alerts); noteSessionAlerts(alerts); noteSessionAlerts(alerts);
+process.stdout.write(JSON.stringify(opened));
+"""
+        self.assertEqual(json.loads(run_node(script)), ["game", "free", ["a.game", True], ["b.game", True]])
+
+
 if __name__ == "__main__":
     unittest.main()

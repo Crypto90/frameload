@@ -210,6 +210,8 @@ document.addEventListener("DOMContentLoaded", () => {
   startPollingDownloads();
   setInterval(loadSystemTelemetry, 8000);
   setInterval(refreshRunningGames, 8000);
+  // A hidden window's timers are slowed down: coming back asks at once, so "What happened" shows up.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadSystemTelemetry(); });
   setInterval(() => checkForUpdates(false), 6 * 3600 * 1000);
   loadSteamStatus();
 });
@@ -939,6 +941,7 @@ async function loadInstalled() {
     }
     const data = await res.json();
     state.installed = Array.isArray(data.games) ? data.games : [];
+    state.installedLoaded = true;  // from now on "no game is running" can be told (noteSessionAlerts)
     renderInstalledGrid();
     renderStopChip();
   } catch (err) {
@@ -1193,11 +1196,14 @@ async function refreshRunningGames() {
   try {
     const data = await apiGet("/api/installed");
     const games = Array.isArray(data.games) ? data.games : [];
-    const before = (state.installed || []).filter(g => g.is_running).map(g => g.package).join(",");
-    const after = games.filter(g => g.is_running).map(g => g.package).join(",");
+    const before = (state.installed || []).filter(g => g.is_running).map(g => g.package);
+    const after = games.filter(g => g.is_running).map(g => g.package);
     state.installed = games;
-    if (before !== after) renderInstalledGrid();  // only redraw when something started or stopped
+    state.installedLoaded = true;
+    if (before.join(",") !== after.join(",")) renderInstalledGrid();  // only redraw when something started or stopped
     renderStopChip();
+    // A game ended: its session is recorded within seconds, then "What happened" can open.
+    if (before.some(pkg => !after.includes(pkg))) [3000, 10000].forEach(delay => setTimeout(loadSystemTelemetry, delay));
   } catch (e) {
     /* next round */
   }
@@ -1294,6 +1300,7 @@ async function loadSystemTelemetry() {
       lepChip.title = "Lepton ships with the Steam Frame. It was not found in any Steam library on this machine.";
     }
     noteGuardEvent(data.guard_event);
+    noteSessionAlerts(data.session_alerts);
 
     renderSystemTab(data);
     renderShellStatus();
@@ -1583,6 +1590,7 @@ function openGameModal(id, mode = "catalog") {
       ${lepton ? `<button class="btn-secondary" onclick="openTuningModal(${arg})">Settings</button>` : ""}
       ${needsPort && game.port_failed && game.port_error ? `<span class="tuning-micro-note" style="flex-basis:100%; color:var(--accent-amber);">Last port failed: ${escapeHtml(game.port_error)}</span>` : ""}
       ${lepton ? `<button class="btn-secondary" onclick="openLogModal(${arg})">Launch Log</button>` : ""}
+      ${lepton && game.last_session && game.last_session.abnormal ? `<button class="btn-secondary" onclick="openSessionDialog(${arg})">What Happened</button>` : ""}
       <button class="btn-secondary" onclick="backupSaves(${arg})">Backup Saves</button>
       <button class="btn-secondary" style="color:var(--accent-danger);" onclick="uninstallGame(${arg})">Uninstall</button>
     `;
@@ -3755,20 +3763,27 @@ window.chooseBrowsedFolder = chooseBrowsedFolder;
 window.uploadSelectedFiles = uploadSelectedFiles;
 
 // === Launch log ===
-async function openLogModal(pkg) {
+// The report Copy Log puts on the clipboard comes with the log: a browser only copies inside the click.
+state.logView = { pkg: "", source: "live", text: "", local: false };
+
+async function openLogModal(pkg, options = {}) {
   const modal = document.getElementById("log-modal");
   if (!modal) return;
+  const source = options.session ? "session" : "live";  // session: the copy kept of the last session
   try {
-    const log = await apiGet(`/api/installed/log/${encodeURIComponent(pkg)}`);
+    const log = await apiGet(`/api/sessions/${encodeURIComponent(pkg)}${source === "live" ? "?source=live" : ""}`);
     const game = (state.installed || []).find(g => g.package === pkg);
-    document.getElementById("log-modal-title").textContent = `${game ? game.title : pkg} - Launch Log`;
+    document.getElementById("log-modal-title").textContent =
+      `${game ? game.title : pkg} - Launch Log${log.session ? " (last session)" : ""}`;
     document.getElementById("log-findings").innerHTML = (log.findings || []).map(f =>
       `<div class="log-finding ${escapeHtml(f.severity)}"><strong>${escapeHtml(f.title)}</strong><span>${escapeHtml(f.advice)}</span></div>`).join("");
     const lines = document.getElementById("log-lines");
     lines.style.display = log.exists ? "" : "none";
     lines.textContent = (log.truncated ? "(earlier lines not shown)\n" : "") + (log.lines || []).join("\n");
+    state.logView = { pkg, source, text: log.copy_text || "", local: !!log.client_local };
     modal.classList.add("open");
-    lines.scrollTop = lines.scrollHeight;
+    const content = modal.querySelector(".modal-content");
+    if (content) content.scrollTop = 0;  // findings first; the scroll arrows go down the log
     if (window.gamepadNav) window.gamepadNav.updateFocusables();
   } catch (e) {
     showToast(e.message, "error");
@@ -3780,8 +3795,222 @@ function closeLogModal() {
   if (modal) modal.classList.remove("open");
   if (window.gamepadNav) window.gamepadNav.updateFocusables();
 }
+
+function copyLogReport(button) {
+  return copyReport(button, state.logView.text, document.getElementById("log-lines"));
+}
+
+function saveLogReport() {
+  return saveReport(state.logView.pkg, state.logView.source, state.logView.local);
+}
 window.openLogModal = openLogModal;
 window.closeLogModal = closeLogModal;
+window.copyLogReport = copyLogReport;
+window.saveLogReport = saveLogReport;
+
+// Copies text. The clipboard API exists only in a secure context (the headset's own http://127.0.0.1);
+// a phone on http://<ip> gets a selection and execCommand, which works only inside the click itself,
+// so nothing may be awaited before it. Never a text field: focusing one opens the Steam keyboard.
+async function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      /* refused: try the selection */
+    }
+  }
+  return copyWithSelection(text);
+}
+
+function copyWithSelection(text) {
+  const buffer = document.createElement("div");
+  buffer.className = "copy-buffer";
+  buffer.textContent = text;
+  document.body.appendChild(buffer);
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(buffer);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (e) {
+    copied = false;
+  }
+  selection.removeAllRanges();
+  buffer.remove();
+  return copied;
+}
+
+async function copyReport(button, text, fallbackEl) {
+  if (!text) {
+    showToast("There is no log to copy yet.", "info");
+    return;
+  }
+  if (await copyText(text)) {
+    if (button) {
+      const label = button.dataset.label || button.textContent;  // a second press within 2 s keeps the real label
+      button.dataset.label = label;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = label; }, 2000);
+    }
+    showToast(`Copied the report (${Math.max(1, Math.round(text.length / 1024))} KB).`, "success");
+    return;
+  }
+  showToast("This browser blocked copying. Use Save Log.", "warning");
+  if (fallbackEl) {  // selected, so the browser's own Copy works
+    const range = document.createRange();
+    range.selectNodeContents(fallbackEl);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+}
+
+// On the headset the server writes the report to ~/Downloads (no file dialog in VR); another device downloads it.
+async function saveReport(pkg, source, local) {
+  if (!pkg) return;
+  if (!local) {
+    const link = document.createElement("a");
+    link.href = `/api/sessions/${encodeURIComponent(pkg)}/report.txt${source === "live" ? "?source=live" : ""}`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return;
+  }
+  try {
+    const res = await apiPost("/api/sessions/save", { package: pkg, source });
+    showToast(`Saved on the headset: Downloads/${res.name}`, "success");
+  } catch (e) {
+    showToast(e.message, "error");
+  }
+}
+
+// === What happened: how a game's last session ended ===
+state.sessions = { current: null, text: "", local: false, handled: new Set() };
+
+const SESSION_SEVERITY = { quit: "ok", stopped_player: "ok", closed_by_steam: "ok", stopped_frameload: "ok" };
+// Launch log findings that only say again what the cause already says.
+const SESSION_SAME_FINDING = { crashed: "The game crashed", gpu_hang: "The graphics processor hung" };
+
+// Alerts come with /api/system. One opens by itself only when no other dialog is open and no game runs,
+// so it never covers what the player is doing; it comes back later until it is dismissed.
+function noteSessionAlerts(alerts) {
+  if (!Array.isArray(alerts) || !alerts.length) return;
+  if (document.querySelector(".modal-backdrop.open")) return;
+  // Before the library has loaded, nobody knows whether a game runs: the next poll asks again.
+  if (!state.installedLoaded || (state.installed || []).some(g => g.is_running)) return;
+  const next = alerts.find(a => !state.sessions.handled.has(`${a.package}:${a.end}`));
+  if (!next) return;
+  state.sessions.handled.add(`${next.package}:${next.end}`);
+  openSessionDialog(next.package, { auto: true });
+}
+
+function sessionMeta(rec) {
+  const parts = [];
+  if (rec.end) {
+    const end = new Date(rec.end * 1000);
+    const sameDay = end.toDateString() === new Date().toDateString();
+    const time = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    parts.push(`Ended ${sameDay ? `today at ${time}` : `${end.toLocaleDateString()} ${time}`}`);
+  }
+  if (rec.duration) {
+    const minutes = Math.floor(rec.duration / 60);
+    parts.push(minutes ? `after ${minutes} min ${rec.duration % 60} s` : `after ${rec.duration} s`);
+  }
+  const frames = rec.frames || {};
+  if (frames.fps) parts.push(`${Math.round(frames.fps)} fps`);
+  if (frames.last_frame_age !== null && frames.last_frame_age !== undefined && frames.last_frame_age > 8) {
+    parts.push(`last new picture ${frames.last_frame_age} s before the end`);
+  }
+  return parts.join(" · ");
+}
+
+async function openSessionDialog(pkg, options = {}) {
+  const modal = document.getElementById("session-modal");
+  if (!modal) return;
+  let data;
+  try {
+    data = await apiGet(`/api/sessions/${encodeURIComponent(pkg)}`);
+  } catch (e) {
+    if (!options.auto) showToast(e.message, "error");
+    return;
+  }
+  const rec = data.record;
+  if (!rec) {
+    if (!options.auto) showToast("FrameLoad has no record of how this game's last session ended.", "info");
+    return;
+  }
+  if (options.auto && document.querySelector(".modal-backdrop.open")) return;  // something opened meanwhile
+  state.sessions.current = rec;
+  state.sessions.text = data.copy_text || "";
+  state.sessions.local = !!data.client_local;
+  document.getElementById("session-title").textContent = rec.headline || "What Happened";
+  document.getElementById("session-meta").textContent = sessionMeta(rec);
+  const cause = rec.cause ? [{ severity: SESSION_SEVERITY[rec.outcome] || "error", title: rec.cause, advice: rec.advice || "" }] : [];
+  const others = (rec.findings || []).filter(f => (f.severity === "error" || f.severity === "warn")
+    && f.title !== rec.cause && f.title !== SESSION_SAME_FINDING[rec.outcome]).slice(0, 3);
+  document.getElementById("session-findings").innerHTML = cause.concat(others).map(f =>
+    `<div class="log-finding ${escapeHtml(f.severity)}"><strong>${escapeHtml(f.title)}</strong>${f.advice ? `<span>${escapeHtml(f.advice)}</span>` : ""}</div>`).join("");
+  const excerpt = document.getElementById("session-excerpt");
+  excerpt.textContent = (data.excerpt || []).join("\n") || "The log of this session was not kept.";
+  document.getElementById("session-mute").textContent = rec.muted ? "Show Again for This Game" : "Don't Show for This Game";
+  modal.classList.add("open");
+  const content = modal.querySelector(".modal-content");
+  if (content) content.scrollTop = 0;
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  const copy = document.getElementById("session-copy");
+  if (copy) {
+    copy.focus({ preventScroll: true });
+    if (window.gamepadNav && window.gamepadNav.setFocus) window.gamepadNav.setFocus(copy);  // A presses Copy Log
+  }
+}
+
+async function closeSessionDialog(mute = null) {
+  const modal = document.getElementById("session-modal");
+  const rec = state.sessions.current;
+  if (modal) modal.classList.remove("open");
+  state.sessions.current = null;
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  if (!rec) return;
+  const body = { package: rec.package, end: rec.end };
+  if (mute !== null) body.mute = mute;
+  try {
+    await apiPost("/api/sessions/seen", body);
+  } catch (e) {
+    /* shown again next time, at worst */
+  }
+  if (mute === true) showToast(`FrameLoad will not open this by itself for ${rec.title} again. Its page still has What Happened.`, "info");
+  if (mute === false) showToast(`FrameLoad will tell you again when ${rec.title} crashes or is stopped.`, "info");
+}
+
+function toggleSessionMute() {
+  const rec = state.sessions.current;
+  return closeSessionDialog(rec ? !rec.muted : null);
+}
+
+function copySessionReport(button) {
+  return copyReport(button, state.sessions.text, document.getElementById("session-excerpt"));
+}
+
+function saveSessionReport() {
+  const rec = state.sessions.current;
+  return saveReport(rec && rec.package, "session", state.sessions.local);
+}
+
+function openSessionLog() {
+  const rec = state.sessions.current;
+  if (rec) openLogModal(rec.package, { session: true });  // launch.log may already be a newer session's
+}
+window.openSessionDialog = openSessionDialog;
+window.closeSessionDialog = closeSessionDialog;
+window.toggleSessionMute = toggleSessionMute;
+window.copySessionReport = copySessionReport;
+window.saveSessionReport = saveSessionReport;
+window.openSessionLog = openSessionLog;
 
 // === Installs requested by a frameload:// link ===
 state.link = { current: null, answered: new Set() };
@@ -4154,8 +4383,29 @@ function noteGuardEvent(event) {
     return;
   }
   state.guard.seen = event.id;
-  showToast(`${event.title || event.package} ${event.message}`, event.kind === "memory" ? "error" : "warning");
   refreshRunningGames();
+  // A game the guard stopped gets the "What happened" dialog once its session is recorded: no toast too.
+  if (event.stopped && state.system && state.system.session_dialog) return;
+  const type = event.kind === "info" ? "info" : event.kind === "memory" ? "error" : "warning";
+  showToast(`${event.title || event.package} ${event.message}`, type);
+}
+
+// One running game in the Freeze Guard card: what the guard sees of it right now.
+function guardGameText(g) {
+  const parts = [];
+  if (g.state === "paused" && g.paused) parts.push(`waiting: ${g.paused}`);
+  if (!g.vr) {
+    parts.push("2D app: not judged by its picture");
+  } else if (g.framebridge) {
+    parts.push(g.fps ? `${Math.round(g.fps)} fps` : "no frames yet");
+    if (g.frame_age !== null && g.frame_age > 8) parts.push(`no new frame for ${g.frame_age} s`);
+  } else {
+    parts.push(g.state === "loading" ? "FrameLoad cannot see this game's frames, waiting for it to draw"
+      : "FrameLoad cannot see this game's frames, judged by its graphics work");
+  }
+  if (g.vr && g.gpu !== null && g.gpu !== undefined) parts.push(`graphics ${g.gpu}%`);
+  if (g.memory_limit) parts.push(g.memory_limit === "applied" ? "memory limited" : `limit not set: ${g.memory_limit}`);
+  return parts.join(" · ");
 }
 
 async function loadGuard() {
@@ -4168,17 +4418,18 @@ async function loadGuard() {
     document.getElementById("guard-limit").checked = cfg.memory_limit;
     document.getElementById("guard-frozen").checked = cfg.stop_frozen;
     document.getElementById("guard-frozen-seconds").value = String(cfg.frozen_seconds);
-    badge.textContent = !cfg.enabled ? "Off" : st.running ? "Watching" : "Not on this system";
-    badge.style.color = cfg.enabled && st.running ? "var(--accent-emerald)" : "var(--text-muted)";
+    document.getElementById("guard-report").checked = cfg.report_crashes;
+    const anything = cfg.enabled || cfg.memory_limit || cfg.stop_frozen;
+    badge.textContent = !st.running ? "Not on this system" : anything ? "Watching" : "Reporting only";
+    badge.style.color = anything && st.running ? "var(--accent-emerald)" : "var(--text-muted)";
     const games = document.getElementById("guard-games");
     games.innerHTML = (st.games || []).map(g => {
-      const frames = g.fps ? `${Math.round(g.fps)} fps${g.frame_age !== null && g.frame_age > 15 ? `, last frame ${g.frame_age} s ago` : ""}` : "no frames yet";
-      const limit = g.memory_limit === "applied" ? "memory limited" : g.memory_limit ? `limit not set: ${g.memory_limit}` : "";
-      return `<div class="doctor-row"><span class="doctor-state ok">RUN</span><span><strong>${escapeHtml(g.title)}</strong> · ${escapeHtml(frames)}${limit ? ` · ${escapeHtml(limit)}` : ""}</span></div>`;
+      const label = g.state === "paused" ? "WAIT" : g.state === "silent" ? "STILL" : "RUN";
+      return `<div class="doctor-row"><span class="doctor-state ${g.state === "silent" ? "warn" : "ok"}">${label}</span><span><strong>${escapeHtml(g.title)}</strong> · ${escapeHtml(guardGameText(g))}</span></div>`;
     }).join("");
     const events = document.getElementById("guard-events");
     events.innerHTML = (st.events || []).slice().reverse().slice(0, 4).map(e =>
-      `<div class="log-finding ${e.kind === "memory" ? "error" : "warn"}"><strong>${escapeHtml(e.title || e.package)} · ${escapeHtml(timeAgo(e.time))}</strong><span>${escapeHtml(e.message)}</span></div>`).join("");
+      `<div class="log-finding ${e.kind === "memory" ? "error" : e.kind === "info" ? "ok" : "warn"}"><strong>${escapeHtml(e.title || e.package)} · ${escapeHtml(timeAgo(e.time))}</strong><span>${escapeHtml(e.message)}</span></div>`).join("");
   } catch (e) {
     badge.textContent = "Unavailable";
   }
@@ -4190,7 +4441,8 @@ async function saveGuardSettings() {
       enabled: document.getElementById("guard-enabled").checked,
       memory_limit: document.getElementById("guard-limit").checked,
       stop_frozen: document.getElementById("guard-frozen").checked,
-      frozen_seconds: Number(document.getElementById("guard-frozen-seconds").value),
+      frozen_seconds: Number(document.getElementById("guard-frozen-seconds").value) || 30,
+      report_crashes: document.getElementById("guard-report").checked,
     });
     showToast("Freeze guard settings saved.", "success");
     loadGuard();

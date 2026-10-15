@@ -34,9 +34,15 @@ RULES = [
      "The game needs Meta's runtime", "It was built for Quest and has not been ported. Press Port & Play on its page."),
     (r"already starting or running", "warn", "The game was already starting",
      "A second launch while the first is still booting is ignored. Wait about ten seconds after pressing Play."),
-    (r"FATAL EXCEPTION|Fatal signal \d+|SIGSEGV", "error", "The game crashed",
+    (r"zink.*DEVICE[_ ]LOST|VK_ERROR_DEVICE_LOST", "error", "The graphics processor hung",
+     "The headset's graphics processor stopped responding while the game drew. This usually happens at the same "
+     "point in a game; only a fix for that game helps."),
+    # Zygote's "exited due to signal": only the signals of a crash (9 is a normal kill).
+    (r"FATAL EXCEPTION|Fatal signal \d+|SIGSEGV|exited due to signal (?:4|5|6|7|8|11|31)\b", "error", "The game crashed",
      "The lines around the crash are in the log below. Game-specific fixes come from FramePort's patches."),
-    (r"FrameBridge: pacing: (\d+) fps", "ok", "The game was running",
+    (r"Signal SIG(?:TERM|INT) received", "info", "Closed by its launcher",
+     "Steam's Exit game, or the system, told the game to end."),
+    (r"FrameBridge: pacing: ([0-9.]+) fps", "ok", "The game was running",
      "FrameBridge reported frames being shown."),
     (r"Early-exit", "warn", "The container stopped early",
      "Lepton ended before the app was running. The lines above that message usually say why."),
@@ -79,8 +85,8 @@ def diagnose(lines: List[str]) -> List[Dict[str, str]]:
         if not match:
             continue
         finding = {"severity": severity, "title": title, "advice": advice}
-        if match.groups():
-            finding["title"] = f"{title} ({match.group(1)} fps)"
+        if match.groups():  # FrameBridge prints "%.1f fps"
+            finding["title"] = f"{title} ({round(float(match.group(1)))} fps)"
         findings.append(finding)
     if "FrameBridge" in text and "pacing:" not in text and not any(f["severity"] == "error" for f in findings):
         findings.append({
