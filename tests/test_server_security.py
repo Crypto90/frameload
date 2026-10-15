@@ -118,6 +118,17 @@ class TestRequestOrigin(unittest.TestCase):
         self.assertEqual(self.request("POST", "/api/porting/port", {"Origin": "https://evil.example"},
                                       {"package": "a.b"})[0], 403)
 
+    def test_move_targets_route(self):
+        from unittest.mock import patch
+        from frameload.manager.storage import StorageManager
+        targets = {"package": "a.b", "size_bytes": 1, "devices": [{"id": "ext_sd", "unusable": ""}]}
+        with patch.object(StorageManager, "move_targets", return_value=targets) as move_targets:
+            status, _, body = self.request("GET", "/api/storage/move-targets?package=a.b")
+        self.assertEqual((status, json.loads(body)), (200, targets))
+        move_targets.assert_called_once_with("a.b")
+        self.assertEqual(self.request("GET", "/api/storage/move-targets?package=com.not.installed")[0], 404)
+        self.assertEqual(self.request("GET", "/api/storage/move-targets?package=../x")[0], 400)
+
     def test_app_that_cannot_run_is_not_started(self):
         from unittest.mock import patch
         from frameload.manager.installed import InstalledManager

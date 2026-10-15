@@ -506,6 +506,11 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json(StorageManager.get_storage_overview(device_id))
         elif path == "/api/storage/devices":
             self.send_json({"devices": StorageManager.get_devices()})
+        elif path == "/api/storage/move-targets":
+            try:
+                self.send_json(StorageManager.move_targets(params.get("package", [""])[0]))
+            except FileNotFoundError as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
         elif path == "/api/updates":
             try:
                 app_status = UpdateManager.check_app_update(force=params.get("force", [""])[0] == "1")

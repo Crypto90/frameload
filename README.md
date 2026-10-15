@@ -108,7 +108,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 - **Only real drives are listed:** the internal storage, a microSD card and USB drives. Drives are classified by the bus the kernel reports, so the Frame's own system partitions never appear.
 - **FAT, exFAT and NTFS:** cards in these formats are shown but cannot hold games. Lepton needs a Linux filesystem such as ext4.
 - **Choosing a drive:** with more than one drive that can hold games, installing from Browse asks where to put the game, like Steam does. It can remember your choice as the default.
-- **Moving games:** games move between drives, and the copy is checked before the original is removed.
+- **Moving games:** **Move Drive** on a game's page asks which drive to move it to and shows each drive's free space against the game's size. The copy is checked before the original is removed.
 - **The Storage tab** shows each drive's space split into games, saves, shaders and other, and lists every game's size. You can select several games to move or uninstall them, clean the download cache, or reset the shader caches of the installed games on every drive.
 
 ### 🧊 Freeze Guard, Keep Awake and Performance

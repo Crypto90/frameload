@@ -1170,6 +1170,18 @@ input:checked + .slider:before {
   text-overflow: ellipsis;
 }
 
+/* The kind of drive, from storage.py's device_type: internal, microsd or usb */
+.badge.drive-type {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  background: rgb(var(--fg-rgb) / 0.1);
+  color: var(--text-muted);
+}
+.badge.drive-type.microsd { background: rgb(var(--ok-rgb) / 0.16); color: var(--accent-emerald); }
+.badge.drive-type.usb { background: rgb(var(--accent-2-rgb) / 0.2); color: var(--text-strong); }
+
 .drive-star {
   color: #f59e0b;
   font-size: 0.9rem;
@@ -1564,21 +1576,6 @@ input:checked + .slider:before {
 .batch-selected-indicator strong {
   color: var(--accent-cyan);
   font-weight: 800;
-}
-
-.batch-backup-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.batch-backup-toggle input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent-cyan);
 }
 
 .batch-bar-right {

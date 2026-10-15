@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from frameload.manager.storage import StorageManager, format_size, get_dir_size
+from frameload.manager.storage import MOVE_HEADROOM, StorageManager, format_size, get_dir_size
 
 
 class TestStorageManager(unittest.TestCase):
@@ -150,6 +150,39 @@ class TestStorageManager(unittest.TestCase):
                     new_dep = json.load(f)
                 self.assertEqual(new_dep["device_id"], "ext_microsd")
                 self.assertEqual(new_dep["anchor"], new_anchor)
+
+    def test_move_targets_offer_the_other_drives_that_can_take_the_game(self):
+        with tempfile.TemporaryDirectory() as game_dir:
+            with open(os.path.join(game_dir, "game.apk"), "wb") as f:
+                f.write(b"0" * 4096)
+            dep = {"package": "com.test.game", "title": "Test Game", "anchor": game_dir, "device_id": "ext_sd"}
+            room = MOVE_HEADROOM + 4096
+            devices = [
+                {"id": "internal", "name": "Internal Storage (Home)", "device_type": "internal", "free_bytes": room},
+                {"id": "ext_sd", "name": "microSD Card (sd)", "device_type": "microsd", "free_bytes": 10 * room,
+                 "supports_lepton": True},
+                {"id": "ext_stick", "name": "USB Drive (stick)", "device_type": "usb", "free_bytes": 10 * room,
+                 "filesystem": "exfat", "supports_lepton": False},
+                {"id": "ext_small", "name": "USB Drive (small)", "device_type": "usb", "free_bytes": room - 1,
+                 "supports_lepton": True},
+            ]
+            with patch("frameload.manager.storage.InstalledManager.get_game", return_value=dep), \
+                 patch.object(StorageManager, "get_devices", return_value=devices):
+                res = StorageManager.move_targets("com.test.game")
+
+        self.assertEqual((res["device_id"], res["size_bytes"]), ("ext_sd", 4096))
+        reasons = {d["id"]: d["unusable"] for d in res["devices"]}
+        # The drive the game is on is not offered; the others say why they cannot take it.
+        self.assertEqual(reasons, {
+            "internal": "",
+            "ext_stick": "Cannot hold games (exfat)",
+            "ext_small": "Not enough free space",
+        })
+
+    def test_move_targets_of_a_game_that_is_not_installed(self):
+        with patch("frameload.manager.storage.InstalledManager.get_game", return_value=None):
+            with self.assertRaises(FileNotFoundError):
+                StorageManager.move_targets("com.not.installed")
 
 
 if __name__ == "__main__":

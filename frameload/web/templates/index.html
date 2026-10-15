@@ -293,7 +293,7 @@
       <div id="downloads-list" style="display:flex; flex-direction:column; gap:16px;"></div>
     </section>
 
-    <!-- 4. Sideload Local APK or Bundle Tab -->
+    <!-- 4. Install File Tab: a local APK, bundle, EXE or AppImage -->
     <section id="tab-sideload" class="tab-panel">
       <div class="control-bar">
         <h2 style="font-size:1.15rem; font-weight:700;">Install an App You Already Have</h2>
@@ -345,7 +345,7 @@
       </div>
     </section>
 
-    <!-- 5. System & Diagnostics Tab -->
+    <!-- 5. System Tab -->
     <section id="tab-system" class="tab-panel">
       <div class="control-bar">
         <h2 style="font-size:1.15rem; font-weight:700;">Steam Frame System &amp; Runtime Status</h2>
@@ -549,9 +549,9 @@
         </div>
 
         <div class="sys-card">
-          <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Proton ARM64 &amp; PCVR</h3>
-          <p style="margin-bottom:8px;"><strong>Proton Status:</strong> <span id="sys-proton">--</span></p>
-          <p style="font-size:0.85rem; color:var(--text-muted);">Runs Windows VR games via Proton + WineOpenXR.</p>
+          <h3 style="font-size:1.05rem; margin-bottom:14px; color:var(--accent-cyan);">Windows Apps (Experimental)</h3>
+          <p style="margin-bottom:8px;"><strong>Proton:</strong> <span id="sys-proton">--</span></p>
+          <p style="font-size:0.85rem; color:var(--text-muted);">A Windows <code>.exe</code> installed from Install File starts with a Proton from your Steam libraries, or Wine. This has not been verified on a Steam Frame yet, and VR games may not start.</p>
         </div>
 
         <div class="sys-card">
@@ -658,7 +658,7 @@
               </button>
               <button type="button" class="dropdown-item" role="menuitem" onclick="fixKeyring()">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                Repair Container Keyring &amp; Perms
+                Apply Podman Keyring Leak Fix
               </button>
             </div>
           </div>
@@ -730,10 +730,6 @@
           <span class="batch-selected-indicator">
             Selected: <strong id="batch-selected-count">0</strong> games (<strong id="batch-selected-size">0 B</strong>)
           </span>
-          <label class="batch-backup-toggle">
-            <input type="checkbox" id="batch-keep-saves" checked>
-            <span>Auto-backup saves archive before uninstalling</span>
-          </label>
         </div>
         <div class="batch-bar-right">
           <button class="btn-secondary" onclick="deselectAllStorageGames()">Deselect All</button>
@@ -777,7 +773,7 @@
     <div class="hint-keys">
       <span><b class="key">A</b>Select</span>
       <span><b class="key">B</b>Back</span>
-      <span><b class="key">X</b>Options</span>
+      <span><b class="key">X</b>Quick action</span>
       <span><b class="key">Y</b>Search</span>
       <span><b class="key">LB</b><b class="key">RB</b>Sections</span>
     </div>
@@ -1153,13 +1149,14 @@
     </div>
   </div>
 
-  <!-- Where a new game goes, when there is more than one drive (like Steam's install dialog) -->
+  <!-- Which drive a game goes to: a new install when there is more than one drive (like Steam's
+       install dialog), or Move Drive on a game's page. pickDrive() in app.js fills it. -->
   <div id="install-drive-modal" class="modal-backdrop">
     <div class="modal-content" style="max-width:560px;" role="dialog" aria-labelledby="install-drive-title">
       <h2 id="install-drive-title" style="font-size:1.25rem; font-weight:800; color:var(--text-strong); margin-bottom:6px;">Install</h2>
       <p id="install-drive-size" style="font-size:0.9rem; color:var(--text-muted); margin-bottom:16px;"></p>
       <div id="install-drive-list" class="drive-choices" role="radiogroup" aria-label="Install location"></div>
-      <label class="drive-default-row">
+      <label class="drive-default-row" id="install-drive-default-row">
         <input type="checkbox" id="install-drive-default">
         <span>Always install here (make it the default drive)</span>
       </label>

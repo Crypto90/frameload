@@ -15,6 +15,9 @@ from ..config import ANCHOR_DIR, CACHE_DIR, HOME
 from ..manager.installed import InstalledManager
 from ..manager.uninstaller import Uninstaller
 
+# Room a drive must have beyond a game's own size before the game is moved onto it.
+MOVE_HEADROOM = 100 * 1024 * 1024
+
 
 def format_size(size_bytes: int | float) -> str:
     """Formats bytes into human readable binary units matching Steam's UI."""
@@ -542,6 +545,36 @@ class StorageManager:
         }
 
     @staticmethod
+    def move_targets(package_name: str) -> Dict[str, Any]:
+        """The drives a game can move to, for the dashboard's Move dialog: every connected drive except
+        the one it is on, each with `unusable` saying why it cannot take the game (empty when it can).
+        The space rule is move_game's: the game's folder plus MOVE_HEADROOM."""
+        dep = InstalledManager.get_game(package_name)
+        if not dep:
+            raise FileNotFoundError(f"Game '{package_name}' is not installed.")
+        current = dep.get("device_id", "internal")
+        size = get_dir_size(dep.get("anchor") or "")
+        targets = []
+        for dev in StorageManager.get_devices():
+            if dev["id"] == current:
+                continue
+            if not dev.get("supports_lepton", True):
+                reason = f"Cannot hold games ({dev.get('filesystem') or 'unsupported format'})"
+            elif dev.get("free_bytes", 0) < size + MOVE_HEADROOM:
+                reason = "Not enough free space"
+            else:
+                reason = ""
+            targets.append({**dev, "unusable": reason})
+        return {
+            "package": package_name,
+            "title": dep.get("title", package_name),
+            "device_id": current,
+            "size_bytes": size,
+            "size_formatted": format_size(size),
+            "devices": targets,
+        }
+
+    @staticmethod
     def move_game(package_name: str, target_device_id: str) -> Dict[str, Any]:
         """Moves an installed game between internal storage and MicroSD/external storage."""
         from .installed import InstalledManager
@@ -576,7 +609,7 @@ class StorageManager:
                 break
         try:
             free_space = shutil.disk_usage(target_mount).free
-            if free_space < game_size + (100 * 1024 * 1024):
+            if free_space < game_size + MOVE_HEADROOM:
                 raise OSError(
                     f"Insufficient disk space on destination. Free: {format_size(free_space)}, Required: {format_size(game_size)}"
                 )

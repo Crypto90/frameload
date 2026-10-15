@@ -98,6 +98,13 @@ class TestCompatVerdict(unittest.TestCase):
         self.assertEqual(a.hand_tracking, "required")
         self.assertEqual(a.compat["level"], "needs_port")
         self.assertTrue({"meta_runtime", "no_launcher", "hand_tracking", "platform_sdk"} <= self.codes(a))
+        self.assert_ported_on_the_headset(a, "meta_runtime")
+
+    def assert_ported_on_the_headset(self, analysis, code):
+        # Porting runs on the headset (installer/porting.py); the verdict must not send people to a PC.
+        message = next(i["message"] for i in analysis.compat["issues"] if i["code"] == code)
+        self.assertNotIn("PC", message)
+        self.assertIn("Port & Play", message)
 
     def test_framebridge_ported_game_is_ready(self):
         path = self.apk(
@@ -136,6 +143,7 @@ class TestCompatVerdict(unittest.TestCase):
         a = inspect_apk(path)
         self.assertEqual(a.xr_runtime, "vrapi")
         self.assertEqual(a.compat["level"], "needs_port")
+        self.assert_ported_on_the_headset(a, "vrapi")
 
     def test_app_that_checks_its_own_signature_cannot_run_ported_or_not(self):
         for libs in (["libOVRPlugin.so", "libunity.so", "libskybox.so"],

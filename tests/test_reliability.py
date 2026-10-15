@@ -626,6 +626,19 @@ class TestLaunchLog(TempCase):
         # An error outranks an earlier sign of life.
         self.assertNotIn("The game was running (72 fps)", titles("FrameBridge: pacing: 72 fps\nFatal signal 11 (SIGSEGV)"))
 
+    def test_advice_names_buttons_and_tabs_the_dashboard_has(self):
+        web = os.path.join(os.path.dirname(HERE), "frameload", "web")
+        with open(os.path.join(web, "templates", "index.html"), encoding="utf-8") as f:
+            page = f.read().replace("&amp;", "&")
+        with open(os.path.join(web, "static", "js", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        advice = " ".join(rule[3] for rule in launchlog.RULES)
+        for stale in ("Port for Steam Frame", "System & Diagnostics", "Sideload"):
+            self.assertNotIn(stale, advice)
+        for name in ("Port & Play", "Apply Podman Keyring Leak Fix", "Install File", "System"):
+            self.assertIn(name, advice)
+            self.assertTrue(name in page or name in js, name)
+
     def test_started_but_never_drew_a_frame(self):
         titles = [f["title"] for f in launchlog.diagnose(["FrameBridge: adapter loaded", "FrameBridge: session FOCUSED"])]
         self.assertEqual(titles, ["The game started but has not shown a VR frame"])

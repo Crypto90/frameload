@@ -1313,7 +1313,7 @@ function renderSystemTab(sys) {
 
   const protonHtml = sys.proton.has_proton
     ? `<span style="color:var(--accent-emerald);">${escapeHtml(sys.proton.installed_tools.join(', '))}</span>`
-    : `<span style="color:var(--accent-amber);">No Proton ARM64 tool detected</span>`;
+    : `<span style="color:var(--accent-amber);">No Proton found in your Steam libraries</span>`;
 
   document.getElementById("sys-os").textContent = `${sys.os_name} ${sys.os_version} (${sys.arch})`;
   document.getElementById("sys-lepton").innerHTML = leptonHtml;
@@ -1509,22 +1509,24 @@ function openGameModal(id, mode = "catalog") {
     driveEl.textContent = game.device_name || (game.is_external ? "MicroSD Card" : "Internal Storage");
   }
   if (moveBtn) {
-    const hasMultipleDrives = state.storage.data && state.storage.data.devices && state.storage.data.devices.length > 1;
-    if (mode === "installed" && hasMultipleDrives) {
-      moveBtn.style.display = "inline-flex";
-    } else {
-      moveBtn.style.display = "none";
-    }
+    // Offered when another connected drive can hold games; the dialog then compares free space and size.
+    const here = game.device_id || "internal";
+    const drives = (state.storage.data && state.storage.data.devices) || [];
+    const elsewhere = drives.some(d => d.id !== here && d.supports_lepton !== false);
+    moveBtn.style.display = mode === "installed" && elsewhere ? "inline-flex" : "none";
   }
 
-  // Runtime platform & OpenXR details
+  // Runtime platform & OpenXR details. The kinds come from each installer's deployment.json;
+  // Windows and Linux launchers are experimental, so they say what they start and nothing more.
   const platformEl = document.getElementById("modal-game-platform");
   const openxrEl = document.getElementById("modal-game-openxr");
+  const windowsApp = game.kind === "pcvr" || game.kind === "windows_flat";
+  const linuxApp = game.kind === "linux_native";
   if (platformEl) {
-    if (game.install_type === "windows_proton") {
-      platformEl.textContent = "Steam Frame (Proton ARM64 via FEX-Emu)";
-    } else if (game.install_type === "linux_native") {
-      platformEl.textContent = "Steam Frame (Linux Native ARM64)";
+    if (windowsApp) {
+      platformEl.textContent = "Windows app, started with Proton or Wine (experimental)";
+    } else if (linuxApp) {
+      platformEl.textContent = "Linux app (experimental)";
     } else if (game.kind === "flat") {
       platformEl.textContent = "Lepton (Android), shown as a 2D window";
     } else {
@@ -1532,10 +1534,8 @@ function openGameModal(id, mode = "catalog") {
     }
   }
   if (openxrEl) {
-    if (game.install_type === "windows_proton") {
-      openxrEl.textContent = game.is_vr ? "WineOpenXR -> SteamVR" : "Disabled (Flat Desktop App)";
-    } else if (game.install_type === "linux_native") {
-      openxrEl.textContent = game.is_vr ? "Monado / SteamVR Native OpenXR" : "Disabled (Flat Native App)";
+    if (windowsApp || linuxApp) {
+      openxrEl.textContent = game.is_vr ? "SteamVR's OpenXR runtime (not verified on the Frame)" : "Not used (2D app)";
     } else if (game.kind === "flat") {
       openxrEl.textContent = "Not used (2D app)";
     } else if (mode === "installed") {
@@ -1591,40 +1591,55 @@ function openGameModal(id, mode = "catalog") {
   modal.classList.add("open");
 }
 
+// Game page > Move Drive: the drive dialog lists every other drive with its free space against the
+// game's size (StorageManager.move_targets); choosing one and pressing Move is the only question.
 async function moveCurrentModalGame() {
-  if (!state.selectedGame) return;
-  const pkg = state.selectedGame.package || state.selectedGame.package_name;
-  const devices = (state.storage.data && state.storage.data.devices) || [];
-  const currentDev = state.selectedGame.device_id || "internal";
-  const otherDevices = devices.filter(d => d.id !== currentDev);
-
-  if (otherDevices.length === 0) {
-    showToast("No other storage drives available to move to.", "warning");
+  const game = state.selectedGame;
+  if (!game) return;
+  const pkg = game.package || game.package_name;
+  const name = game.title || pkg;
+  let info;
+  try {
+    info = await apiGet(`/api/storage/move-targets?package=${encodeURIComponent(pkg)}`);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+    return;
+  }
+  const drives = info.devices || [];
+  if (!drives.some(d => !d.unusable)) {
+    showToast(drives.length
+      ? `No other drive can take ${name}: ${drives.map(d => `${d.name}, ${d.unusable.toLowerCase()}`).join("; ")}.`
+      : "There is no other drive to move it to.", "warning");
     return;
   }
 
-  const targetDev = otherDevices[0];
-  if (!await confirmDialog(`Move ${state.selectedGame.title || pkg} to ${targetDev.name}?`,
-    "Its Steam shortcut is updated to the new place.", { yes: "Move" })) {
-    return;
-  }
+  const targetId = await pickDrive({
+    title: `Move ${name}`,
+    note: `It takes ${info.size_formatted}.${game.is_running ? " It is stopped first." : ""} Its Steam shortcut is updated to the new place.`,
+    okLabel: "Move",
+    listLabel: "Move to",
+    drives,
+    offerDefault: false,
+  });
+  if (!targetId) return;
+  const target = drives.find(d => d.id === targetId);
 
-  showToast(`Moving ${state.selectedGame.title || pkg} to ${targetDev.name}...`, "info");
+  showToast(`Moving ${name} to ${target.name}...`, "info");
   closeModal();
 
   try {
     const res = await fetch("/api/storage/move", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ package: pkg, target_device_id: targetDev.id })
+      body: JSON.stringify({ package: pkg, target_device_id: target.id })
     });
     const data = await res.json();
     if (data.success) {
-      showToast(`Game successfully moved to ${targetDev.name}!`, "success");
+      showToast(`${name} is now on ${target.name}.`, "success");
       loadInstalled();
       loadStorageOverview();
     } else {
-      showToast(data.error || "Failed to move game", "error");
+      showToast(data.error || "The game could not be moved.", "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
@@ -2044,6 +2059,29 @@ async function loadStorageOverview(deviceId = state.storage.activeDeviceId) {
 }
 window.loadStorageOverview = loadStorageOverview;
 
+// Storage tab drive card icons, by storage.py's device_type.
+const DRIVE_TYPE_ICONS = {
+  internal:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+      <line x1="6" y1="6" x2="6.01" y2="6"></line>
+      <line x1="6" y1="18" x2="6.01" y2="18"></line>
+    </svg>`,
+  microsd: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M6 2h9l5 5v15H6z"></path>
+      <path d="M10 2v4h4"></path>
+      <line x1="9" y1="10" x2="9" y2="12"></line>
+      <line x1="12" y1="10" x2="12" y2="12"></line>
+      <line x1="15" y1="10" x2="15" y2="12"></line>
+    </svg>`,
+  usb: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="7" y="9" width="10" height="13" rx="2"></rect>
+      <path d="M9 9V3h6v6"></path>
+      <line x1="11" y1="5.5" x2="11" y2="6.5"></line>
+      <line x1="13" y1="5.5" x2="13" y2="6.5"></line>
+    </svg>`,
+};
+
 function renderStorageDrives(devices, activeDev) {
   const container = document.getElementById("storage-drives-list");
   if (!container) return;
@@ -2062,37 +2100,18 @@ function renderStorageDrives(devices, activeDev) {
     if (row) row.style.display = usable.length > 1 ? "" : "none";  // one drive: nothing to choose
   }
 
+  // The badge and icon follow storage.py's device_type (classified by bus), so a USB drive says USB.
   container.innerHTML = devices.map(dev => {
     const isActive = activeDev && activeDev.id === dev.id;
-    const isSd = dev.is_sd_card;
-    const badgeHtml = isSd 
-      ? `<span class="badge" style="background:#27ae60; color:var(--text-strong); font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">MicroSD</span>`
-      : `<span class="badge" style="background:rgb(var(--fg-rgb) / 0.1); color:#ccc; font-size:0.7rem; padding:2px 6px; border-radius:4px; margin-left:6px;">SSD</span>`;
+    const type = DRIVE_TYPE_ICONS[dev.device_type] ? dev.device_type : "internal";
     return `
-      <div class="storage-drive-card ${isActive ? 'active' : ''}" onclick="selectStorageDrive('${dev.id}')">
-        <div class="drive-icon-box">
-          ${isSd ? `
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 2h9l5 5v15H6z"></path>
-              <path d="M10 2v4h4"></path>
-              <line x1="9" y1="10" x2="9" y2="12"></line>
-              <line x1="12" y1="10" x2="12" y2="12"></line>
-              <line x1="15" y1="10" x2="15" y2="12"></line>
-            </svg>
-          ` : `
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-              <line x1="6" y1="6" x2="6.01" y2="6"></line>
-              <line x1="6" y1="18" x2="6.01" y2="18"></line>
-            </svg>
-          `}
-        </div>
+      <div class="storage-drive-card ${isActive ? 'active' : ''}" onclick="selectStorageDrive(${jsArg(dev.id)})">
+        <div class="drive-icon-box">${DRIVE_TYPE_ICONS[type]}</div>
         <div class="drive-meta">
           <div class="drive-name">
-            ${dev.name} ${badgeHtml} ${dev.is_default ? '<span class="drive-star" title="Default Install Drive">★</span>' : ''}
+            ${escapeHtml(dev.name)} <span class="badge drive-type ${type}">${driveIcon(dev)}</span> ${dev.is_default ? '<span class="drive-star" title="Default Install Drive">★</span>' : ''}
           </div>
-          <div class="drive-caption">${dev.free_formatted} FREE OF ${dev.total_formatted}</div>
+          <div class="drive-caption">${escapeHtml(dev.free_formatted)} FREE OF ${escapeHtml(dev.total_formatted)}</div>
         </div>
       </div>
     `;
@@ -2144,7 +2163,7 @@ function renderStorageGames() {
     container.innerHTML = `
       <div style="text-align:center; padding:48px 20px; color:var(--text-muted); background:var(--bg-card); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
         <p style="font-size:1.05rem; font-weight:600; color:var(--text-strong); margin-bottom:6px;">No installed games match your search</p>
-        <p style="font-size:0.85rem;">Clear search filter or install games from the Catalog tab.</p>
+        <p style="font-size:0.85rem;">Clear the filter, or install games from the Browse tab.</p>
       </div>
     `;
     return;
@@ -2283,11 +2302,11 @@ function updateStorageBatchBar() {
   if (moveGroup && moveSelect && state.storage.data && state.storage.data.devices) {
     const devices = state.storage.data.devices;
     const currentDevId = state.storage.activeDeviceId || "internal";
-    const otherDevices = devices.filter(d => d.id !== currentDevId);
+    const otherDevices = devices.filter(d => d.id !== currentDevId && d.supports_lepton !== false);
     if (otherDevices.length > 0 && count > 0) {
       moveGroup.style.display = "inline-flex";
       moveSelect.innerHTML = otherDevices.map(d => `
-        <option value="${d.id}">Move to ${d.name}</option>
+        <option value="${escapeHtml(d.id)}">Move to ${escapeHtml(d.name)}</option>
       `).join("");
     } else {
       moveGroup.style.display = "none";
@@ -3932,33 +3951,52 @@ async function chooseInstallDrive(title, sizeBytes) {
     return undefined;
   }
   const need = Number(sizeBytes) || 0;
-  const usable = devices.filter(d => d.supports_lepton !== false && (!need || d.free_bytes > need * 1.1));
+  const drives = devices.map(d => ({ ...d,
+    unusable: d.supports_lepton === false ? `Cannot hold games (${d.filesystem || "unsupported format"})`
+      : need && d.free_bytes <= need * 1.1 ? "Not enough free space" : "" }));
+  const usable = drives.filter(d => !d.unusable);
   if (usable.length <= 1) return usable.length ? usable[0].id : undefined;
+  return pickDrive({
+    title: `Install ${title}`,
+    note: need ? `Needs about ${formatBytes(need * 1.1)} including room to unpack.` : "Choose where to install it.",
+    okLabel: "Install",
+    listLabel: "Install location",
+    drives,
+    offerDefault: true,
+  });
+}
+window.chooseInstallDrive = chooseInstallDrive;
 
+// The drive dialog (#install-drive-modal), for installing and for moving a game. Each drive carries
+// `unusable`: why it cannot be picked, empty when it can. Resolves the chosen drive id, or null
+// when the player cancelled.
+function pickDrive({ title, note, okLabel, listLabel, drives, offerDefault }) {
   const modal = document.getElementById("install-drive-modal");
-  if (!modal) return undefined;
+  if (!modal) return Promise.resolve(null);
   const list = document.getElementById("install-drive-list");
   const makeDefault = document.getElementById("install-drive-default");
+  const defaultRow = document.getElementById("install-drive-default-row");
   const ok = document.getElementById("install-drive-ok");
   const cancel = document.getElementById("install-drive-cancel");
-  document.getElementById("install-drive-title").textContent = `Install ${title}`;
-  document.getElementById("install-drive-size").textContent = need
-    ? `Needs about ${formatBytes(need * 1.1)} including room to unpack.` : "Choose where to install it.";
+  document.getElementById("install-drive-title").textContent = title;
+  document.getElementById("install-drive-size").textContent = note;
+  list.setAttribute("aria-label", listLabel);
+  ok.textContent = okLabel;
   makeDefault.checked = false;
+  if (defaultRow) defaultRow.style.display = offerDefault ? "" : "none";
 
+  const usable = drives.filter(d => !d.unusable);
   let chosen = (usable.find(d => d.is_default) || usable[0]).id;
-  list.innerHTML = devices.map(dev => {
-    const unusable = dev.supports_lepton === false ? `Cannot hold games (${escapeHtml(dev.filesystem || "unsupported format")})`
-      : need && dev.free_bytes <= need * 1.1 ? "Not enough free space" : "";
+  list.innerHTML = drives.map(dev => {
     const used = Math.min(100, Math.max(0, dev.percent_used || 0));
     return `
       <button type="button" class="drive-choice${dev.id === chosen ? " selected" : ""}" role="radio"
-              aria-checked="${dev.id === chosen}" data-drive="${escapeHtml(dev.id)}" ${unusable ? "disabled" : ""}>
+              aria-checked="${dev.id === chosen}" data-drive="${escapeHtml(dev.id)}" ${dev.unusable ? "disabled" : ""}>
         <span class="drive-choice-kind">${driveIcon(dev)}</span>
         <span class="drive-choice-main">
           <span class="drive-choice-name">${escapeHtml(dev.name)}${dev.is_default ? ' <span class="drive-choice-default">Default</span>' : ""}</span>
           <span class="drive-choice-bar"><span style="width:${used}%"></span></span>
-          <span class="drive-choice-free">${unusable || `${escapeHtml(dev.free_formatted)} free of ${escapeHtml(dev.total_formatted)}`}</span>
+          <span class="drive-choice-free">${escapeHtml(dev.unusable) || `${escapeHtml(dev.free_formatted)} free of ${escapeHtml(dev.total_formatted)}`}</span>
         </span>
       </button>`;
   }).join("");
@@ -3980,7 +4018,7 @@ async function chooseInstallDrive(title, sizeBytes) {
       modal.classList.remove("open");
       list.onclick = ok.onclick = cancel.onclick = modal.onclick = null;
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
-      if (answer && makeDefault.checked) {
+      if (answer && offerDefault && makeDefault.checked) {
         try { await apiPost("/api/storage/default", { device_id: answer }); } catch (e) { /* still installs */ }
       }
       resolve(answer);
@@ -3993,7 +4031,6 @@ async function chooseInstallDrive(title, sizeBytes) {
     ok.focus({ preventScroll: true });
   });
 }
-window.chooseInstallDrive = chooseInstallDrive;
 
 function formatBytes(bytes) {
   const units = ["B", "KB", "MB", "GB", "TB"];

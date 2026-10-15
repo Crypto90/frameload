@@ -216,7 +216,7 @@ class Downloader:
             mirror.base_url = "https://go.srcdl1.xyz"
 
         if not mirror.base_url:
-            raise RuntimeError("No active download mirror configured. Please configure your mirror in Settings or sideload the APK directly in the Sideload tab.")
+            raise RuntimeError("No download mirror is set up. Set one under System > Mirror Manager, or install the APK from the Install File tab.")
 
         game_dir = os.path.join(CACHE_DIR, task.id)
         os.makedirs(game_dir, exist_ok=True)

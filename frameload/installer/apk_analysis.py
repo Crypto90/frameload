@@ -1,8 +1,8 @@
 """APK inspection for the Steam Frame: what the app is, and whether Lepton can run it as it stands.
 
 FrameLoad does not convert Quest games itself. A game built against Meta's runtime needs porting
-(OVRPort + FramePort's FrameBridge adapter, done on a PC) before it starts on the Frame; the verdict
-below tells the user which case an APK is, before they install it.
+(OVRPort + FramePort's FrameBridge adapter, which installer/porting.py runs on the headset) before it
+starts on the Frame; the verdict below tells the user which case an APK is, before they install it.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ SELF_SIGNATURE_CHECK_LIBS = {
 }
 
 READY, LIKELY, NEEDS_PORT, BLOCKED = "ready", "likely", "needs_port", "blocked"
+PORTED_ON_HEADSET = "FrameLoad ports it on the headset: press Port & Play, or let automatic porting do it after installing."
 COMPAT_LABELS = {
     READY: "Ready for Steam Frame",
     LIKELY: "Should run",
@@ -113,10 +114,12 @@ def _build_compat(a: ApkAnalysis, manifest: ManifestInfo, platform_sdk: bool) ->
             level = READY
         elif a.xr_runtime == "vrapi":
             level = NEEDS_PORT
-            issue("error", "vrapi", "Uses Meta's legacy VrApi, which the Frame has no runtime for. Port it with FramePort (VrApi bridge) on a PC first.")
+            issue("error", "vrapi", "Uses Meta's legacy VrApi, which the Frame has no runtime for. It needs porting with "
+                  f"FramePort (VrApi bridge) first. {PORTED_ON_HEADSET}")
         elif a.xr_runtime == "meta":
             level = NEEDS_PORT
-            issue("error", "meta_runtime", "Built against Meta's Quest runtime (OVRPlugin). It needs porting with FramePort / OVRPort on a PC before it starts on the Frame.")
+            issue("error", "meta_runtime", "Built against Meta's Quest runtime (OVRPlugin). It needs porting with FramePort "
+                  f"before it starts on the Frame. {PORTED_ON_HEADSET}")
         else:
             level = LIKELY
             issue("info", "openxr", "Native OpenXR app. The Frame's runtime accepts OpenXR 1.0; apps that request 1.1 fail to start.")
