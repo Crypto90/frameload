@@ -450,7 +450,9 @@ button.f-read-seg:hover { background: rgb(var(--fg-rgb) / 0.05); }
 .telemetry-chip.stop-chip { background: var(--surface); color: var(--text-strong); box-shadow: inset 0 0 0 1px var(--f-line-strong); font-size: 14px; }
 .telemetry-chip.stop-chip::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--danger); }
 .telemetry-chip.stop-chip:hover, .telemetry-chip.stop-chip:focus-visible { background: var(--f-bad-soft); color: var(--f-bad-ink); }
-.telemetry-chip.show-chip { font-size: 14px; box-shadow: none; }
+/* Next to "Stop <game>" the header has room for one short word: the full name is in its tooltip. */
+.telemetry-chip.show-chip { font-size: 0; box-shadow: none; min-height: 48px; }
+.telemetry-chip.show-chip::after { content: "Show"; font-size: 14px; }
 .telemetry-chip.update-alert { background: var(--f-up-soft); color: var(--f-up-ink); box-shadow: none; animation: none; }
 .telemetry-chip.update-alert strong { color: inherit !important; font-family: var(--font-mono); }
 .telemetry-chip.clickable:hover { transform: none; background: var(--surface-2); color: var(--text-strong); }

@@ -49,7 +49,7 @@ RULES = [
      "Lepton ended before the app was running. The lines above that message usually say why."),
     (r"logcat: Unexpected EOF!|Logcat read failure", "warn", "Lepton stopped copying the game's log",
      "The game itself may have kept running; its later lines are missing here. FrameLoad then asks the game's "
-     "container directly whether it shows a picture. If you only heard the game, press Show on its page in FrameLoad."),
+     "container directly whether it shows a picture. Its later lines are missing here. If you only heard the game while it ran, Show on its page brings it in front."),
 ]
 
 # The last line steam_ui writes to dashboard.log: "result: <what happened to Steam's menu>".
@@ -108,6 +108,14 @@ def _read_json(path: str) -> Dict[str, Any]:
         return {}
 
 
+def _read_text_file(path: str, limit: int = 4096) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(limit)
+    except OSError:
+        return ""
+
+
 def _started_at(base: str) -> float:
     """When launch.sh last started the game (.last_played), 0 if unknown."""
     try:
@@ -123,6 +131,18 @@ def session_findings(base: str, dep: Dict[str, Any]) -> List[Dict[str, str]]:
     findings: List[Dict[str, str]] = []
     title = dep.get("title") or dep.get("package") or "the game"
     started = _started_at(base)
+    if not started:  # games FramePort installed write plays.log instead of .last_played
+        from . import sessions
+        started = float(sessions.current_start(dict(dep, base=base, anchor=dep.get("anchor") or base)) or 0)
+
+    error = _read_text_file(os.path.join(base, ".launch_error"))
+    try:
+        fresh = os.path.getmtime(os.path.join(base, ".launch_error")) >= started - 5
+    except OSError:
+        fresh = False
+    if error.strip() and fresh:  # launch.sh stopped before Lepton ran, so launch.log is an older start's
+        findings.append({"severity": "error", "title": "The launcher could not start the game",
+                         "advice": error.strip()[:300] + " The log below is from an earlier start."})
 
     launch = _read_json(os.path.join(base, ".last_launch"))
     # Only when that record belongs to the last start: a start from the Steam library writes none.

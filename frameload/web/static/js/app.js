@@ -547,7 +547,10 @@ async function setAppSourceEnabled(id, enabled, input) {
     return;
   }
   await loadAppSources();
-  if (state.catalog.kind === "flat") loadCatalog();  // "All sources" shows a different set now
+  if (state.catalog.kind === "flat") {
+    loadCatalog();  // "All sources" shows a different set now
+    loadAppUpdates();
+  }
 }
 window.setAppSourceEnabled = setAppSourceEnabled;
 
@@ -566,7 +569,10 @@ async function removeAppSource(id) {
     return;
   }
   await loadAppSources();
-  if (state.catalog.kind === "flat") loadCatalog();
+  if (state.catalog.kind === "flat") {
+    loadCatalog();
+    loadAppUpdates();  // its apps no longer get updates
+  }
 }
 window.removeAppSource = removeAppSource;
 
@@ -630,8 +636,10 @@ window.checkAppRepository = checkAppRepository;
 async function loadCatalogCategories() {
   const select = document.getElementById("catalog-category-select");
   if (!select) return;
+  const wanted = state.catalog.source;
   try {
-    const data = await apiGet(`/api/catalog/categories?source=${encodeURIComponent(state.catalog.source)}`);
+    const data = await apiGet(`/api/catalog/categories?source=${encodeURIComponent(wanted)}`);
+    if (wanted !== state.catalog.source) return;  // another source was picked meanwhile
     const current = state.catalog.category || "";
     select.innerHTML = '<option value="">All categories</option>' + (data.categories || []).map(c =>
       `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)} (${c.count})</option>`).join("");
@@ -689,6 +697,7 @@ async function loadCatalog(page = 1, append = false) {
   const loader = document.getElementById("catalog-infinite-loader");
   if (!container) return;
 
+  const request = append ? state.catalog.request || 0 : (state.catalog.request = (state.catalog.request || 0) + 1);
   if (!append) {
     state.catalog.page = 1;
     state.catalog.items = [];
@@ -712,6 +721,7 @@ async function loadCatalog(page = 1, append = false) {
 
     const res = await fetch(`/api/catalog?${params}`);
     const data = await res.json();
+    if (request !== state.catalog.request) return;  // the source or search changed meanwhile
 
     const newItems = data.items || [];
     state.catalog.page = data.page || 1;
@@ -1406,6 +1416,7 @@ function sortLibrary(games) {
 async function launchGame(pkg) {
   const game = (state.installed || []).find(g => g.package === pkg);
   const name = game ? game.title : pkg;
+  state.launchingUntil = Date.now() + 60000;  // no "What happened" dialog over a game that is starting
   showToast(`Starting ${name}...`, "info");
   try {
     const data = await apiPost("/api/installed/launch", { package: pkg });
@@ -4262,11 +4273,16 @@ function noteSessionAlerts(alerts) {
   if (!Array.isArray(alerts) || !alerts.length) return;
   if (document.querySelector(".modal-backdrop.open")) return;
   // Before the library has loaded, nobody knows whether a game runs: the next poll asks again.
-  if (!state.installedLoaded || (state.installed || []).some(g => g.is_running)) return;
+  if (!state.installedLoaded || sessionDialogMustWait()) return;
   const next = alerts.find(a => !state.sessions.handled.has(`${a.package}:${a.end}`));
-  if (!next) return;
-  state.sessions.handled.add(`${next.package}:${next.end}`);
-  openSessionDialog(next.package, { auto: true });
+  if (!next || state.sessions.opening) return;
+  openSessionDialog(next.package, { auto: true, end: next.end });
+}
+
+// A game runs, or one was just started (Lepton creates its container seconds after Play): a dialog
+// about an earlier session would cover it and its Show button.
+function sessionDialogMustWait() {
+  return (state.installed || []).some(g => g.is_running) || Date.now() < (state.launchingUntil || 0);
 }
 
 function sessionMeta(rec) {
@@ -4293,18 +4309,23 @@ async function openSessionDialog(pkg, options = {}) {
   const modal = document.getElementById("session-modal");
   if (!modal) return;
   let data;
+  if (options.auto) state.sessions.opening = true;
   try {
     data = await apiGet(`/api/sessions/${encodeURIComponent(pkg)}`);
   } catch (e) {
     if (!options.auto) showToast(e.message, "error");
     return;
+  } finally {
+    if (options.auto) state.sessions.opening = false;
   }
   const rec = data.record;
   if (!rec) {
     if (!options.auto) showToast("FrameLoad has no record of how this game's last session ended.", "info");
     return;
   }
-  if (options.auto && document.querySelector(".modal-backdrop.open")) return;  // something opened meanwhile
+  // Something opened, or a game started, meanwhile: the next poll offers it again.
+  if (options.auto && (document.querySelector(".modal-backdrop.open") || sessionDialogMustWait())) return;
+  if (options.auto) state.sessions.handled.add(`${pkg}:${options.end ?? rec.end}`);
   state.sessions.current = rec;
   state.sessions.text = data.copy_text || "";
   state.sessions.local = !!data.client_local;
@@ -4326,6 +4347,7 @@ async function openSessionDialog(pkg, options = {}) {
   if (copy) {
     copy.focus({ preventScroll: true });
     if (window.gamepadNav && window.gamepadNav.setFocus) window.gamepadNav.setFocus(copy);  // A presses Copy Log
+    if (content) content.scrollTop = 0;  // the headline first, also where Copy Log is below the fold
   }
 }
 
@@ -4744,8 +4766,6 @@ function noteGuardEvent(event) {
   }
   state.guard.seen = event.id;
   refreshRunningGames();
-  // A game the guard stopped gets the "What happened" dialog once its session is recorded: no toast too.
-  if (event.stopped && state.system && state.system.session_dialog) return;
   const type = event.kind === "info" ? "info" : event.kind === "memory" ? "error" : "warning";
   showToast(`${event.title || event.package} ${event.message}`, type);
 }

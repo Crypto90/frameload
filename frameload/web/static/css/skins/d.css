@@ -185,7 +185,9 @@ button.telemetry-chip, a.telemetry-chip { font: inherit; font-size: 13px; }
 /* Show <game> (a running VR game): filled, so it is the first thing found; cut short like Stop */
 .telemetry-chip.show-chip {
   display: block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; line-height: 38px; font-weight: 600;
+  font-size: 0;  /* "Show" next to "Stop <game>" keeps the chips on one row; the full name is the tooltip */
 }
+.telemetry-chip.show-chip::after { content: "Show"; font-size: 14px; }
 .telemetry-chip.show-chip::before { display: inline-block; vertical-align: 0; margin-right: 8px; }
 .telemetry-chip.show-chip:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: var(--glow); }
 .telemetry-chip.porting-chip {

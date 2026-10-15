@@ -213,7 +213,7 @@ Starting FrameLoad again while its window is open does not open a second one.
 
 FrameLoad checks GitHub at most every six hours; **Check for Updates** under System → FrameLoad Updates checks right away. When a new version is out, an **Update** chip appears in the header and a banner on top.
 
-To install it, press **Review & Update** in the banner (or the **Update** chip) and then **Update and Restart**, or press **Update Now** under System → FrameLoad Updates. FrameLoad updates itself and restarts its service, and the page reloads.
+To install it, press **Review & Update** in the banner (or the **Update** chip) and then **Update and Restart**, or press **Update Now** under System → FrameLoad Updates. FrameLoad updates itself and restarts its service, and the page reloads. While a game runs it waits: restarting the service could end a game FrameLoad started itself, so close the game first.
 
 - **A git install** updates with `git pull` from `main`, so it also gets fixes between releases. If files you changed in the FrameLoad folder are in the way, the update stops and names them; nothing is stashed or overwritten, and nothing restarts.
 - **A release install** downloads the new release archive and checks it against the release's `SHA256SUMS`. If it does not match, nothing is changed.

@@ -339,6 +339,63 @@ class TestFreezeGuard(Case):
             marker = json.load(f)
         self.assertEqual((marker["by"], marker["kind"]), ("guard", "frozen"))
 
+    def test_a_game_podman_does_not_list_is_not_counted_as_stopped(self):
+        self.stop_result = {"success": True, "stopped": False, "message": "It is not running."}
+        self.ticks(1000, 1008)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        events = self.ticks(1010, 1040)
+        self.assertEqual(self.stopped, ["com.game.a"])
+        self.assertFalse(events[1040][0]["stopped"])
+        self.assertIn("could not be stopped", events[1040][0]["message"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "sessions", "com.game.a.stop.json")))  # no stop to explain
+
+    def test_the_guards_own_stop_leaves_its_marker_alone(self):
+        from frameload.manager.launcher import GameLauncher
+        calls = []
+        patch.object(GameLauncher, "stop", side_effect=lambda pkg, by="player": calls.append((pkg, by)) or
+                     {"success": True, "stopped": True}).start()
+        self.ticks(1000, 1008)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        for t in range(1010, 1041, 2):
+            FreezeGuard.check(now=float(t), proc=self.proc, wall=1_790_000_000 + t)  # the default stop
+        self.assertEqual(calls, [("com.game.a", "")])
+        self.assertFalse(guard.records.mark_stop("com.game.a", ""))  # an empty "by" writes nothing
+
+    def test_a_dead_log_copy_alone_never_stops_a_game(self):
+        # Lepton stopped copying the game's log: the container still shows new pacing lines.
+        seen = iter(range(1000))
+        patch.object(guard, "container_pacing", side_effect=lambda appid: f"pacing: {next(seen)}".encode()).start()
+        self.ticks(1000, 1008)
+        self.log("FrameBridge: pacing: 72.0 fps\nlogcat: Unexpected EOF!\n")
+        self.assertEqual(self.ticks(1010, 1200), {})
+        self.assertEqual(self.stopped, [])
+
+    def test_a_dead_log_copy_and_unknown_gpu_time_only_report(self):
+        patch.object(guard, "container_pacing", return_value=None).start()  # the container cannot be asked
+        self.ticks(1000, 1008)
+        self.log("FrameBridge: pacing: 72.0 fps\nLogcat read failure\n")
+        events = self.ticks(1010, 1060)
+        self.assertEqual(self.stopped, [])
+        self.assertIn("press Stop", events[1040][0]["message"])
+        self.assertFalse(events[1040][0]["stopped"])
+
+    def test_a_game_started_again_between_two_looks_starts_afresh(self):
+        base = self.games[0]["base"]
+        self.write("com.game.a/.last_played", "100\n")
+        self.ticks(1000, 1008)
+        self.log("FrameBridge: pacing: 72.0 fps\n")
+        self.check(1010)
+        self.write("com.game.a/.last_played", "200\n")  # ended and started again before the next look
+        self.write("com.game.a/launch.log", "boot\n")
+        self.check(1012)
+        self.assertEqual([pkg for pkg, _ in self.finalized], ["com.game.a"])
+        self.assertTrue(self.finalized[0][1]["drew"])
+        self.assertIsNone(FreezeGuard.sessions["com.game.a"].get("last_frame"))  # nothing drawn yet
+        self.ticks(1014, 1100)
+        self.assertEqual(self.stopped, [])  # still loading: not judged by the old session's last picture
+        self.assertEqual(self.limits, ["lepton-steamlaunch-7", "lepton-steamlaunch-7"])  # the new container too
+        self.assertTrue(os.path.isdir(base))
+
     def test_15_s_never_stops_a_game_that_reports_every_5_s(self):
         self.settings["frozen_seconds"] = 15
         pacing = {float(t): (lambda: self.log("FrameBridge: pacing: 72.0 fps\n")) for t in range(1000, 1121, 5)}

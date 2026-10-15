@@ -259,7 +259,7 @@ body:has(#tab-library.active .c-show) .telemetry-chip.stop-chip { bottom: 10px; 
   font-size: 15px;
   box-shadow: 0 12px 30px rgb(var(--shade-rgb) / 0.55);
 }
-body:has(#tab-library.active .c-show) .telemetry-chip.show-chip { display: none !important; }
+body:has(#tab-library.active .c-show.c-hero-running) .telemetry-chip.show-chip { display: none !important; }
 body:has(.modal-backdrop.open) .telemetry-chip.show-chip { visibility: hidden; }
 @media (min-width: 641px) and (max-width: 1559px) {
   body.page-scrolls .telemetry-chip.show-chip { right: 10px; padding: 0 16px 0 14px; gap: 8px; font-size: 0; }

@@ -289,6 +289,21 @@ class TestRecords(SessionCase):
         self.assertIn("libgallium_dri.so", sessions.report_text(PKG))
         self.assertIsNone(sessions.finalize(PKG))  # recorded once
 
+    def test_uninstalling_forgets_the_mute_too(self):
+        _, end = self.session([START_PROC, PACING, NATIVE_CRASH], crash=TOMBSTONE)
+        sessions.finalize(PKG)
+        sessions.acknowledge(PKG, end, mute=True)
+        sessions.forget(PKG)
+        self.assertNotIn(PKG, sessions._muted())
+
+    def test_sessions_ended_while_the_dialog_was_off_never_pop_up(self):
+        self.session([START_PROC, PACING, NATIVE_CRASH], crash=TOMBSTONE)
+        with patch.object(sessions, "_dialog_on", return_value=False):
+            record = sessions.finalize(PKG)
+        self.assertEqual(record["outcome"], "crashed")
+        self.assertFalse(record["popup"])
+        self.assertEqual(sessions.pending(), [])
+
     def test_a_newer_start_leaves_the_log_alone(self):
         start, end = self.session([START_PROC, PACING, NATIVE_CRASH])
         self.write(".last_played", f"{end + 30}\n")  # started again before FrameLoad looked

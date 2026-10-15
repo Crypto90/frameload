@@ -277,6 +277,8 @@ class TestShowGame(TempCase):
         self.assertEqual(steam_ui.show_game(dashboard, settle=0), {"success": True, "visible": False})
         self.assertEqual(dashboard.calls, [HIDE, VISIBLE])
 
+        # Steam gives no clear answer (its interface changed): that is no success either.
+        self.assertFalse(steam_ui.show_game(lambda e: None, settle=0)["success"])
         res = steam_ui.show_game(Dashboard(reopen=1), settle=0)  # Steam opened it again
         self.assertEqual((res["success"], res["visible"]), (False, True))
         self.assertEqual(res["error"], "Steam's menu could not be closed from here. Press the Steam button on your controller.")
@@ -342,6 +344,19 @@ class TestShowGame(TempCase):
         game["is_vr"] = False  # a 2D app is a window of its own: hiding the dashboard would hide it
         self.assertFalse(GameLauncher.show("a.b")["success"])
         self.assertEqual(show.call_count, 1)
+
+
+class TestLauncherError(TempCase):
+    def test_a_launcher_that_stopped_before_lepton_says_why(self):
+        from frameload.manager import launchlog
+        base = os.path.join(self.tmp, "game")
+        os.makedirs(base)
+        with open(os.path.join(base, ".last_played"), "w") as f:
+            f.write(f"{int(time.time()) - 60}\n")
+        with open(os.path.join(base, ".launch_error"), "w") as f:
+            f.write("Lepton runtime not found\n")
+        titles = [f["title"] for f in launchlog.session_findings(base, {"title": "Game", "package": "com.x"})]
+        self.assertIn("The launcher could not start the game", titles)
 
 
 class TestLastLaunch(TempCase):

@@ -92,6 +92,7 @@ GENERIC_LIBRARIES = ("libc.so", "libm.so", "libdl.so", "linker", "linker64", "li
 GENERIC_HOSTS = ("localhost", "steamdeck", "steamos", "steamframe")
 
 _lock = threading.RLock()
+_marker_lock = threading.Lock()  # stop markers: never held while evidence is copied
 
 
 # --------------------------------------------------------------------------- storage
@@ -187,6 +188,15 @@ def summary(pkg: str) -> Optional[Dict[str, Any]]:
             "abnormal": record.get("outcome") in POPUP_OUTCOMES, "headline": record.get("headline", "")}
 
 
+def _dialog_on() -> bool:
+    """The Freeze Guard card's "Show what happened" switch: sessions ended while it was off never pop up."""
+    try:
+        from .guard import FreezeGuard
+        return bool(FreezeGuard.settings().get("report_crashes", True))
+    except Exception:
+        return True
+
+
 def forget(pkg: str) -> None:
     """Removes everything kept about a game (it was uninstalled)."""
     with _lock:
@@ -196,6 +206,9 @@ def forget(pkg: str) -> None:
             except OSError:
                 pass
         shutil.rmtree(_evidence_dir(pkg), ignore_errors=True)
+        muted = _muted()
+        if pkg in muted:
+            _write_json(os.path.join(SESSION_DIR, "muted.json"), sorted(muted - {pkg}))
 
 
 # --------------------------------------------------------------------------- stop markers
@@ -204,7 +217,9 @@ def mark_stop(pkg: str, by: str, kind: str = "", message: str = "", now: Optiona
     the same call as the player's Stop, so a player marker does not replace a guard marker that is
     seconds old. Returns whether the marker was written."""
     now = time.time() if now is None else now
-    with _lock:
+    if not by:
+        return False
+    with _marker_lock:
         if by == "player":
             old = _read_json(_marker_path(pkg))
             if isinstance(old, dict) and old.get("by") == "guard" and 0 <= now - float(old.get("time", 0)) < GUARD_MARK_HOLD:
@@ -764,7 +779,7 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     record = {
         "package": pkg, "title": title, "appid": dep.get("appid"), "start": start, "end": end,
         "duration": max(0, end - start), "rc": session.get("rc"), "end_source": session.get("source", ""),
-        "outcome": result["outcome"], "popup": result["popup"] and not quiet, "headline": result["headline"],
+        "outcome": result["outcome"], "popup": result["popup"] and not quiet and _dialog_on(), "headline": result["headline"],
         "cause": result["cause"], "advice": result["advice"], "findings": result["findings"],
         "evidence": result["evidence"], "quit_note": result.get("quit_note", ""),
         "signal": result.get("signal", ""), "thread": result.get("thread", ""), "library": result.get("library", ""),

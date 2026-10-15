@@ -56,7 +56,8 @@ def _now() -> str:
 
 
 def _steam_ui_log() -> str:
-    for base in ("~/.steam/steam", "~/.local/share/Steam"):
+    from ..config import STEAM_DIR
+    for base in (STEAM_DIR, "~/.steam/steam", "~/.local/share/Steam"):
         path = os.path.expanduser(os.path.join(base, "logs/vrwebhelper_systemui.txt"))
         if os.path.exists(path):
             return path
@@ -126,12 +127,12 @@ def show_game(evaluate: Callable[[str], Any] = steam_js, settle: float = 1.0) ->
     closed. Steam may open it again, for example while FrameLoad is its only running app."""
     try:
         evaluate("SteamClient.OpenVR.VROverlay.HideDashboard()")
-        time.sleep(settle)
-        visible = bool(evaluate("SteamClient.OpenVR.VROverlay.IsDashboardVisible()"))
     except Exception as exc:  # no devtools port, Steam restarting
         return {"success": False, "visible": None, "error": MENU_LEFT_OPEN, "detail": str(exc)}
-    if visible:
-        return {"success": False, "visible": True, "error": MENU_LEFT_OPEN}
+    time.sleep(settle)
+    visible = dashboard_visible(evaluate=lambda expression, timeout=3.0: evaluate(expression))
+    if visible is not False:  # still open, or Steam gave no clear answer
+        return {"success": False, "visible": visible, "error": MENU_LEFT_OPEN}
     return {"success": True, "visible": False}
 
 

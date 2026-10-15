@@ -121,6 +121,27 @@ def installed_games() -> List[Dict[str, Any]]:
     return games
 
 
+MIRROR_DEAD_RE = re.compile(rb"logcat: Unexpected EOF!|Logcat read failure")
+
+
+def launch_start(game: Dict[str, Any]) -> int:
+    """When launch.sh last started the game (its .last_played), 0 if unknown: tells two sessions apart."""
+    try:
+        with open(os.path.join(game["base"], ".last_played"), "r", encoding="utf-8") as f:
+            return int(float(f.read().strip() or 0))
+    except (OSError, ValueError, KeyError):
+        return 0
+
+
+def container_pacing(appid: Any) -> Optional[bytes]:
+    """FrameBridge's newest pacing line read from the game's container (None when it cannot be asked)."""
+    if not appid:
+        return None
+    from ..system.steam_ui import container_logcat
+    lines = [line for line in container_logcat(appid).splitlines() if b"pacing:" in line]
+    return lines[-1] if lines else None
+
+
 def running_games(games: List[Dict[str, Any]], proc: str = "/proc") -> List[Dict[str, Any]]:
     """The games whose launch.sh holds its launch lock right now."""
     held = held_flock_inodes(proc)
@@ -291,6 +312,8 @@ class FreezeGuard:
         session["log_pos"] = pos + len(data)
         if skip_partial:
             data = data[data.find(b"\n") + 1:] if b"\n" in data else b""
+        if MIRROR_DEAD_RE.search(data):
+            session["mirror_dead"] = True  # its frames can only be seen in the container from now on
         for m in FRAME_RE.finditer(data):
             if m.group(1) or m.group(3):
                 if m.group(1):
@@ -366,7 +389,8 @@ class FreezeGuard:
         except Exception as e:
             print(f"[FrameLoad] Freeze guard could not stop {game['package']}: {e}")
             result = {"success": False}
-        ok = result.get("success", True) if isinstance(result, dict) else True
+        # "It is not running." (podman did not list it) is no stop: the game may still run.
+        ok = bool(result.get("success", True) and result.get("stopped", True)) if isinstance(result, dict) else True
         if not ok:
             records.clear_stop(game["package"])
         return ok
@@ -394,9 +418,10 @@ class FreezeGuard:
                 session["gpu_noted"] = True
                 return [cls.record(pkg, title, "info", "FrameLoad no longer receives its frame reports, but it is "
                                                        "still drawing, so it keeps running.")]
-            certain = True  # its own frame reports say it froze
+            # Its own frame reports say it froze, unless Lepton stopped copying them and its GPU time is unknown.
+            certain = not (session.get("mirror_dead") and share is None)
             silent = int(now - last)
-        elif not game.get("framebridge") and session.get("gpu_drawing"):  # judged by its GPU time alone
+        elif session.get("gpu_drawing"):  # judged by its GPU time alone (no FrameBridge, or no frame line seen)
             idle = session.get("gpu_active_at", now)
             if now - idle < limit:
                 return []
@@ -448,12 +473,14 @@ class FreezeGuard:
         running = running_games(cls._games, proc)
         live = {g["package"] for g in running}
         # Ended sessions are recorded whatever the switches say: the crash dialog needs them.
+        ended = set()
         for pkg in list(cls.sessions):
             if pkg not in live:
+                ended.add(pkg)
                 cls._session_ended(pkg, cls.sessions.pop(pkg), now)
         if now - cls._swept_at >= SWEEP_SECONDS:
             cls._swept_at = now
-            cls.run_async(records.sweep, list(cls._games), set(live))
+            cls.run_async(records.sweep, list(cls._games), set(live) | ended)
         gap = bool(cls._last_tick) and now - cls._last_tick > GAP_GRACE
         cls._last_tick = now
         if not running:
@@ -462,12 +489,20 @@ class FreezeGuard:
 
         if stop is None:
             from .launcher import GameLauncher
-            stop = GameLauncher.stop
+
+            def stop(pkg: str) -> Dict[str, Any]:  # the guard's own marker is already written
+                return GameLauncher.stop(pkg, by="")
         mem = perf.memory(proc)
         for game in running:
+            start_id = launch_start(game)
+            old = cls.sessions.get(game["package"])
+            if old is not None and start_id and old.get("start_id") and old["start_id"] != start_id:
+                # Ended and started again between two looks: the old session ends, the new one starts fresh
+                # (its container has no memory limit yet and it has drawn nothing yet).
+                cls._session_ended(game["package"], cls.sessions.pop(game["package"]), now)
             session = cls.sessions.setdefault(game["package"], {
                 "started": now, "started_wall": wall, "limit": "", "limit_at": 0.0,
-                "gpu_samples": deque(maxlen=80), "gpu_hot": 0})
+                "gpu_samples": deque(maxlen=80), "gpu_hot": 0, "start_id": start_id})
             if gap:  # the headset slept or the guard stalled: nobody could have drawn
                 if session.get("last_frame"):
                     session["last_frame"] = now
@@ -481,6 +516,14 @@ class FreezeGuard:
                 error = apply_memory_limit(f"{CONTAINER_PREFIX}{game['appid']}", mem["total"])
                 session["limit"] = "applied" if not error else error
             cls._frames(game, session, now)
+            if session.get("mirror_dead") and game.get("framebridge") and now - session.get("container_at", -1e9) >= 10:
+                session["container_at"] = now
+                last = container_pacing(game.get("appid"))
+                if last is not None:
+                    if session.get("container_pacing") is not None and last != session["container_pacing"]:
+                        session["last_frame"] = now  # a new pacing line in the container: it still draws
+                        session["frozen_reported"] = False
+                    session["container_pacing"] = last
             if game.get("vr", True):
                 cls._gpu(game, session, now, proc)
                 share = session.get("gpu")

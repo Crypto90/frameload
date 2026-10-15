@@ -258,23 +258,26 @@ result.then(ok => {
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_dialog_waits_for_a_free_moment(self):
-        script = declaration(self.app, "noteSessionAlerts") + """
+        script = declaration(self.app, "noteSessionAlerts") + declaration(self.app, "sessionDialogMustWait") + """
 var state = { installed: [], sessions: { handled: new Set() } };
 let openModal = null;
 var document = { querySelector: () => openModal };
 const opened = [];
-function openSessionDialog(pkg, options) { opened.push([pkg, options.auto]); }
+// Like the real one: an alert counts as handled once its dialog is open.
+function openSessionDialog(pkg, options) { opened.push([pkg, options.auto]); state.sessions.handled.add(`${pkg}:${options.end}`); }
 const alerts = [{ package: "a.game", end: 2 }, { package: "b.game", end: 1 }];
 noteSessionAlerts(alerts);                                           // the library has not loaded yet
 state.installedLoaded = true;
 openModal = {};  noteSessionAlerts(alerts);                          // another dialog is open
 opened.push("game");
 openModal = null; state.installed = [{ is_running: true }]; noteSessionAlerts(alerts);  // a game runs
+opened.push("starting");
+state.installed = []; state.launchingUntil = Date.now() + 60000; noteSessionAlerts(alerts);  // Play was just pressed
 opened.push("free");
-state.installed = []; noteSessionAlerts(alerts); noteSessionAlerts(alerts); noteSessionAlerts(alerts);
+state.launchingUntil = 0; noteSessionAlerts(alerts); noteSessionAlerts(alerts); noteSessionAlerts(alerts);
 process.stdout.write(JSON.stringify(opened));
 """
-        self.assertEqual(json.loads(run_node(script)), ["game", "free", ["a.game", True], ["b.game", True]])
+        self.assertEqual(json.loads(run_node(script)), ["game", "starting", "free", ["a.game", True], ["b.game", True]])
 
 
 if __name__ == "__main__":

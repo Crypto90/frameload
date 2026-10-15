@@ -214,7 +214,7 @@ body.page-scrolls .main-content {
 .telemetry-chip.lepton.missing { color: var(--warn); border-color: rgb(var(--warn-rgb) / 0.4); background: rgb(var(--warn-rgb) / 0.1); }
 .telemetry-chip.stop-chip { background: #ffffff; color: var(--accent-ink); border-color: #ffffff; font-weight: 700; }
 .telemetry-chip.stop-chip:hover { background: #efe9e2; }
-.telemetry-chip.show-chip { background: var(--ok); color: var(--accent-ink); border-color: var(--ok); }
+.telemetry-chip.show-chip { background: var(--ok); color: var(--accent-ink); border-color: var(--ok); min-height: 44px; }
 .telemetry-chip.porting-chip { color: #ffffff; background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.22); font-size: 0.85rem; }
 .telemetry-chip.update-alert { color: #ffffff; background: rgb(var(--warn-rgb) / 0.18); border-color: rgb(var(--warn-rgb) / 0.5); box-shadow: none; animation: none; }
 .telemetry-chip.kofi-chip { justify-content: center; width: 44px; padding: 0; background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.16); color: #ffb3b1; }

@@ -31,8 +31,10 @@ class Uninstaller:
         anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, package_name))
         launch_script = os.path.join(anchor, "launch.sh")
 
-        # 1. Stop container if running
+        # 1. Stop container if running (noted, so its session is not taken for a crash)
         if appid:
+            from . import sessions
+            sessions.mark_stop(package_name, "frameload", "uninstall", "It was uninstalled.")
             try:
                 subprocess.run(["podman", "kill", f"lepton-steamlaunch-{appid}"], capture_output=True)
             except OSError:

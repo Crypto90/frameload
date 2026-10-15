@@ -121,7 +121,7 @@ FrameLoad/
 │   ├── build_release.py      # Builds tarballs, self-extracting installer, SHA256SUMS, and release notes
 │   ├── capture_screenshots.py# Headless Chrome script for automated 1080p README screenshots
 │   └── github_release.py     # Pure Python GitHub REST API release publisher and asset uploader
-├── tests/                    # Unit tests (384 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort,
+├── tests/                    # Unit tests (394 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort,
 │                             # fixtures/fdroid_repo/ holds signed test indexes (make_fixtures.py rebuilds them)
 ├── install.sh                # 1-Click on-device installer script
 ├── run.sh                    # Smart runner for Steam and command-line execution

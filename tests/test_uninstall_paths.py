@@ -77,6 +77,52 @@ class TestCliCommands(unittest.TestCase):
         self.assertNotIn("pip install --user --quiet pywebview", install)
 
 
+class TestHeadsetOnlyRoutes(unittest.TestCase):
+    """What only someone at the headset may change, and an update that would end a running game."""
+
+    def setUp(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from frameload.server import FrameLoadApiHandler
+        for p in (patch.object(FrameLoadApiHandler, "client_is_local", return_value=False),
+                  patch.object(FrameLoadApiHandler, "authorized", return_value=True),
+                  patch("frameload.config.Config.save")):
+            p.start()
+            self.addCleanup(p.stop)
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), FrameLoadApiHandler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def post(self, path, body):
+        import http.client
+        import json
+        conn = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+        try:
+            payload = json.dumps(body).encode()
+            conn.request("POST", path, body=payload, headers={"Content-Type": "application/json",
+                                                              "Content-Length": str(len(payload))})
+            resp = conn.getresponse()
+            return resp.status, json.loads(resp.read() or b"{}")
+        finally:
+            conn.close()
+
+    def test_a_paired_device_cannot_change_sources_through_the_config(self):
+        from frameload.config import Config
+        before = Config.get().raw.get("app_sources")
+        status, _ = self.post("/api/config", {"app_sources": {"custom": [{"id": "u1", "url": "https://evil.example/repo"}]}})
+        self.assertEqual(status, 403)
+        self.assertEqual(Config.get().raw.get("app_sources"), before)
+
+    def test_an_update_waits_for_running_games(self):
+        with patch("frameload.manager.guard.running_games", return_value=[{"title": "Neon Drift"}]), \
+                patch("frameload.manager.updates.UpdateManager.perform_app_update") as update:
+            status, res = self.post("/api/updates/app", {})
+        self.assertFalse(res["success"])
+        self.assertIn("Close Neon Drift first", res["error"])
+        update.assert_not_called()
+
+
 class TestFrameLoadShortcutOnly(unittest.TestCase):
     def test_games_on_a_drive_named_frameload_are_never_taken_for_frameload(self):
         app = tempfile.mkdtemp(prefix="fl-app-")

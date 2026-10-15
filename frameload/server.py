@@ -984,6 +984,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/updates/app":
+            from .manager.guard import installed_games, running_games
+            playing = [g["title"] for g in running_games(installed_games())]
+            if playing and not body.get("force"):
+                # The update restarts FrameLoad's service; a game FrameLoad started itself runs inside it.
+                self.send_json({"success": False, "running": playing,
+                                "error": f"Close {', '.join(playing)} first: updating restarts FrameLoad, which "
+                                         "can end a game it started."})
+                return
             res = UpdateManager.perform_app_update()
             self.send_json(res)
         elif path == "/api/updates/game":
@@ -1168,6 +1176,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             })
         elif path == "/api/config":
             cfg = Config.get()
+            # Where apps come from and which host names are trusted are changed at the headset only.
+            if not self.client_is_local() and any(k in ("app_sources", "server") for k in body):
+                self.send_json({"error": "This can only be done on the headset."}, status=HTTPStatus.FORBIDDEN)
+                return
             for k, v in body.items():
                 cfg[k] = v
             cfg.save()
