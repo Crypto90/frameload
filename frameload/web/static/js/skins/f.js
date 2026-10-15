@@ -145,7 +145,8 @@
       box.innerHTML = `
         ${d.battery != null ? `<span class="f-read-seg" title="Battery">${ctx.icon("battery")}<b data-f="bat"></b><em data-f="plug"></em></span><i aria-hidden="true"></i>` : ""}
         <button type="button" class="f-read-seg" onclick="openStorageTab()" title="Open Storage">${ctx.icon("drive")}<b data-f="free"></b><em>free</em></button><i aria-hidden="true"></i>
-        <button type="button" class="f-read-seg" onclick="openPerformanceCard()" title="CPU and memory">${ctx.icon("cpu")}<em>CPU</em><b data-f="cpu"></b></button>`;
+        <button type="button" class="f-read-seg" onclick="openPerformanceCard()" title="CPU and memory">${ctx.icon("cpu")}<em>CPU</em><b data-f="cpu"></b></button><i aria-hidden="true"></i>
+        <button type="button" class="f-read-seg" onclick="openPerformanceCard()" title="CPU and memory">${ctx.icon("memory")}<em>RAM</em><b data-f="ram"></b></button>`;
     }
     const set = (key, text) => { const el = box.querySelector(`[data-f="${key}"]`); if (el && el.textContent !== text) el.textContent = text; };
     if (d.battery != null) {
@@ -154,6 +155,7 @@
     }
     set("free", gbText(d.freeGb));
     set("cpu", d.cpu == null ? "--" : `${d.cpu}%`);
+    set("ram", d.ramUsedGb == null ? "--" : `${d.ramUsedGb} GB`);
   }
 
   // ---------------------------------------------------------------- sidebar: jobs + keys

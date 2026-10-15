@@ -9,7 +9,8 @@
   function perfText(state) {
     const snap = state && state.perf && state.perf.last;
     if (!snap || typeof snap.cpu_percent !== "number" || !snap.memory) return null;
-    return { cpu: `CPU ${Math.round(snap.cpu_percent)}%`, ram: `RAM ${gb(snap.memory.used)}/${gb(snap.memory.total)} GB` };
+    return { cpu: `CPU ${Math.round(snap.cpu_percent)}%`, ram: `RAM ${gb(snap.memory.used)}/${gb(snap.memory.total)} GB`,
+             cpuShort: `${Math.round(snap.cpu_percent)}%`, ramShort: `${gb(snap.memory.used)} GB` };
   }
 
   // The battery and storage chips in the header get icons in this look. app.js writes its own
@@ -30,12 +31,15 @@
       }
     }
     const drive = document.getElementById("header-storage");
-    if (drive && dev.freeGb != null) drive.innerHTML = `${ctx.icon("drive")}<span>${dev.freeGb} GB free</span>`;
-    // CPU and RAM in two parts: narrow windows keep only the CPU figure (the CSS hides .nd-ram).
+    if (drive && dev.freeGb != null) {
+      drive.innerHTML = `${ctx.icon("drive")}<span class="nd-long">${dev.freeGb} GB free</span><span class="nd-short">${Math.round(dev.freeGb)} GB</span>`;
+      drive.title = `${dev.freeGb} GB free · open Storage`;
+    }
+    // Long and short figures: narrower windows show the short ones (.nd-short), see d.css.
     const perf = document.getElementById("header-perf");
     const text = perfText(ctx.state);
     if (perf && text) {
-      perf.innerHTML = `<span>${text.cpu}</span><span class="nd-ram">· ${text.ram}</span>`;
+      perf.innerHTML = `<span class="nd-long">${text.cpu} · ${text.ram}</span><span class="nd-short">${text.cpuShort}${ctx.icon("memory")}${text.ramShort}</span>`;
       perf.title = `${text.cpu} · ${text.ram}`;
     }
   }
@@ -53,7 +57,10 @@
         : '<span class="pulse-dot"></span> --%';
     }
     const drive = document.getElementById("header-storage");
-    if (drive) drive.textContent = sys.storage ? `💾 ${sys.storage.free_gb} GB Free` : "💾 -- GB Free";
+    if (drive) {
+      drive.textContent = sys.storage ? `💾 ${sys.storage.free_gb} GB Free` : "💾 -- GB Free";
+      drive.title = "Open Steam Storage Manager";
+    }
     const perf = document.getElementById("header-perf");
     const text = perfText(state);
     if (perf) {

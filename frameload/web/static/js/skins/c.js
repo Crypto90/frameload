@@ -290,6 +290,8 @@
     el.setAttribute("datetime", now.toISOString());
   }
 
+  // Rebuilt only when an item comes or goes; the figures change in place, so a button the
+  // controller is on keeps its focus through the updates every few seconds.
   function status(ctx) {
     const box = document.getElementById("c-status");
     if (!box) return;
@@ -297,11 +299,35 @@
     const pct = act ? (act.queued ? 0 : Math.round(act.percent)) : 0;
     const label = act ? `${act.label}${act.queued ? ", waiting" : `, ${pct}%`}` : "";
     const dev = ctx.device;
-    box.innerHTML = `
-      ${act ? `<button type="button" class="c-act" onclick="openActivity()" title="${ctx.esc(label)}" aria-label="${ctx.esc(label)}">
-        <span class="c-ring" style="--p:${act.queued ? 100 : pct}"></span><span>${act.queued ? "Waiting" : pct + "%"}</span></button>` : ""}
-      ${dev.battery == null ? "" : `<span class="c-bat" title="Battery${dev.plugged ? ", charging" : ""}">${ctx.icon("battery")}${dev.battery}%</span>`}
-      <time class="c-clock" id="c-clock"></time>`;
+    const shape = [!!act, dev.freeGb != null, dev.cpu != null, dev.ramUsedGb != null, dev.battery != null].join();
+    if (box.dataset.shape !== shape || !box.firstElementChild) {
+      box.dataset.shape = shape;
+      box.innerHTML = `
+        ${act ? `<button type="button" class="c-act" onclick="openActivity()"><span class="c-ring"></span><span data-f="act"></span></button>` : ""}
+        ${dev.freeGb == null ? "" : `<button type="button" class="c-stat c-free" onclick="openStorageTab()" title="Free space · open Storage">${ctx.icon("drive")}<span data-f="free"></span></button>`}
+        ${dev.cpu == null ? "" : `<button type="button" class="c-stat" data-f="perf" onclick="openPerformanceCard()">${ctx.icon("cpu")}<span data-f="cpu"></span>${dev.ramUsedGb == null ? "" : `<span class="c-ram">${ctx.icon("memory")}<span data-f="ram"></span></span>`}</button>`}
+        ${dev.battery == null ? "" : `<span class="c-bat">${ctx.icon("battery")}<span data-f="bat"></span></span>`}
+        <time class="c-clock" id="c-clock"></time>`;
+    }
+    const set = (key, text) => { const el = box.querySelector(`[data-f="${key}"]`); if (el && el.textContent !== text) el.textContent = text; };
+    if (act) {
+      const button = box.querySelector(".c-act");
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      box.querySelector(".c-ring").style.setProperty("--p", act.queued ? 100 : pct);
+      set("act", act.queued ? "Waiting" : pct + "%");
+    }
+    if (dev.freeGb != null) set("free", `${Math.round(dev.freeGb)} GB`);
+    if (dev.cpu != null) {
+      set("cpu", `${dev.cpu}%`);
+      if (dev.ramUsedGb != null) set("ram", `${dev.ramUsedGb} GB`);
+      box.querySelector('[data-f="perf"]').title = `CPU ${dev.cpu}%` +
+        (dev.ramUsedGb == null ? "" : ` · RAM ${dev.ramUsedGb} of ${dev.ramTotalGb} GB used`);
+    }
+    if (dev.battery != null) {
+      set("bat", `${dev.battery}%`);
+      box.querySelector(".c-bat").title = `Battery${dev.plugged ? ", charging" : ""}`;
+    }
     clock();
   }
 

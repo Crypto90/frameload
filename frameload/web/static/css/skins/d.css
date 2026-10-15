@@ -136,10 +136,7 @@ h1, h2, h3, strong, b { font-weight: 500; }
   right: 3px; width: 40px; height: 40px; padding: 0; font-size: 0; color: #9aa6bc;
   border-radius: 50%; background: transparent; border: 1px solid transparent;
 }
-.search-osk-btn::before {
-  content: ""; width: 22px; height: 22px; background: currentColor;
-  -webkit-mask: var(--nd-ic-keyboard) center / contain no-repeat; mask: var(--nd-ic-keyboard) center / contain no-repeat;
-}
+.search-osk-btn svg { width: 20px; height: 20px; }
 .search-osk-btn:hover, .search-osk-btn.active {
   transform: translateY(-50%); color: var(--accent);
   background: rgb(57 213 255 / 0.12); border-color: rgb(57 213 255 / 0.35); box-shadow: none;
@@ -157,6 +154,9 @@ h1, h2, h3, strong, b { font-weight: 500; }
 }
 .telemetry-chip .ic { width: 18px; height: 18px; color: #8f9bb3; }
 button.telemetry-chip, a.telemetry-chip { font: inherit; font-size: 13px; }
+.telemetry-chip .nd-short { display: none; }  /* the compact figures of narrower windows */
+.telemetry-chip .nd-short .ic { width: 17px; height: 17px; }
+.telemetry-chip.perf-chip .nd-short .ic { margin-left: 8px; }
 .telemetry-chip.clickable:hover, button.telemetry-chip:hover {
   transform: none; background: rgb(255 255 255 / 0.09); border-color: rgb(255 255 255 / 0.16); color: var(--text-strong);
 }
@@ -513,7 +513,6 @@ input:checked + .slider { background-color: var(--accent); }
 
 /* ---------------------------------------------------------------- icons drawn in CSS (masks) */
 :root {
-  --nd-ic-keyboard: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2.5'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9'/%3E%3C/svg%3E");
   --nd-ic-cpu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='6' width='12' height='12' rx='2.5'/%3E%3Cpath d='M9.5 2.5v3M14.5 2.5v3M9.5 18.5v3M14.5 18.5v3M2.5 9.5h3M2.5 14.5h3M18.5 9.5h3M18.5 14.5h3'/%3E%3C/svg%3E");
   --nd-ic-stop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' rx='2.5' fill='black'/%3E%3C/svg%3E");
   --nd-ic-port: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5'/%3E%3C/svg%3E");
@@ -531,9 +530,14 @@ input:checked + .slider { background-color: var(--accent); }
   /* Support keeps its heart; the word goes so a running game, a port and an update fit. */
   .telemetry-chip.kofi-chip { width: 40px; padding: 0; justify-content: center; }
   .telemetry-chip.kofi-chip span { display: none; }
+  /* Free space, CPU and RAM as figures only, Stop without the game's name (it is the tooltip, as
+     on Show): battery, storage, CPU/RAM, Show, Stop, Porting, Update and Support share one row. */
+  .telemetry-chip .nd-long { display: none; }
+  .telemetry-chip .nd-short { display: inline-flex; align-items: center; gap: 6px; }
+  .telemetry-chip.stop-chip { font-size: 0; }
+  .telemetry-chip.stop-chip::after { content: "Stop"; font-size: 14px; }
 }
 @media (max-width: 1399px) {
-  .telemetry-chip.perf-chip .nd-ram { display: none; }  /* the full figures are on the chip's tooltip */
   /* Tighter gaps and search so battery, storage, CPU, Stop, Porting, Update and Support share one row at 1280. */
   .app-header { gap: 18px; }
   .search-wrapper { min-width: 168px; }

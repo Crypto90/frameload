@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.0] - 2026-10-15
+
+### Changed
+- **Free space, CPU and memory in every look.** Big Picture (the default) and Showcase showed none of them, and no look showed memory.
+  - Big Picture: in the bottom bar, between the activity and the button hints. On windows narrower than 1400 px only the A and B hints stay, so nothing overlaps.
+  - Showcase: in the top bar. The tabs get a row of their own below 1440 px, so they are no longer cut off.
+  - Spatial: RAM joins its status dock.
+  - Neon: shows RAM beside CPU. On windows narrower than 1720 px free space, CPU and RAM show as short figures and Stop drops the game's name (it stays in the tooltip, as on Show), so battery, Show, Stop, Porting and an update still share one row.
+  - Command Center and Daylight: each gets a RAM figure next to CPU.
+  - Pressing free space opens Storage; pressing CPU or RAM opens Performance.
+
+### Fixed
+- Neon and Daylight drew the keyboard button of the search field twice.
+
+---
+
 ## [v1.3.9] - 2026-10-15
 
 ### Added

@@ -499,14 +499,7 @@ button.f-read-seg:hover { background: rgb(var(--fg-rgb) / 0.05); }
   color: var(--text-muted);
   font-size: 0;
 }
-.search-osk-btn::before {
-  content: "";
-  width: 20px;
-  height: 20px;
-  background: currentColor;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2.5'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Crect x='2.5' y='6' width='19' height='12' rx='2.5'/%3E%3Cpath d='M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8'/%3E%3C/svg%3E") center / contain no-repeat;
-}
+.search-osk-btn svg { width: 20px; height: 20px; }  /* the button's own icon (no drawn one beside it) */
 .search-osk-btn:hover, .search-osk-btn.active {
   background: var(--f-ink);
   color: var(--f-on-ink);

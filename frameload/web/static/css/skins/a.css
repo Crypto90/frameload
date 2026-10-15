@@ -705,6 +705,28 @@ input:checked + .slider { background-color: #1a9fff; }
 .hint-activity .act-bar { width: 140px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); flex: none; }
 .hint-activity .act-bar i { background: #1a9fff; border-radius: 3px; }
 .hint-activity .act-pct { font-variant-numeric: tabular-nums; min-width: 3ch; color: #fff; }
+.hint-stats { display: flex; align-items: center; gap: 4px; margin-left: auto; min-width: 0; }
+.hint-stat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: #c7cbd1;
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hint-stat[hidden] { display: none; }
+.hint-stat:hover, .hint-stat:focus-visible { background: rgba(255, 255, 255, 0.07); color: #fff; }
+.hint-stat .ic { width: 18px; height: 18px; color: #8b929a; }
+.hint-sep { width: 1px; height: 16px; margin: 0 5px; background: rgba(255, 255, 255, 0.14); }
+.hint-stats + .hint-keys { margin-left: 18px; }
 .hint-keys { margin-left: auto; display: flex; align-items: center; gap: 18px; white-space: nowrap; }
 .hint-keys span { display: flex; align-items: center; gap: 7px; }
 .hint-keys .key {
@@ -1000,12 +1022,23 @@ input:checked + .slider { background-color: #1a9fff; }
   }
   .telemetry-bar:has(> :is(#header-lepton, #header-stop-game, #header-porting, #header-update-alert):not([style*="none"])) { padding-top: 14px; }
 }
+@media (max-width: 1399px) {
+  /* Free space, CPU and memory need the room more than the last three button hints. */
+  .hint-bar:has(.hint-stat:not([hidden])) .hint-keys span:nth-child(n+3) { display: none; }
+}
+@media (max-width: 1100px) {
+  .hint-activity .act-label { max-width: 20vw; }
+  .hint-activity .act-bar { width: 80px; }
+}
 @media (max-width: 1100px) {
   :root { --a-pad: 24px; }
   .tab-btn { padding: 0 10px; letter-spacing: 0.05em; }
   .nav-tabs { margin-left: 12px; }
   .a-status { gap: 12px; }
   .hint-keys { gap: 12px; }
+}
+@media (max-width: 860px) {
+  .hint-stat .hint-sep, .hint-stat .hint-sep ~ * { display: none; }  /* RAM stays on the tooltip */
 }
 @media (max-width: 900px) {
   .a-st-wifi { display: none !important; }

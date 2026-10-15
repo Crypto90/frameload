@@ -179,6 +179,26 @@ class TestFreezeGuardCard(unittest.TestCase):
         self.assertIn("Show what happened when a game crashes or is stopped", self.page)
 
 
+class TestDeviceFigures(unittest.TestCase):
+    """Every look shows free space, CPU and memory somewhere that is always on screen."""
+
+    def test_each_look_shows_free_space_cpu_and_memory(self):
+        app = read(WEB, "static", "js", "app.js")
+        page = read(WEB, "templates", "index.html")
+        # Shared places: Spatial's status dock and Big Picture's bottom bar.
+        for needle in ('id="dock-mem"', 'id="hint-free"', 'id="hint-perf"'):
+            self.assertIn(needle, page)
+        self.assertIn("memory:", app)  # the icon
+        # A uses the bottom bar, B the dock (both filled by app.js); C-F draw their own.
+        self.assertIn(".hint-stat", read(WEB, "static", "css", "skins", "a.css"))
+        self.assertIn(".status-dock", read(WEB, "static", "css", "skins", "b.css"))
+        for skin, needles in {"c": ("freeGb", "dev.cpu", "ramUsedGb"), "d": ("freeGb", "cpu_percent", "ramShort"),
+                              "e": ("freeGb", "d.cpu", "ramUsedGb"), "f": ("freeGb", "d.cpu", "ramUsedGb")}.items():
+            js = read(WEB, "static", "js", "skins", f"{skin}.js")
+            for needle in needles:
+                self.assertIn(needle, js, f"look {skin}: {needle}")
+
+
 class TestSessionDialog(unittest.TestCase):
     def setUp(self):
         self.page = read(WEB, "templates", "index.html")

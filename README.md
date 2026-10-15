@@ -121,7 +121,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
   - It stops a game whose picture has not changed for 30 seconds (15 s, 1 or 2 minutes can be chosen). It waits while the headset is asleep, the Steam menu is open or the game is still drawing.
 - **What happened:** when a game crashes, hangs the graphics processor, runs out of memory, is stopped by the Freeze Guard, cannot start or closes right after starting, FrameLoad opens a window with the cause in plain words, the log lines that show it, and **Copy Log** / **Save Log** for the full report. With your own GitHub token, **Send to GitHub** files it as an issue in one press.
 - **Keep Awake:** FrameLoad holds SteamOS's sleep inhibitor while it downloads from Browse, installs a game (a download, a file from the Install File tab or one sent from your phone or PC) or ports a game. You can also keep the headset awake for an hour, or until you switch it off. Whether Steam's own sleep timer on the Frame honours the inhibitor is not confirmed yet.
-- **Performance:** System → Performance shows CPU, memory, swap, GPU clock and temperatures live. Neon, Spatial, Command Center and Daylight also show CPU use in their status area.
+- **Performance:** System → Performance shows CPU, memory, swap, GPU clock and temperatures live. Every look keeps free space, CPU and memory in view: Big Picture in its bottom bar, Spatial in its status dock, Command Center in its side bar, the others in the top bar. Pressing one opens Storage or Performance.
 
 ### 📱 Phone & PC access
 - Open `http://<headset-ip>:5050` on another device on the same network. Pair it once with a six-digit code shown in the headset, and it can browse, install and upload like the headset can.

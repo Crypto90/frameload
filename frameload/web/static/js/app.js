@@ -5410,6 +5410,7 @@ const ICONS = {
   battery: '<rect x="2.5" y="7" width="17" height="10" rx="2.5"/><path d="M22 10.5v3"/><rect x="5" y="9.5" width="10" height="5" rx="1" fill="currentColor" stroke="none"/>',
   drive: '<rect x="3" y="4.5" width="18" height="6.5" rx="2"/><rect x="3" y="13" width="18" height="6.5" rx="2"/><path d="M7 7.75h.01M7 16.25h.01"/>',
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9.5 2.5v3M14.5 2.5v3M9.5 18.5v3M14.5 18.5v3M2.5 9.5h3M2.5 14.5h3M18.5 9.5h3M18.5 14.5h3"/>',
+  memory: '<rect x="2.5" y="6.5" width="19" height="9.5" rx="1.5"/><path d="M6.5 10v2.5M10 10v2.5M14 10v2.5M17.5 10v2.5M5.5 16v2.5M9.5 16v2.5M14.5 16v2.5M18.5 16v2.5"/>',
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 19.5h16"/>',
   port: '<path d="M20 11a8 8 0 0 0-14.3-4.6L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.6L20 15.5M20 20v-4.5h-4.5"/>',
   play: '<path d="M8 5.2v13.6L19 12z" fill="currentColor" stroke="none"/>',
@@ -5571,6 +5572,20 @@ function renderShellStatus() {
   set("dock-battery", dev.battery == null ? "" : `${icon("battery")}<span>${dev.battery}%${dev.plugged ? " charging" : ""}</span>`);
   set("dock-storage", dev.freeGb == null ? "" : `${icon("drive")}<span>${dev.freeGb} GB free</span>`);
   set("dock-cpu", dev.cpu == null ? "" : `${icon("cpu")}<span>CPU ${dev.cpu}%</span>`);
+  set("dock-mem", dev.ramUsedGb == null ? "" : `${icon("memory")}<span>RAM ${dev.ramUsedGb}/${dev.ramTotalGb} GB</span>`);
+  // The bottom bar's figures (for looks that show it). The buttons stay, only their content
+  // changes, so a controller's focus on one survives the updates.
+  const stat = (id, html, title) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.hidden = !html;
+    if (html && el.innerHTML !== html) el.innerHTML = html;
+    if (title) el.title = title;
+  };
+  stat("hint-free", dev.freeGb == null ? "" : `${icon("drive")}<span>${Math.round(dev.freeGb)} GB free</span>`);
+  stat("hint-perf", dev.cpu == null ? "" : `${icon("cpu")}<span>CPU ${dev.cpu}%</span>` +
+    (dev.ramUsedGb == null ? "" : `<i class="hint-sep" aria-hidden="true"></i>${icon("memory")}<span>RAM ${dev.ramUsedGb}/${dev.ramTotalGb} GB</span>`),
+    dev.cpu == null ? "" : `CPU ${dev.cpu}%` + (dev.ramUsedGb == null ? "" : ` · RAM ${dev.ramUsedGb} of ${dev.ramTotalGb} GB used`));
   const act = state.activity.port || state.activity.download;
   const actHtml = act ? `${icon(state.activity.port ? "port" : "download", "act-icon")}<span class="act-label">${escapeHtml(act.label)}</span><span class="act-bar"><i style="width:${act.queued ? 100 : act.percent}%"></i></span><span class="act-pct">${act.queued ? "Waiting" : act.percent + "%"}</span>` : "";
   ["dock-activity", "hint-activity"].forEach(id => {

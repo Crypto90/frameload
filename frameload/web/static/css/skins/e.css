@@ -287,7 +287,7 @@ body::before { display: none; }
   padding-top: 16px;
   height: 88px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: end;
   background: linear-gradient(180deg, rgb(12 13 17 / 0), var(--e-side) 16px);
 }

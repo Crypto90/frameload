@@ -291,7 +291,8 @@
       dev.innerHTML = `
         ${cell(d.battery == null ? null : `${d.battery}%`, d.plugged ? "Charging" : "Battery")}
         <button type="button" class="e-dcell" onclick="openStorageTab()" title="Storage"><b>${d.freeGb == null ? "&ndash;" : `${Math.round(d.freeGb)} GB`}</b><small>Free</small></button>
-        <button type="button" class="e-dcell" onclick="openPerformanceCard()" title="Performance"><b>${d.cpu == null ? "&ndash;" : `${d.cpu}%`}</b><small>CPU</small></button>`;
+        <button type="button" class="e-dcell" onclick="openPerformanceCard()" title="Performance"><b>${d.cpu == null ? "&ndash;" : `${d.cpu}%`}</b><small>CPU</small></button>
+        <button type="button" class="e-dcell" onclick="openPerformanceCard()" title="${d.ramUsedGb == null ? "Memory" : `RAM ${d.ramUsedGb} of ${d.ramTotalGb} GB used`}"><b>${d.ramUsedGb == null ? "&ndash;" : `${d.ramUsedGb} GB`}</b><small>RAM</small></button>`;
     }
   }
 

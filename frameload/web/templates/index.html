@@ -806,12 +806,17 @@
     <span class="dock-item" id="dock-battery"></span>
     <span class="dock-item" id="dock-storage"></span>
     <span class="dock-item" id="dock-cpu"></span>
+    <span class="dock-item" id="dock-mem"></span>
     <button type="button" class="dock-item dock-activity" id="dock-activity" hidden onclick="openActivity()"></button>
   </div>
 
   <!-- Controller hints, for looks that show them along the bottom -->
   <footer class="hint-bar" id="hint-bar">
     <button type="button" class="hint-activity" id="hint-activity" hidden onclick="openActivity()"></button>
+    <div class="hint-stats">
+      <button type="button" class="hint-stat" id="hint-free" hidden onclick="openStorageTab()" title="Free space · open Storage"></button>
+      <button type="button" class="hint-stat" id="hint-perf" hidden onclick="openPerformanceCard()" title="CPU and memory"></button>
+    </div>
     <div class="hint-keys">
       <span><b class="key">A</b>Select</span>
       <span><b class="key">B</b>Back</span>
