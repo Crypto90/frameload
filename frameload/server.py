@@ -334,7 +334,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/steam/status":
             self.send_json(steam_session.status())
         elif path == "/api/access/devices":
-            self.send_json({"devices": access.devices(), "local": self.client_is_local()})
+            port = self.server.server_address[1]
+            self.send_json({"devices": access.devices(), "local": self.client_is_local(), "port": port,
+                            "addresses": [dict(a, url=f"http://{a['ip']}:{port}") for a in access.lan_addresses()]})
         elif path == "/api/files":
             try:
                 self.send_json(file_manager.browse(params.get("path", [""])[0]))

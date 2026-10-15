@@ -441,6 +441,45 @@ class TestAccess(TempCase):
             self.assertFalse(access.is_loopback(remote), remote)
 
 
+class TestLanAddress(unittest.TestCase):
+    """System > Phone & PC Access shows the address another device has to open."""
+
+    IP_OUTPUT = (
+        "2: enp1s0    inet 10.0.0.5/24 brd 10.0.0.255 scope global dynamic enp1s0\\       valid_lft 86000sec\n"
+        "3: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\\       valid_lft forever\n"
+        "4: wlan0    inet 192.168.1.23/24 brd 192.168.1.255 scope global dynamic noprefixroute wlan0\n"
+        "9: podman1    inet 10.88.0.1/16 brd 10.88.255.255 scope global podman1\n"
+    )
+
+    def test_wifi_first_and_no_container_bridges(self):
+        from unittest.mock import MagicMock
+        with patch("frameload.system.access.subprocess.run", return_value=MagicMock(stdout=self.IP_OUTPUT)):
+            self.assertEqual([a["ip"] for a in access.lan_addresses()], ["192.168.1.23", "10.0.0.5"])
+
+    def test_without_iproute2_the_outgoing_address_is_used(self):
+        fake = MagicMockSocket("192.168.178.40")
+        with patch("frameload.system.access.subprocess.run", side_effect=OSError("no ip")), \
+                patch("frameload.system.access.socket.socket", return_value=fake):
+            self.assertEqual(access.lan_addresses(), [{"interface": "", "ip": "192.168.178.40"}])
+
+
+class MagicMockSocket:
+    def __init__(self, ip):
+        self.ip = ip
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def connect(self, address):
+        pass
+
+    def getsockname(self):
+        return (self.ip, 40000)
+
+
 class TestRemoteDevices(TempCase):
     """The same server, as seen from another machine on the network."""
 

@@ -192,7 +192,7 @@ Lepton comes with the Steam Frame; FrameLoad only looks for it. FrameLoad downlo
 - **In the headset or Gaming Mode:** select **FrameLoad** in your Steam library.
 - **In Desktop Mode:** application launcher → Games → **FrameLoad**, or run `frameload` in a terminal.
 - **In a browser on the headset:** `http://localhost:5050`.
-- **From a phone, tablet or PC** on the same network: `http://<headset-ip>:5050`. The first time, that device shows a pairing page. In the headset, open **System → Phone & PC Access → Show Pairing Code** and type the six digits on the device.
+- **From a phone, tablet or PC** on the same network: `http://<headset-ip>:5050` (System → Phone & PC Access shows the address). The first time, that device shows a pairing page. In the headset, open **System → Phone & PC Access → Show Pairing Code** and type the six digits on the device.
 
 FrameLoad opens exactly one window, and closing that window closes it. The service keeps running in the background. The window is the first of these that is available:
 1. a native window, if Qt WebEngine or WebKit2GTK is installed

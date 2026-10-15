@@ -3607,9 +3607,12 @@ async function loadAccess() {
     const data = await apiGet("/api/access/devices");
     if (button) button.style.display = data.local ? "" : "none";
     if (address) {
-      address.textContent = data.local
-        ? `On the other device, open http://<this headset's IP address>:${location.port || 80}. The IP address is shown in the headset's network settings.`
-        : "You are connected from another device. New devices are approved on the headset.";
+      const urls = (data.addresses || []).map(a => a.url);
+      address.innerHTML = !data.local
+        ? "You are connected from another device. New devices are approved on the headset."
+        : urls.length
+          ? `On your phone or PC, open <strong class="access-url">${urls.map(escapeHtml).join("</strong> or <strong class=\"access-url\">")}</strong> in a browser on the same network.`
+          : "This headset is not connected to a network right now. Connect it to Wi-Fi to open FrameLoad from another device.";
     }
     list.innerHTML = (data.devices || []).length
       ? data.devices.map(d => `

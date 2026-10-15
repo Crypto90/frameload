@@ -3254,6 +3254,9 @@ html { scrollbar-gutter: stable; }
 .sys-card-support { border-color: rgba(255, 94, 91, 0.3); }
 .sys-card-danger { border-color: rgb(var(--danger-rgb) / 0.25); }
 
+/* The address to open on a phone or PC: large enough to read and type from the headset. */
+.access-url { font-family: var(--font-mono); font-size: 1.05rem; color: var(--text-strong); white-space: nowrap; }
+
 /* Storage menu entries are buttons (the controller reaches buttons) that look like rows. */
 button.dropdown-item { width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .search-osk-btn svg { display: block; }

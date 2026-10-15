@@ -11,7 +11,10 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
+import socket
+import subprocess
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -98,6 +101,37 @@ def is_valid(token: str) -> bool:
 
 def devices() -> List[Dict[str, Any]]:
     return [{"id": d.get("id", ""), "label": d.get("label", ""), "created": d.get("created", 0)} for d in _load()]
+
+
+# Interfaces of containers and virtual bridges: another device cannot reach the headset through them.
+VIRTUAL_INTERFACES = ("lo", "docker", "br-", "veth", "virbr", "podman", "cni", "tun", "tap", "wg")
+
+
+def lan_addresses() -> List[Dict[str, str]]:
+    """The headset's IPv4 addresses another device on the same network can open, Wi-Fi first."""
+    found: List[Dict[str, str]] = []
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"],
+                             capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    for line in out.splitlines():
+        # "3: wlan0    inet 192.168.1.23/24 brd 192.168.1.255 scope global dynamic wlan0 ..."
+        match = re.match(r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+)/", line)
+        if match and not match.group(1).startswith(VIRTUAL_INTERFACES):
+            found.append({"interface": match.group(1), "ip": match.group(2)})
+    if not found:
+        # Without iproute2: the address the system would send from (a UDP connect sends nothing).
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("192.0.2.1", 9))
+                ip = s.getsockname()[0]
+            if not ipaddress.ip_address(ip).is_loopback:
+                found.append({"interface": "", "ip": ip})
+        except (OSError, ValueError):
+            pass
+    found.sort(key=lambda a: 0 if a["interface"].startswith(("wl", "wifi")) else 1)
+    return found
 
 
 def revoke(device_id: str = "") -> int:
