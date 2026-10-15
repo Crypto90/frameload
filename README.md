@@ -81,7 +81,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
   - Each app's page shows its screenshots, and its trailer where it has one.
   - **Update N Apps** appears when installed apps have newer versions.
   - Apps open as a flat window with Android's navigation bar hidden.
-- **Install links:** `frameload://install?url=…` (an https link to an `.apk`), `frameload://sideload?path=…` and `frameload://launch?package=…`. A link never installs anything by itself: the dashboard shows where it comes from and waits for you to press **Install**, and a Quest game installed that way is ported like any other install. A launch link does what **Play** does: it starts the game right away, ports a game built for Meta's runtime first, and refuses an app that cannot run on the Frame.
+- **Install links:** `frameload://install?url=…` (an https link to an `.apk`), `frameload://sideload?path=…` and `frameload://launch?package=…`. A link never installs anything by itself: the dashboard shows where it comes from and waits for you to press **Install**, and a Quest game installed that way is ported like any other install. A launch link starts the game right away and refuses an app that cannot run on the Frame. A game built for Meta's runtime is ported first only while automatic porting is on (start it again when the port is done).
 
 ### 🔧 Quest games, ported on the headset
 - Games built for Meta's Quest runtime are converted for the Frame on the headset with [FramePort](https://github.com/spoopyghosty0/frameport): OVRPort conversion, the FrameBridge adapter, and signing.
@@ -247,7 +247,7 @@ If you installed into another folder, run `curl -fsSL https://raw.githubusercont
 - the browser profile of FrameLoad's window
 - `~/Applications/FrameLoad`
 
-Installed games and their Steam shortcuts stay unless you choose to delete the games. When you delete them and keep the save backups, a game whose saves cannot be backed up stays installed; `uninstall.sh` and `frameload uninstall-app` name it. While Steam is running it keeps its own copy of the shortcut list and can write FrameLoad's entry back when it exits; if FrameLoad is still in your library after a Steam restart, remove it there (Manage → Remove non-Steam game).
+Installed games and their Steam shortcuts stay unless you choose to delete the games. When you delete them and keep the save backups, a game whose saves cannot be backed up stays installed; `uninstall.sh` and `frameload uninstall-app` name it, and the in-headset uninstall writes it to the service's log (`journalctl --user -u frameload`). With a FrameLoad older than v1.3.7 installed, `uninstall.sh` uses that version's rules for the games, so update first if you delete games and keep backups. While Steam is running it keeps its own copy of the shortcut list and can write FrameLoad's entry back when it exits; if FrameLoad is still in your library after a Steam restart, remove it there (Manage → Remove non-Steam game).
 
 The signing keys of ported games are always copied to `~/Documents/FrameLoad-signing-keys` first. An update of a ported game must be signed with the same key, and FrameLoad's next porting setup imports the keys again.
 
@@ -300,7 +300,7 @@ It checks weekly for a newer FramePort, because that is where per-game fixes arr
 3. **If a port fails,** the game shows **Port Again**. FrameLoad does not retry it by itself until FramePort has been updated.
 4. **The original APK is kept** as `unported.apk` next to the game. `frameload port <package>` ports it again by hand.
 
-Two switches on the **Quest Game Porting** card in System turn off the automatic port and the automatic download of the tools (useful on a metered connection). With them off, nothing is ported or downloaded until you press **Port & Play** on a game or **Set Up Now** on the card.
+Two switches on the **Quest Game Porting** card in System turn off the automatic port and the automatic download of the tools (useful on a metered connection). With them off, nothing is ported or downloaded until you press **Port & Play** on a game or **Set Up Now** on the card; games installed before you switched it off wait until you ask for them too.
 
 One of FramePort's dependencies cannot be installed on the Frame: it needs a C compiler, which SteamOS does not ship. So FramePort's "Unity: turn off MSAA" fix is unavailable there; everything else works. Whether a given game runs after porting is decided by FramePort's patches for it, so game-specific fixes belong in FramePort's catalog.
 
@@ -382,7 +382,7 @@ The folders are made writable for the container. Whether a game loads them is up
 ### Save backups
 
 **Backup Saves** on a game's page writes `~/.local/share/frameload/backups/<package>_save_<date>_<time>.tar.gz`. It holds the app's private storage (`internal/`) and its shared storage (`external/`, without OBB files).
-- Uninstalling one game in the dashboard makes a backup first. The Storage tab's batch uninstall asks whether to make one. A game whose backup fails is not uninstalled; the dashboard says why and asks before removing it without a backup. A game that has not saved anything yet is uninstalled without one.
+- Uninstalling one game in the dashboard makes a backup first. The Storage tab's batch uninstall asks whether to make one. A game whose backup fails is not uninstalled: its page says why and asks before removing it without a backup, and the batch uninstall keeps it selected so you can untick the backup and try again. A game that has not saved anything yet is uninstalled without one. Windows and Linux apps keep their data in their own folder, which backups do not cover, so they are only uninstalled after that question.
 - Restoring is not in the dashboard yet. To restore by hand, install the game again if it was uninstalled, make sure it is stopped, and run:
 
 ```bash

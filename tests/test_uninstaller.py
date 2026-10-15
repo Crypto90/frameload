@@ -201,5 +201,21 @@ class TestUninstallKeepsSaves(unittest.TestCase):
         self.assertTrue(any("Saved" in line and "disk full" in line for line in res["details"]), res["details"])
 
 
+class TestWindowsAppSaves(unittest.TestCase):
+    def test_a_windows_app_is_not_deleted_as_if_its_data_were_backed_up(self):
+        from frameload.manager.backup import NoSaveData
+        anchor = tempfile.mkdtemp(prefix="fl-win-")
+        self.addCleanup(shutil.rmtree, anchor, True)
+        os.makedirs(os.path.join(anchor, "pfx", "pfx", "drive_c"))
+        dep = {"package": "win.game", "title": "Win Game", "kind": "pcvr", "anchor": anchor, "base": anchor, "appid": 0}
+        with patch("frameload.manager.uninstaller.InstalledManager.get_game", return_value=dep), \
+                patch("frameload.manager.backup.SaveBackupManager.backup_saves", side_effect=NoSaveData("none")):
+            res = Uninstaller.uninstall("win.game", keep_saves=True)
+        self.assertFalse(res["success"])
+        self.assertTrue(res["backup_failed"])
+        self.assertTrue(res["error"].endswith("."))
+        self.assertTrue(os.path.isdir(os.path.join(anchor, "pfx")))
+
+
 if __name__ == "__main__":
     unittest.main()

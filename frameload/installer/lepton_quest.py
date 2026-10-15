@@ -101,6 +101,11 @@ wait "$child"
 """
 
 
+def is_own_obb(name: str, package_name: str) -> bool:
+    """An Android expansion file of exactly this package: main.<version>.<package>.obb or patch.<...>."""
+    return re.fullmatch(r"(main|patch)\.\d+\." + re.escape(package_name) + r"\.obb", name, re.I) is not None
+
+
 def find_obb_dir(path: Optional[str], package_name: str) -> Optional[str]:
     """The folder whose contents belong in Android/obb/<package>/, for the layouts dumps come in."""
     if not path or not os.path.isdir(path):
@@ -219,8 +224,7 @@ class LeptonInstaller:
         if obb_path and os.path.isfile(obb_path):
             # A main.<version>.<package>.obb often comes with a patch.<version>.<package>.obb beside it.
             folder = os.path.dirname(os.path.abspath(obb_path))
-            own = re.compile(r"(main|patch)\.\d+\." + re.escape(package_name) + r"\.obb", re.I)
-            names = {os.path.basename(obb_path)} | {n for n in os.listdir(folder) if own.fullmatch(n)}
+            names = {os.path.basename(obb_path)} | {n for n in os.listdir(folder) if is_own_obb(n, package_name)}
             for name in sorted(names):
                 shutil.copy2(os.path.join(folder, name), os.path.join(obb_target, name))
             obb_count = len(names)

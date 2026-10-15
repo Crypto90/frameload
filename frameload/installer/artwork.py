@@ -153,8 +153,8 @@ def icon_redraw(output_dir: str) -> str:
         return ""
     if icon.endswith(".webp"):
         return "webp"
-    if (read_state(output_dir).get("icon") == "downloaded" and _same_content(icon, slot_file(output_dir, "poster"))
-            and apk_icon_kind(output_dir) == "full"):
+    if (read_state(output_dir).get("icon") == "downloaded" and apk_icon_kind(output_dir) == "full"
+            and _same_content(icon, slot_file(output_dir, "poster"))):
         return "apk"
     return ""
 

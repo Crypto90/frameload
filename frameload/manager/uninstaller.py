@@ -47,14 +47,17 @@ class Uninstaller:
                 if not SaveBackupManager.backup_saves(package_name).get("complete", True):
                     problem = "some files could not be read"
             except NoSaveData:
-                pass
+                if dep.get("kind", "quest") not in ("quest", "flat"):
+                    # Windows and Linux apps keep their data in their own folder (a Wine prefix), which
+                    # save backups do not cover: say so instead of deleting it unasked.
+                    problem = "save backups only cover Android apps, and this app keeps its data in its own folder"
             except Exception as e:
                 problem = str(e) or type(e).__name__
             if problem:
                 return {
                     "success": False,
                     "backup_failed": True,
-                    "error": f"The save backup of {title} failed, so it was not uninstalled: {problem}",
+                    "error": f"The save backup of {title} failed, so it was not uninstalled: {problem.rstrip('.')}.",
                     "package": package_name,
                     "title": title,
                     "steam_shortcut_removed": False,

@@ -295,23 +295,55 @@ def refresh_grid_artwork(launch_script_path: str, artwork_dir: str) -> Dict[str,
     return done
 
 
-def frameload_listed() -> bool:
-    """True when every Steam user's shortcut list holds FrameLoad's own entry, under whatever name."""
-    users = get_steam_users()
-    for user in users:
+def move_shortcut(old_launch_script: str, new_launch_script: str, start_dir: str) -> bool:
+    """Points a game's existing shortcut at its new folder, in every Steam user's list. Its id, and so
+    its pictures, play time and launch options, stay. False when no list had the old path."""
+    old, new = f'"{old_launch_script}"', f'"{new_launch_script}"'
+    moved = False
+    for user in get_steam_users():
+        vdf_path = os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf")
         try:
-            with open(os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf"), "rb") as f:
-                entries = (vdf_decode(f.read()).get("shortcuts") or {}).values()
+            with open(vdf_path, "rb") as f:
+                root = vdf_decode(f.read())
         except (OSError, ValueError, VdfError):
-            return False
-        if not any(isinstance(e, dict) and is_frameload_itself(e) for e in entries):
-            return False
-    return bool(users)
+            continue
+        entries = [v for v in (root.get("shortcuts") or {}).values() if isinstance(v, dict) and v.get("Exe") == old]
+        if not entries:
+            continue
+        for entry in entries:
+            entry["Exe"], entry["StartDir"] = new, start_dir
+        backup_vdf(vdf_path)
+        with open(vdf_path + ".tmp", "wb") as f:
+            f.write(vdf_encode(root))
+        os.replace(vdf_path + ".tmp", vdf_path)
+        moved = True
+    return moved
 
 
 def register_frameload(app_dir: str) -> Dict[str, Any]:
-    """Writes FrameLoad's own shortcut (its run.sh, with the artwork it ships), like install.sh does."""
+    """Writes FrameLoad's own shortcut (its run.sh, with the artwork it ships) for every Steam user whose
+    list lacks a working one; install.sh, its updates and Restart Steam Now call this. A tile that is
+    there stays as the player set it (name, pictures, launch options); one whose run.sh is gone (an
+    install in another folder) is replaced."""
     assets = os.path.join(app_dir, "frameload", "web", "static", "assets")
+    users = []
+    for user in get_steam_users():
+        vdf_path = os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf")
+        try:
+            with open(vdf_path, "rb") as f:
+                entries = [v for v in (vdf_decode(f.read()).get("shortcuts") or {}).values() if isinstance(v, dict)]
+        except FileNotFoundError:
+            entries = []
+        except (OSError, ValueError, VdfError):
+            continue  # a list FrameLoad cannot read is not written over
+        own = [e for e in entries if is_frameload_itself(e)]
+        if any(os.path.isfile(str(e.get("Exe", "")).strip().strip('"')) for e in own):
+            continue
+        for stale in own:
+            remove_shortcut_by_exe(vdf_path, str(stale.get("Exe", "")))
+        users.append(user)
+    if not users:
+        return {"success": True, "users": {}, "unchanged": True}
     return register_game_in_steam(
         title="FrameLoad",
         launch_script_path=os.path.join(app_dir, "run.sh"),
@@ -319,6 +351,7 @@ def register_frameload(app_dir: str) -> Dict[str, Any]:
         icon_path=os.path.join(assets, "icon.png"),
         artwork_dir=assets,
         is_vr=False,
+        users=users,
     )
 
 
@@ -329,10 +362,11 @@ def register_game_in_steam(
     icon_path: str = "",
     artwork_dir: str = "",
     is_vr: bool = True,
-    launch_options: str = ""
+    launch_options: str = "",
+    users: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    """Registers a game shortcut in all Steam users' libraries with full artwork."""
-    users = get_steam_users()
+    """Registers a game shortcut in all Steam users' libraries (or the given users') with full artwork."""
+    users = get_steam_users() if users is None else users
     if not users:
         return {"success": False, "error": "No Steam users found on system"}
 

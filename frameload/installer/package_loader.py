@@ -122,8 +122,8 @@ class PackageLoader:
 
         # 3. Check loose obb files: main./patch.<version>.<pkg>.obb first (the installer takes both)
         if not matched_obb and obbs:
-            own = re.compile(r"(main|patch)\.\d+\." + re.escape(pkg) + r"\.obb", re.I)
-            exact = sorted(o for o in obbs if own.fullmatch(os.path.basename(o)))
+            from .lepton_quest import is_own_obb
+            exact = sorted(o for o in obbs if is_own_obb(os.path.basename(o), pkg))
             if exact:
                 matched_obb = exact[0]
             else:
@@ -267,8 +267,8 @@ class PackageLoader:
             matched_obb = f"{base_no_ext}.obb"
         # Loose main./patch.<version>.<pkg>.obb beside the APK (the installer takes all of them)
         else:
-            own = re.compile(r"(main|patch)\.\d+\." + re.escape(pkg) + r"\.obb", re.I)
-            loose = sorted(n for n in os.listdir(dir_name) if own.fullmatch(n))
+            from .lepton_quest import is_own_obb
+            loose = sorted(n for n in os.listdir(dir_name) if is_own_obb(n, pkg))
             if loose:
                 matched_obb = os.path.join(dir_name, loose[0])
 

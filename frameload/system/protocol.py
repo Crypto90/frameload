@@ -106,9 +106,10 @@ class ProtocolHandler:
             from ..server import is_valid_package
             if not is_valid_package(pkg):
                 return {"success": False, "action": "launch", "error": f"Invalid package name: {pkg[:120]}"}
-            # Same as Play in the dashboard: an app that cannot run is refused, a Quest game is ported first.
+            # Like Play in the dashboard: an app that cannot run is refused, a Quest game is ported first,
+            # but only as far as the automatic porting switches allow (nobody pressed anything in FrameLoad).
             try:
-                result = GameLauncher.play(pkg)
+                result = GameLauncher.play(pkg, requested=False)
             except FileNotFoundError as e:  # not installed
                 result = {"success": False, "error": str(e)}
             res = {"success": bool(result.get("success")), "action": "launch", "package": pkg, "result": result}
@@ -129,8 +130,11 @@ class ProtocolHandler:
         if item["kind"] == "sideload":
             from ..installer import porting
             from ..installer.package_loader import PackageLoader
-            result = PackageLoader.install_source(source_path=item["path"], title=item["title"],
-                                                  device_id=item.get("device") or None)
+            from . import power
+            # Like the Install File tab: the headset stays awake while a large game is copied.
+            with power.busy(f"Installing {item['title'] or os.path.basename(item['path'])}"):
+                result = PackageLoader.install_source(source_path=item["path"], title=item["title"],
+                                                      device_id=item.get("device") or None)
             # Like an install from the dashboard: a Quest game is ported unless automatic porting is off.
             try:
                 result["porting"] = porting.auto_port(result)

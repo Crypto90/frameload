@@ -338,6 +338,48 @@ class TestSteamGrid(Case):
                          sorted(f"{own}{s}.png" for s in ("p", "", "_hero", "_logo", "_icon")))
 
 
+    def test_moving_a_game_moves_its_shortcut(self):
+        # Same id (pictures, play time, launch options), no dead tile left behind; the running Steam
+        # still has the old path, so the game counts as new to it.
+        from frameload.system import steam_session
+        old = os.path.join(self.tmp, "internal", "com.art.game", "launch.sh")
+        new = os.path.join(self.tmp, "card", "quest-frame", "com.art.game", "launch.sh")
+        with open(self.vdf, "wb") as f:
+            f.write(vdf_encode({"shortcuts": {"0": {"appid": 3000000004, "appname": "Art Game", "Exe": f'"{old}"',
+                                                    "LaunchOptions": "X=1 %command%"}}}))
+        self.assertTrue(shortcuts.move_shortcut(old, new, os.path.dirname(new)))
+        result = shortcuts.register_game_in_steam("Art Game", new, os.path.dirname(new), artwork_dir=self.art)
+        with open(self.vdf, "rb") as f:
+            entries = list(vdf_decode(f.read())["shortcuts"].values())
+        self.assertEqual(len(entries), 1)
+        self.assertEqual((entries[0]["Exe"], entries[0]["appid"], entries[0]["LaunchOptions"]),
+                         (f'"{new}"', 3000000004, "X=1 %command%"))
+        self.assertEqual(result["users"]["111"]["appid"], 3000000004)
+
+    def test_install_and_updates_leave_frameloads_own_tile_alone(self):
+        # install.sh runs at every update; it adds FrameLoad's tile only for a user who lacks a working one.
+        app = os.path.join(self.tmp, "FrameLoad")
+        assets = os.path.join(app, "frameload", "web", "static", "assets")
+        os.makedirs(assets)
+        open(os.path.join(app, "run.sh"), "w").close()
+        open(os.path.join(app, "frameload", "cli.py"), "w").close()
+        os.makedirs(os.path.join(self.steam, "userdata", "222", "config"))
+        other = os.path.join(self.steam, "userdata", "222", "config", "shortcuts.vdf")
+        exe = '"' + os.path.join(app, "run.sh") + '"'
+        with open(self.vdf, "wb") as f:  # user 111 renamed it
+            f.write(vdf_encode({"shortcuts": {"0": {"appid": 3000000005, "appname": "Sideloader", "Exe": exe}}}))
+        with open(other, "wb") as f:  # user 222 has one from an install folder that is gone
+            f.write(vdf_encode({"shortcuts": {"0": {"appid": 3000000006, "appname": "FrameLoad",
+                                                    "Exe": '"/home/deck/old/FrameLoad/run.sh"'}}}))
+        with patch.object(shortcuts, "get_steam_users", return_value=["111", "222"]):
+            result = shortcuts.register_frameload(app)
+            self.assertEqual(list(result["users"]), ["222"])
+            self.assertEqual(shortcuts.register_frameload(app)["users"], {})  # nothing left to do
+        with open(self.vdf, "rb") as f:
+            self.assertEqual([e["appname"] for e in vdf_decode(f.read())["shortcuts"].values()], ["Sideloader"])
+        with open(other, "rb") as f:
+            self.assertEqual([e["Exe"] for e in vdf_decode(f.read())["shortcuts"].values()], [exe])
+
     def test_restart_steam_leaves_frameloads_own_tile_alone_when_it_is_there(self):
         from frameload.manager.installed import InstalledManager
         from frameload.system import steam_session

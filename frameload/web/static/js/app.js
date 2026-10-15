@@ -2422,9 +2422,9 @@ async function executeBatchUninstall() {
           : `${failed.length} games were not uninstalled (${failed.map(r => r.title || r.package).join(", ")}). ${failed[0].error}`) + hint, "error");
       }
       closeBatchModal();
-      // Games that are still installed stay selected, to try again (without the backup, if that failed).
+      // Games kept because their backup failed stay selected, to try again without the backup.
       deselectAllStorageGames();
-      failed.forEach(r => state.storage.selectedPackages.add(r.package));
+      failed.filter(r => r.backup_failed).forEach(r => state.storage.selectedPackages.add(r.package));
       loadStorageOverview();
       loadInstalled();
       loadSystemTelemetry();
@@ -2788,16 +2788,16 @@ async function executeUninstallApp() {
     const data = await res.json();
     if (data.success) {
       document.body.innerHTML = `
-        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:var(--accent-ink); color:var(--text-strong); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background:var(--bg); color:var(--text-strong); font-family:var(--font-ui); text-align:center; padding:24px;">
           <div style="font-size:3.5rem; margin-bottom:16px;">✨</div>
           <h1 style="color:var(--ok); font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
-          <p style="color:#94a3b8; max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
-            All system integrations have been removed from your Steam Frame: background systemd service stopped, desktop launcher deleted, Steam shortcuts &amp; grid artwork removed, and caches cleared.
+          <p style="color:var(--text-muted); max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
+            FrameLoad's background service, desktop entry, its own Steam shortcut and its data are being removed. Installed games keep their Steam shortcuts unless you chose to delete them; a game whose save backup failed stays installed.
           </p>
-          <div style="background:rgb(var(--fg-rgb) / 0.04); border:1px solid rgb(var(--fg-rgb) / 0.1); border-radius:12px; padding:16px 24px; color:#cbd5e1; font-size:0.9rem; margin-bottom:20px;">
+          <div style="background:rgb(var(--fg-rgb) / 0.04); border:1px solid rgb(var(--fg-rgb) / 0.1); border-radius:12px; padding:16px 24px; color:var(--text); font-size:0.9rem; margin-bottom:20px;">
             ${keepBackups ? "Save game backups were kept in <code>~/.local/share/frameload/backups</code>." : "All data and caches were removed."}
           </div>
-          <p style="color:#64748b; font-size:0.85rem;">You may now safely close this browser window.</p>
+          <p style="color:var(--text-dim); font-size:0.85rem;">You may now safely close this browser window.</p>
         </div>
       `;
     } else {
@@ -2810,13 +2810,13 @@ async function executeUninstallApp() {
   } catch (err) {
     // Daemon exited normally as part of uninstallation
     document.body.innerHTML = `
-      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:var(--accent-ink); color:var(--text-strong); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:24px;">
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background:var(--bg); color:var(--text-strong); font-family:var(--font-ui); text-align:center; padding:24px;">
         <div style="font-size:3.5rem; margin-bottom:16px;">✨</div>
         <h1 style="color:var(--ok); font-size:2rem; font-weight:800; margin-bottom:14px;">FrameLoad Successfully Uninstalled</h1>
-        <p style="color:#94a3b8; max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
-          The background daemon has shut down and all system integrations have been cleanly removed from your Steam Frame.
+        <p style="color:var(--text-muted); max-width:520px; line-height:1.6; margin-bottom:24px; font-size:1rem;">
+          FrameLoad's background service has stopped and is removing its files.
         </p>
-        <p style="color:#64748b; font-size:0.85rem;">You may now safely close this browser tab.</p>
+        <p style="color:var(--text-dim); font-size:0.85rem;">You may now safely close this browser tab.</p>
       </div>
     `;
   }
@@ -3353,8 +3353,9 @@ function renderPortingJob(job) {
   }
 
   el("title").textContent = title;
-  el("icon").className = `job-icon ${job.status}`;
-  el("bar").className = `job-bar ${job.status}`;
+  const look = job.status === "error" ? "failed" : job.status;  // a job that fails ends as "error"
+  el("icon").className = `job-icon ${look}`;
+  el("bar").className = `job-bar ${look}`;
   el("bar").setAttribute("aria-valuenow", percent);
   el("fill").style.width = `${job.status === "queued" ? 100 : percent}%`;
   el("percent").textContent = job.status === "queued" ? "Waiting" : `${percent}%`;
@@ -3437,16 +3438,24 @@ async function pollPortingJob() {
     const wanted = state.porting.launchAfter;
     if (wanted) {
       const ported = (job.kind === "port" && job.package === wanted) || (job.result && (job.result.ported || []).includes(wanted));
+      const portFailed = job.result && (job.result.failed || []).find(f => f.package === wanted);
       if (job.status === "done" && ported) {
         state.porting.launchAfter = null;
         closePortingModal();
         launchGame(wanted);
+      } else if (portFailed) {
+        // The tools were set up, but the game itself could not be ported.
+        state.porting.launchAfter = null;
+        showToast(`${portFailed.title || wanted} could not be ported: ${portFailed.error}`, "error");
+        renderPortingJob(job);
       } else if (job.kind === "port" || job.status !== "done") {
         state.porting.launchAfter = null;
         renderPortingJob(job);
       } else if (state.porting.status && state.porting.status.job) {
         state.porting.jobId = state.porting.status.job.id;  // setup finished; the port itself is next
         state.porting.timer = setTimeout(pollPortingJob, 1000);
+      } else {
+        state.porting.launchAfter = null;  // nothing is porting it any more
       }
     }
   } catch (e) {
@@ -3798,7 +3807,7 @@ async function answerLink(install) {
     if (install) {
       const port = (res.result && res.result.porting) || {};
       if (port.started) {
-        // Built for Meta's runtime: ported right away, as after an install from the Sideload tab.
+        // Built for Meta's runtime: ported right away, as after an install from the Install File tab.
         state.porting.jobId = port.job.id;
         openPortingModal();
         showToast(port.reason === "setting_up"

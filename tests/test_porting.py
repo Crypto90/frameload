@@ -377,6 +377,27 @@ class TestAutomaticPorting(LibraryTestCase):
             self.assertEqual(porting.setup_and_port_pending(lambda line: None).get("ported"), [])
         self.assertEqual(InstalledManager.get_game("com.studio.manual")["compat"]["level"], "needs_port")
 
+    def test_switching_automatic_porting_off_stops_games_already_waiting(self):
+        # Waiting for the tools while automatic porting was on, then the switch went off.
+        with patch.object(porting, "auto_setup_enabled", return_value=False):
+            waiting = porting.auto_port(self.install_unported("com.studio.waiting"))
+        self.assertEqual(waiting["reason"], "not_set_up")
+        with patch.object(porting, "is_auto", return_value=False), \
+                patch.object(porting, "auto_setup_enabled", return_value=False):
+            asked = porting.auto_port(self.install_unported("com.studio.asked"), requested=True)
+            self.assertEqual(self.wait(asked["job"])["result"]["ported"], ["com.studio.asked"])
+        self.assertEqual(InstalledManager.get_game("com.studio.waiting")["compat"]["level"], "needs_port")
+        # Back on: it is ported with the next round.
+        self.assertEqual(porting.setup_and_port_pending(lambda line: None)["ported"], ["com.studio.waiting"])
+
+    def test_a_port_that_fails_inside_the_setup_is_reported_with_the_game(self):
+        res = self.install_unported("com.studio.broken")
+        with patch.object(porting, "port_installed_game", side_effect=porting.PortingError("FramePort failed")):
+            done = self.wait(porting.auto_port(res, requested=True)["job"])
+        self.assertEqual(done["status"], "done")  # the tools themselves were set up
+        self.assertEqual(done["result"]["ported"], [])
+        self.assertEqual([(f["package"], f["error"]) for f in done["result"]["failed"]], [("com.studio.broken", "FramePort failed")])
+
     def test_port_and_play_ports_with_the_automatic_switches_off(self):
         res = self.install_unported("com.studio.asked")
         with patch.object(porting, "is_auto", return_value=False),                 patch.object(porting, "auto_setup_enabled", return_value=False):
@@ -403,8 +424,16 @@ class TestAutomaticPorting(LibraryTestCase):
         self.install_unported(pkg)
         link = f"frameload://launch?package={pkg}"
 
-        # A link is a request to play: the game is ported first, even with automatic porting off.
+        # Nobody pressed anything in FrameLoad: with automatic porting off, a link does not port.
         with patch.object(porting, "is_auto", return_value=False), patch.object(GameLauncher, "launch") as launch:
+            res = ProtocolHandler.handle_url(link)
+            self.assertEqual(res["result"]["porting"]["reason"], "disabled")
+            self.assertIsNone(porting.PortingJobs.active())
+            launch.assert_not_called()
+        self.assertEqual(InstalledManager.get_game(pkg)["compat"]["level"], "needs_port")
+
+        # With it on, the game is ported first, like Play does.
+        with patch.object(GameLauncher, "launch") as launch:
             res = ProtocolHandler.handle_url(link)
             self.assertTrue(res["success"])
             self.assertFalse(res["result"]["launched"])

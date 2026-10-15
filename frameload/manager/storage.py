@@ -449,9 +449,9 @@ class StorageManager:
         results = []
 
         for pkg in packages:
-            # Measure folder size before deletion
-            target_dir = os.path.join(ANCHOR_DIR, pkg)
-            pkg_size = get_dir_size(target_dir)
+            # Measure folder size before deletion, on whichever drive the game is
+            game = InstalledManager.get_game(pkg) or {}
+            pkg_size = get_dir_size(game.get("anchor") or os.path.join(ANCHOR_DIR, pkg))
 
             try:
                 res = Uninstaller.uninstall(pkg, keep_saves=keep_saves)
@@ -656,10 +656,14 @@ class StorageManager:
                 f.write(text)
             os.chmod(launch_script, 0o755)
 
-        # 5. Update Steam shortcut with new launch script path
+        # 5. The game's Steam shortcut moves with it: same id, pictures and launch options. The running
+        #    Steam still has the old path, so the game counts as new to it until Steam restarts.
         from ..installer.artwork import steam_icon
+        from ..system import steam_session
+        from ..system.shortcuts import move_shortcut
         art_dir = os.path.join(new_anchor, "artwork")
-        register_game_in_steam(
+        move_shortcut(os.path.join(current_anchor, "launch.sh"), launch_script, new_anchor)
+        steam = register_game_in_steam(
             title=title,
             launch_script_path=launch_script,
             anchor_dir=new_anchor,
@@ -667,6 +671,17 @@ class StorageManager:
             artwork_dir=art_dir,
             is_vr=dep.get("is_vr", True)
         )
+        steam_session.forget(os.path.join(current_anchor, "launch.sh"))
+        steam_session.note_written(launch_script, title, existed=False)
+        # A game whose shortcut was gone got a new one: its launcher has to use that id.
+        ids = {u.get("appid") for u in (steam.get("users") or {}).values() if u.get("appid")}
+        if len(ids) == 1 and next(iter(ids)) != dep.get("appid"):
+            dep["appid"] = next(iter(ids))
+            with open(dep_path, "w", encoding="utf-8") as f:
+                json.dump(dep, f, indent=2)
+            if dep.get("kind", "quest") in ("quest", "flat"):
+                from .tuning import TuningManager
+                TuningManager.apply_tuning_to_game(package_name, dep=dep)
 
         return {
             "success": True,

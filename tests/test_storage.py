@@ -179,6 +179,17 @@ class TestStorageManager(unittest.TestCase):
             "ext_small": "Not enough free space",
         })
 
+    def test_batch_uninstall_counts_the_space_of_games_on_a_card(self):
+        with tempfile.TemporaryDirectory() as card:
+            anchor = os.path.join(card, "quest-frame", "com.card.game")
+            os.makedirs(anchor)
+            with open(os.path.join(anchor, "game.bin"), "wb") as f:
+                f.write(b"x" * 4096)
+            with patch("frameload.manager.storage.InstalledManager.get_game", return_value={"anchor": anchor}), \
+                    patch("frameload.manager.storage.Uninstaller.uninstall", return_value={"success": True}):
+                res = StorageManager.batch_uninstall(["com.card.game"])
+        self.assertEqual(res["results"][0]["reclaimed_bytes"], 4096)
+
     def test_move_targets_of_a_game_that_is_not_installed(self):
         with patch("frameload.manager.storage.InstalledManager.get_game", return_value=None):
             with self.assertRaises(FileNotFoundError):

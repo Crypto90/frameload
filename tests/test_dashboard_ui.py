@@ -27,6 +27,18 @@ def declaration(source, name):
     return match.group(0)
 
 
+class TestPortingDialog(unittest.TestCase):
+    def test_a_failed_job_looks_failed(self):
+        # Jobs that fail end with the status "error"; the stylesheet styles the icon and bar as "failed".
+        render = declaration(read(PACKAGE, "web", "static", "js", "app.js"), "renderPortingJob")
+        self.assertIn('job.status === "error" ? "failed"', render)
+        self.assertNotIn("job-icon ${job.status}", render)
+
+    def test_a_port_that_failed_inside_the_setup_ends_the_wait(self):
+        poll = declaration(read(PACKAGE, "web", "static", "js", "app.js"), "pollPortingJob")
+        self.assertIn("job.result.failed", poll)
+
+
 class TestNamesThatExist(unittest.TestCase):
     # Buttons, tabs and runtimes the dashboard used to have or never had.
     STALE = (

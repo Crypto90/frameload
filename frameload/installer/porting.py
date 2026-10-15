@@ -350,22 +350,29 @@ def _set_flags(package: str, **flags: Any) -> None:
     os.replace(path + ".tmp", path)
 
 
-def _set_pending(package: str, pending: bool) -> None:
-    _set_flags(package, port_pending=pending)
+def _set_pending(package: str, pending: bool, requested: bool = False) -> None:
+    """Marks a game as waiting for the porting tools. requested: a player asked for this game (Port &
+    Play, Set Up Now for it), so it is ported even with automatic porting switched off."""
+    if pending and requested:
+        _set_flags(package, port_pending=True, port_requested=True)
+    elif pending:
+        _set_flags(package, port_pending=True)
+    else:
+        _set_flags(package, port_pending=False, port_requested=False)
 
 
 def pending_games() -> List[Dict[str, Any]]:
     """Installed Quest games that still need porting and have not already failed to port.
 
     With automatic porting on that is every such game, wherever it came from; with it off, only
-    games that were explicitly queued."""
+    games a player asked to port (games queued while it was still on wait until it is on again)."""
     from ..manager.installed import InstalledManager
 
     automatic = is_auto()
     found = []
     for game in InstalledManager.list_installed():
         dep = InstalledManager.get_game(game["package"]) or {}
-        if needs_port(dep) and not dep.get("port_failed") and (automatic or dep.get("port_pending")):
+        if needs_port(dep) and not dep.get("port_failed") and (automatic or dep.get("port_requested")):
             found.append({"package": game["package"], "title": dep.get("title", game["package"])})
     return found
 
@@ -376,7 +383,7 @@ def port_and_record(package: str, log: Log) -> Dict[str, Any]:
     try:
         return port_installed_game(package, log)
     except Exception as e:
-        _set_flags(package, port_failed=True, port_error=str(e)[:500], port_pending=False)
+        _set_flags(package, port_failed=True, port_error=str(e)[:500], port_pending=False, port_requested=False)
         raise
 
 
@@ -478,7 +485,7 @@ def auto_port(installed: Dict[str, Any], requested: bool = False) -> Dict[str, A
             return {"needed": True, "started": True, "job": PortingJobs.public(job)}
     current = status()
     if not (current["installed"] and current["tools_ready"]):
-        _set_pending(package, True)
+        _set_pending(package, True, requested=requested)
         if not auto_setup_enabled() and not requested:
             return {"needed": True, "started": False, "reason": "not_set_up"}
         job = ensure_ready()
@@ -487,8 +494,9 @@ def auto_port(installed: Dict[str, Any], requested: bool = False) -> Dict[str, A
     return {"needed": True, "started": True, "job": job}
 
 
-def port_pending(log: Log) -> List[str]:
-    """Ports every game that is waiting to be ported. Returns the packages that worked."""
+def port_pending(log: Log, failed: Optional[List[Dict[str, str]]] = None) -> List[str]:
+    """Ports every game that is waiting to be ported. Returns the packages that worked; the ones
+    that did not are added to failed ({package, title, error}) when a list is given."""
     done = []
     for game in pending_games():
         log(f"Porting {game['title']}...")
@@ -497,13 +505,17 @@ def port_pending(log: Log) -> List[str]:
             done.append(game["package"])
         except Exception as e:  # one failing game must not stop the others
             log(f"{game['title']}: {e}")
+            if failed is not None:
+                failed.append({"package": game["package"], "title": game["title"], "error": str(e)[:500]})
     return done
 
 
 def setup_and_port_pending(log: Log) -> Dict[str, Any]:
     result = setup(log)
     # With automatic porting off, pending_games() holds only the games a player asked for (Port & Play).
-    result["ported"] = port_pending(log)
+    failed: List[Dict[str, str]] = []
+    result["ported"] = port_pending(log, failed)
+    result["failed"] = failed
     return result
 
 

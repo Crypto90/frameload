@@ -860,13 +860,13 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             except (TypeError, ValueError):
                 self.send_json({"error": "hours must be a number"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            power.KeepAwake.update(power.busy_reason(self.downloader) if keep_awake_while_busy() else "")
+            refresh_keep_awake(self.downloader)
             self.send_json(power.KeepAwake.status())
         elif path == "/api/power/settings":
             cfg = Config.get()
             cfg.raw.setdefault("power", {})["keep_awake_busy"] = bool(body.get("while_busy", True))
             cfg.save()
-            power.KeepAwake.update(power.busy_reason(self.downloader) if keep_awake_while_busy() else "")
+            refresh_keep_awake(self.downloader)
             self.send_json({"success": True, "while_busy": keep_awake_while_busy(), **power.KeepAwake.status()})
         elif path == "/api/guard/settings":
             self.send_json({"success": True, "settings": FreezeGuard.save_settings(body)})
@@ -989,7 +989,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/porting/setup":
             if body.get("package") and InstalledManager.get_game(body["package"]):
-                porting._set_pending(body["package"], True)  # ported as soon as the tools are there
+                porting._set_pending(body["package"], True, requested=True)  # ported as soon as the tools are there
             try:
                 job = porting.PortingJobs.start("setup", porting.setup_and_port_pending)
                 self.send_json({"success": True, "job": job})
@@ -1059,7 +1059,11 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             def _deferred_uninstall():
                 time.sleep(1.0)
                 # This server runs inside frameload.service: the uninstaller stops it as its very last step.
-                Uninstaller.uninstall_frameload_app(purge_games=purge_games, keep_backups=keep_backups, stop_service_last=True)
+                # The page has gone by then, so what was kept (a game whose backup failed, keys that could
+                # not be copied) goes to the service's journal.
+                summary = Uninstaller.uninstall_frameload_app(purge_games=purge_games, keep_backups=keep_backups,
+                                                              stop_service_last=True)
+                print("[FrameLoad] Uninstalled: " + json.dumps(summary), flush=True)
                 os._exit(0)
 
             threading.Thread(target=_deferred_uninstall, daemon=True).start()
