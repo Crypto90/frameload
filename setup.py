@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="frameload",
-    version="1.3.7",
+    version="1.3.8",
     license="GPL-3.0-only",
     description="All-in-One On-Device VR Sideloading, Catalog Downloader, and Game Manager for Steam Frame",
     author="Crypto90",

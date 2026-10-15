@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.8] - 2026-10-15
+
+### Added
+- **"What happened" window.** When a game crashes, hangs the graphics processor, runs out of memory, cannot start, closes right after starting, or is stopped by the Freeze Guard, FrameLoad says why in plain words, for example "It crashed (SIGSEGV) in thread RenderThread, inside the headset's graphics driver". It also opens later, when you come back to FrameLoad, until you close it.
+  - **Copy Log** puts a report on the clipboard: the game, its version and compatibility, the cause, the crash backtrace and the end of its log, with your home folder, network addresses and account ids removed. **Save Log** saves it to Downloads.
+  - A normal quit, Steam's Exit and your own Stop open nothing. "Don't Show for This Game" and a switch on the Freeze Guard card turn the window off.
+  - The game launcher now records how each session ended, and asks Lepton to keep Android's crash logs after every session (before, only after sessions under 30 seconds). Games installed earlier get the new launcher automatically.
+  - The Launch Log can be copied and saved as well, and a game's page has **What Happened** after an abnormal end.
+  - If the headset restarted while a game ran, FrameLoad says so the next time it opens.
+- **Show <game>.** When a VR game started from FrameLoad can only be heard, FrameLoad's window (which lives in Steam's menu layer) is in front of it. A **Show** button next to Stop, and in each look's running-game area, closes Steam's menu so the game is in front.
+- **Close FrameLoad's window when a VR game starts** (System → Starting Games, off by default), for when Steam keeps its menu in front.
+- **More sources for 2D apps:** Browse → 2D Apps now offers F-Droid, IzzyOnDroid (about 900 apps that are not in F-Droid) and Guardian Project, all sources together, and repositories you add yourself (from the headset only, with a warning). Every app list's signature is checked against the source's key; updates come only from the source an app was installed from and only with the same signing key.
+- **Phone & PC Access shows the headset's address** on your network, so it no longer has to be looked up.
+
+### Changed
+- **Freeze Guard stops a frozen game by default, after 30 seconds** (choices 15 s, 30 s, 1 min, 2 min; before: off, 90 s). Settings saved by v1.3.5-1.3.7 move to the new default once; turning it off afterwards sticks. It does not stop a game while the headset is asleep, the Steam menu is open or the game is still busy drawing (for example on a loading screen), and it now also watches VR games without FrameBridge through their graphics work (stopping those only when it knows the headset is awake and the menu closed).
+- The three Freeze Guard switches work independently and say what they do, and the card shows each running game's frames, graphics load and memory limit.
+- Steam's menu is closed more reliably when a ported game shows its first picture: FrameLoad also asks the game's container when Lepton stops copying the game's log, and pressing the Steam button while a game loads no longer stops it.
+- The Launch Log names more causes: Lepton no longer copying the game's log, a hung graphics processor, Steam's Exit, how the game was started, and why Steam's menu was left open.
+- **Updating FrameLoad waits while a game runs**: the update restarts FrameLoad's service, which could end a game FrameLoad started itself.
+- When Lepton stops copying a game's log, the Freeze Guard reads its frames from the game's container, and never stops a game on missing log lines alone.
+
+### Fixed
+- **A game with a busy log looked frozen**: the Freeze Guard read old lines when more than 1 MB had piled up.
+- FrameBridge's frame lines ("72.0 fps") were never recognised in the Launch Log.
+
+---
+
 ## [v1.3.7] - 2026-10-15
 
 ### Fixed
