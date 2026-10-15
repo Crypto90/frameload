@@ -460,15 +460,16 @@ def background_maintenance() -> Optional[Dict[str, Any]]:
     return PortingJobs.start("update", lambda log: update(log, wheel, version), queue=True)
 
 
-def auto_port(installed: Dict[str, Any]) -> Dict[str, Any]:
+def auto_port(installed: Dict[str, Any], requested: bool = False) -> Dict[str, Any]:
     """Called after an install and before a launch: ports the game when it needs it.
 
     If porting has not been set up yet, the game is marked as waiting and (unless switched off) the
-    setup starts now; the game is ported as soon as it finishes."""
+    setup starts now; the game is ported as soon as it finishes. requested: the player pressed
+    Port & Play, which ports the game even with the automatic switches off."""
     if not needs_port(installed):
         return {"needed": False, "started": False}
     package = installed["package"]
-    if not is_auto():
+    if not is_auto() and not requested:
         return {"needed": True, "started": False, "reason": "disabled"}
     if installed.get("port_failed"):
         return {"needed": True, "started": False, "reason": "failed", "error": installed.get("port_error", "")}
@@ -478,7 +479,7 @@ def auto_port(installed: Dict[str, Any]) -> Dict[str, Any]:
     current = status()
     if not (current["installed"] and current["tools_ready"]):
         _set_pending(package, True)
-        if not auto_setup_enabled():
+        if not auto_setup_enabled() and not requested:
             return {"needed": True, "started": False, "reason": "not_set_up"}
         job = ensure_ready()
         return {"needed": True, "started": bool(job), "job": job, "reason": "setting_up"}
@@ -501,8 +502,8 @@ def port_pending(log: Log) -> List[str]:
 
 def setup_and_port_pending(log: Log) -> Dict[str, Any]:
     result = setup(log)
-    if is_auto():
-        result["ported"] = port_pending(log)
+    # With automatic porting off, pending_games() holds only the games a player asked for (Port & Play).
+    result["ported"] = port_pending(log)
     return result
 
 

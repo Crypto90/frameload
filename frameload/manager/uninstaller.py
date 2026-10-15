@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 from typing import Any, Dict
 
@@ -63,9 +64,15 @@ class Uninstaller:
         purge_games: bool = False,
         keep_backups: bool = False,
         purge_all_data: bool = True,
-        remove_install_dir: bool = True
+        remove_install_dir: bool = True,
+        stop_service_last: bool = False
     ) -> Dict[str, Any]:
-        """Completely and cleanly uninstalls the FrameLoad application and removes all traces."""
+        """Completely and cleanly uninstalls the FrameLoad application and removes all traces.
+
+        stop_service_last: set when this runs inside FrameLoad's own service (the dashboard). Stopping the
+        service ends every process in it, this one included, so the service is only disabled at first and
+        stopped as the very last step.
+        """
         summary: Dict[str, Any] = {
             "success": True,
             "services_stopped": False,
@@ -78,14 +85,23 @@ class Uninstaller:
             "details": []
         }
 
-        # 1. Stop and disable systemd user service
+        # 1. Disable the systemd user service and stop the server (unless it is the one running this)
+        runtime = f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else ""
+        if runtime and not os.environ.get("XDG_RUNTIME_DIR") and os.path.isdir(runtime):
+            os.environ["XDG_RUNTIME_DIR"] = runtime
+        bus = os.path.join(os.environ.get("XDG_RUNTIME_DIR", ""), "bus")
+        if os.environ.get("XDG_RUNTIME_DIR") and not os.environ.get("DBUS_SESSION_BUS_ADDRESS") and os.path.exists(bus):
+            os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
         service_file = os.path.join(HOME, ".config/systemd/user/frameload.service")
         try:
-            subprocess.run(["systemctl", "--user", "stop", "frameload.service"], capture_output=True, timeout=10)
             subprocess.run(["systemctl", "--user", "disable", "frameload.service"], capture_output=True, timeout=10)
+            if not stop_service_last:
+                subprocess.run(["systemctl", "--user", "stop", "frameload.service"], capture_output=True, timeout=10)
             summary["services_stopped"] = True
         except Exception as e:
             summary["details"].append(f"systemctl stop/disable: {e}")
+        if not stop_service_last:
+            Uninstaller._stop_server_started_without_systemd()
 
         if os.path.isfile(service_file):
             try:
@@ -109,16 +125,17 @@ class Uninstaller:
             except OSError as e:
                 summary["details"].append(f"remove desktop file: {e}")
 
-        wrapper = os.path.join(HOME, ".local/bin/frameload")
-        if os.path.isfile(wrapper):
-            try:
-                os.remove(wrapper)
-            except OSError as e:
-                summary["details"].append(f"remove command wrapper: {e}")
+        # The command wrapper, and the autostart entry install.sh writes when systemd's user bus is unreachable
+        for leftover in (os.path.join(HOME, ".local/bin/frameload"), os.path.join(HOME, ".config/autostart/frameload.desktop")):
+            if os.path.isfile(leftover):
+                try:
+                    os.remove(leftover)
+                except OSError as e:
+                    summary["details"].append(f"remove {leftover}: {e}")
 
         # 3. Remove FrameLoad shortcut and grid artwork (poster, banner, hero, logo, icon) from Steam
         try:
-            summary["steam_shortcut_removed"] = unregister_app_from_steam(title="FrameLoad", exe_substring="frameload")
+            summary["steam_shortcut_removed"] = unregister_app_from_steam(title="FrameLoad")
         except Exception as e:
             summary["details"].append(f"steam unregister: {e}")
 
@@ -164,31 +181,41 @@ class Uninstaller:
                 summary["details"].append(f"microsd cleanup: {e}")
 
         # Ported games must keep being signed with the same key, or updates cannot install over them.
+        keep = {"backups"} if keep_backups else set()
         try:
             from ..installer import porting
             saved = porting.backup_signing_keys()
             if saved:
                 summary["details"].append(f"signing keys of ported games saved to {saved}")
         except Exception as e:
-            summary["details"].append(f"signing key backup: {e}")
+            # Never delete keys that could not be copied: they live in frameport-home.
+            keep.add("frameport-home")
+            summary["success"] = False
+            summary["details"].append(f"The signing keys of ported games could not be saved ({e}); "
+                                      f"{os.path.join(FRAMELOAD_DIR, 'frameport-home')} was kept.")
 
         # 5. Clean up data, cache, and config in ~/.local/share/frameload
         if purge_all_data and os.path.isdir(FRAMELOAD_DIR):
             try:
-                if keep_backups:
-                    for item in os.listdir(FRAMELOAD_DIR):
-                        if item == "backups":
-                            continue
-                        p = os.path.join(FRAMELOAD_DIR, item)
-                        if os.path.isdir(p):
-                            shutil.rmtree(p, ignore_errors=True)
-                        else:
-                            os.remove(p)
-                else:
+                for item in os.listdir(FRAMELOAD_DIR):
+                    if item in keep:
+                        continue
+                    p = os.path.join(FRAMELOAD_DIR, item)
+                    if os.path.isdir(p) and not os.path.islink(p):
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        os.remove(p)
+                if not keep:
                     shutil.rmtree(FRAMELOAD_DIR, ignore_errors=True)
                 summary["data_purged"] = True
             except OSError as e:
                 summary["details"].append(f"purge data: {e}")
+
+        # The window's browser profiles that run.sh keeps inside the Flatpak browsers' folders
+        for app_id in ("org.mozilla.firefox", "org.chromium.Chromium", "com.google.Chrome"):
+            profile = os.path.join(HOME, ".var/app", app_id, "frameload-profile")
+            if os.path.isdir(profile):
+                shutil.rmtree(profile, ignore_errors=True)
 
         cfg_dir = os.path.join(HOME, ".config/frameload")
         if os.path.isdir(cfg_dir):
@@ -204,5 +231,33 @@ class Uninstaller:
                 except OSError as e:
                     summary["details"].append(f"remove app_dir: {e}")
 
+        if stop_service_last:
+            try:
+                subprocess.run(["systemctl", "--user", "stop", "--no-block", "frameload.service"], capture_output=True, timeout=10)
+            except Exception as e:
+                summary["details"].append(f"systemctl stop: {e}")
         return summary
+
+    @staticmethod
+    def _stop_server_started_without_systemd() -> None:
+        """Ends FrameLoad servers that run.sh --daemon, the autostart entry or install.sh started directly.
+
+        They are found by their command line: the pid file run.sh writes can be stale and name anything."""
+        try:
+            pids = [int(n) for n in os.listdir("/proc") if n.isdigit()]
+        except OSError:
+            return
+        for pid in pids:
+            if pid == os.getpid():
+                continue
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    args = f.read().split(b"\0")
+            except OSError:
+                continue
+            if b"frameload.cli" in args and b"serve" in args:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    pass
 

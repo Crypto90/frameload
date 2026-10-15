@@ -117,7 +117,7 @@ FrameLoad/
 │   ├── build_release.py      # Builds tarballs, self-extracting installer, SHA256SUMS, and release notes
 │   ├── capture_screenshots.py# Headless Chrome script for automated 1080p README screenshots
 │   └── github_release.py     # Pure Python GitHub REST API release publisher and asset uploader
-├── tests/                    # Unit tests (182 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
+├── tests/                    # Unit tests (196 cases); axml_builder.py builds test APKs, fake_frameport.py stands in for FramePort
 ├── install.sh                # 1-Click on-device installer script
 ├── run.sh                    # Smart runner for Steam and command-line execution
 └── uninstall.sh              # 1-Click clean uninstaller
@@ -150,6 +150,8 @@ Verified against Valve's Lepton source (`compat_tool/liblepton/*.sh`) and FrameP
 20. **Play history** is written by launch.sh (`.last_played` at start, a `start end` line in `.playtime` at exit). `installed.play_stats()` reads it; games from before layout 6 fall back to their launch.log's time.
 21. **Freeze guard.** Running games are found through `/proc/locks` (the flock launch.sh holds on `.launch.lock`); reading it takes no lock, so it can never make a launch think its game is already starting. Do not probe that lock with flock. Memory is limited with `podman update --memory` (RAM minus 2.5 GB) a few seconds into a session; the watchdog stops games on PSI `full avg10` >= 20 % for 3 samples or < 3 % RAM available with swap full.
 22. **Looks (skins).** The dashboard has six looks: a Big Picture (default), b Spatial, c Showcase, d Neon, e Command Center, f Daylight (light/dark via `data-mode`). The saved look lives in config `ui.skin` / `ui.daylight`; `server.serve_index()` writes it into `<html data-skin data-mode>` and the skin stylesheet link, `?skin=x` previews one without saving. style.css is the neon base and defines every colour, font and radius as a token (`--bg`, `--surface`, `--text`, `--accent`, `--accent-rgb`, `--fg-rgb` …); never write a literal colour into style.css, index.html or app.js markup, use a token (canvas code is the exception: canvas cannot read CSS variables). A look owns `static/css/skins/<id>.css` and `static/js/skins/<id>.js`; the view API (`registerSkin(id, {library, empty, noMatch, status, mount, unmount})` and the `ctx` it gets) is in app.js under "Looks". Shared markup changes must be checked in all six looks (and both Daylight modes); the dev tools under `scripts/` do not cover this yet, so screenshot each look.
+23. **Uninstalling.** Every way to remove FrameLoad ends in `Uninstaller.uninstall_frameload_app` (uninstall.sh calls it from a temp copy of the package, by function, so it also works with older installs). The dashboard runs it inside `frameload.service`, and stopping that service kills the process: it passes `stop_service_last=True` (disable first, stop last). FrameLoad's own Steam shortcut is found with `shortcuts.is_frameload_itself()`, never by a substring: games live in `quest-frame` folders that may sit on a drive named FrameLoad. The signing keys of ported games are copied to `~/Documents/FrameLoad-signing-keys` before any data is deleted, and kept in place when that copy fails.
+24. **Shell scripts are LF.** `.gitattributes` forces `*.sh` to LF (this repo is also edited on Windows with autocrlf); the release tarball packs the working tree, so a CRLF `run.sh` would break on the headset.
 9. **Camera hand tracking does not exist on the Frame yet.** It needs a tracker inside SteamVR; nothing in this repo can provide it. Do not add UI or files that claim otherwise.
 
 ---
@@ -193,7 +195,7 @@ FrameLoad self-updates directly inside the headset without a PC:
 
 1. **Detection:** Checks GitHub Releases API (`/repos/Crypto90/frameload/releases/latest`) and local git remote (`git fetch origin main`).
 2. **Notification Touchpoints:**
-   - Header animated chip (`⚡ Update: vX.Y.Z`).
+   - Header chip (`Update vX.Y.Z`).
    - Top dismissable banner on main dashboard.
    - System & Diagnostics tab badge.
 3. **Execution Flow:**

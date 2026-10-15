@@ -373,8 +373,26 @@ class TestAutomaticPorting(LibraryTestCase):
         with patch.object(porting, "is_auto", return_value=False):
             outcome = porting.auto_port(res)
             self.assertEqual((outcome["started"], outcome["reason"]), (False, "disabled"))
-            self.assertEqual(porting.setup_and_port_pending(lambda line: None).get("ported"), None)
+            self.assertEqual(porting.setup_and_port_pending(lambda line: None).get("ported"), [])
         self.assertEqual(InstalledManager.get_game("com.studio.manual")["compat"]["level"], "needs_port")
+
+    def test_port_and_play_ports_with_the_automatic_switches_off(self):
+        res = self.install_unported("com.studio.asked")
+        with patch.object(porting, "is_auto", return_value=False),                 patch.object(porting, "auto_setup_enabled", return_value=False):
+            # No tools yet: pressing Port & Play fetches them and then ports the game (the dashboard
+            # starts it when the setup job reports it as ported).
+            outcome = porting.auto_port(res, requested=True)
+            self.assertEqual((outcome["started"], outcome["reason"]), (True, "setting_up"))
+            done = self.wait(outcome["job"])
+            self.assertEqual(done["status"], "done", done)
+            self.assertEqual(done["result"]["ported"], ["com.studio.asked"])
+        self.assertEqual(InstalledManager.get_game("com.studio.asked")["compat"]["level"], "ready")
+
+        # Other games that need porting are still left alone while the switch is off.
+        other = self.install_unported("com.studio.untouched")
+        with patch.object(porting, "is_auto", return_value=False):
+            self.assertEqual(porting.auto_port(other)["reason"], "disabled")
+            self.assertEqual(porting.setup_and_port_pending(lambda line: None)["ported"], [])
 
 
 class TestMigration(LibraryTestCase):

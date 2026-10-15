@@ -48,10 +48,12 @@ if [[ ! -f "$SCRIPT_DIR/frameload/cli.py" ]]; then
         if [[ -z "$LATEST_TAG" ]]; then
             LATEST_TAG=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/Crypto90/frameload/releases/latest 2>/dev/null | awk -F'/' '{print $NF}')
         fi
-        [[ -z "$LATEST_TAG" ]] && LATEST_TAG="v1.3.0"
-        say "Downloading release $LATEST_TAG..."
-        curl -fsSL "https://github.com/Crypto90/frameload/releases/download/${LATEST_TAG}/frameload-${LATEST_TAG}-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET" || \
-        curl -fsSL "https://github.com/Crypto90/frameload/archive/refs/heads/main.tar.gz" | tar -xzf - --strip-components=1 -C "$APP_TARGET"
+        if [[ -n "$LATEST_TAG" && "$LATEST_TAG" != "latest" ]] && say "Downloading release $LATEST_TAG..." && \
+           curl -fsSL "https://github.com/Crypto90/frameload/releases/download/${LATEST_TAG}/frameload-${LATEST_TAG}-standalone.tar.gz" | tar -xzf - -C "$APP_TARGET"; then
+            :
+        else
+            curl -fsSL "https://github.com/Crypto90/frameload/archive/refs/heads/main.tar.gz" | tar -xzf - --strip-components=1 -C "$APP_TARGET"
+        fi
     fi
 
     chmod +x "$APP_TARGET/install.sh" "$APP_TARGET/run.sh"
@@ -75,8 +77,13 @@ say "Configuring rootless podman leak fix for Lepton..."
 mkdir -p "$HOME/.config/containers"
 CONTAINERS_CONF="$HOME/.config/containers/containers.conf"
 if [[ ! -f "$CONTAINERS_CONF" ]] || ! grep -qs '^ *keyring *=' "$CONTAINERS_CONF"; then
-    printf '[containers]\n# FrameLoad: stop rootless podman leaking a kernel keyring per container start\nkeyring = false\n' >> "$CONTAINERS_CONF"
-    ok "Configured keyring = false in $CONTAINERS_CONF"
+    # FrameLoad's own fix adds the line under an existing [containers] table instead of declaring a second one.
+    PYTHONPATH="$SCRIPT_DIR" python3 -c 'from frameload.system.steamos import ensure_host_podman_fixes; ensure_host_podman_fixes()' || true
+    if grep -qs '^ *keyring *=' "$CONTAINERS_CONF"; then
+        ok "Configured keyring = false in $CONTAINERS_CONF"
+    else
+        warn "Could not write $CONTAINERS_CONF; use System > Apply Podman Keyring Leak Fix in the dashboard."
+    fi
 else
     ok "Podman keyring configuration already optimal"
 fi
@@ -99,21 +106,14 @@ fi
 
 # 2.6 Check standalone application window runtime
 say "Checking standalone window runtime..."
-if python3 -c "import PyQt6.QtWebEngineWidgets" >/dev/null 2>&1 || \
-   python3 -c "import gi; gi.require_version('WebKit2', '4.0')" >/dev/null 2>&1 || \
-   python3 -c "import webview" >/dev/null 2>&1; then
+if PYTHONPATH="$SCRIPT_DIR" python3 -m frameload.web.window --check >/dev/null 2>&1; then
     ok "Native standalone application window engine detected"
 elif which chromium google-chrome >/dev/null 2>&1 || \
      (which flatpak >/dev/null 2>&1 && (flatpak info org.chromium.Chromium >/dev/null 2>&1 || flatpak info com.google.Chrome >/dev/null 2>&1)); then
     ok "Standalone App-Mode browser detected"
 else
-    if which pip3 >/dev/null 2>&1 || which pip >/dev/null 2>&1; then
-        PIP_CMD=$(which pip3 2>/dev/null || which pip)
-        say "Installing pywebview in user space for native window..."
-        "$PIP_CMD" install --user --quiet pywebview 2>/dev/null || true
-    fi
     rm -rf "$HOME/.local/share/frameload/browser_profile" 2>/dev/null || true
-    ok "Configured standalone kiosk window profile for Steam Frame"
+    ok "FrameLoad's window will open in Firefox (or the default browser)"
 fi
 
 # 3. Create Desktop Entry for SteamOS Desktop Mode

@@ -130,7 +130,10 @@ class TestLauncherAndScripts(unittest.TestCase):
         passthrough = re.search(r"^\s+(serve\|[a-z|\-]+)\)$", run_sh, re.M).group(1).split("|")
         commands = re.findall(r'add_parser\("([a-z\-]+)"', cli)
         self.assertEqual(sorted(set(commands) - set(passthrough)), [])
-        self.assertNotIn("\r", run_sh)
+        # Read as bytes: text mode turns \r\n into \n and would hide Windows line endings.
+        for script in ("install.sh", "run.sh", "uninstall.sh"):
+            with open(os.path.join(REPO, script), "rb") as f:
+                self.assertNotIn(b"\r", f.read(), f"{script} has Windows line endings")
 
     def test_installer_provides_the_frameload_command(self):
         install_sh = read_text(os.path.join(REPO, "install.sh"))

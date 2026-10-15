@@ -763,7 +763,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                                     "error": reasons[0] if reasons else "This app cannot run on the Steam Frame."})
                     return
                 if dep and porting.needs_port(dep):
-                    outcome = porting.auto_port(dep)
+                    # Pressing Play (Port & Play) on such a game is a request to port it, whatever the switches say.
+                    outcome = porting.auto_port(dep, requested=True)
                     if outcome.get("started") or outcome.get("reason") in ("failed", "disabled", "not_set_up"):
                         self.send_json({"success": True, "launched": False, "package": pkg,
                                         "title": dep.get("title", pkg), "porting": outcome})
@@ -1058,7 +1059,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
 
             def _deferred_uninstall():
                 time.sleep(1.0)
-                Uninstaller.uninstall_frameload_app(purge_games=purge_games, keep_backups=keep_backups)
+                # This server runs inside frameload.service: the uninstaller stops it as its very last step.
+                Uninstaller.uninstall_frameload_app(purge_games=purge_games, keep_backups=keep_backups, stop_service_last=True)
                 os._exit(0)
 
             threading.Thread(target=_deferred_uninstall, daemon=True).start()

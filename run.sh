@@ -71,6 +71,8 @@ start_daemon_if_needed() {
 case "${1:-}" in
     serve|info|list|storage|move|sync|search|install|inject-mod|handle-url|launch|uninstall|uninstall-app|window|tune|doctor|allow-host|port|sync-shortcuts|stop)
         exec /usr/bin/python3 -m frameload.cli "$@" ;;
+    -h|--help)
+        exec /usr/bin/python3 -m frameload.cli --help ;;
 esac
 
 if [[ "${1:-}" == "--daemon" ]]; then

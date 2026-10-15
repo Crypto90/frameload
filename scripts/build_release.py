@@ -39,7 +39,7 @@ def create_standalone_tarball() -> str:
                 filter=lambda info: None if "__pycache__" in info.name or info.name.endswith(".pyc") else info)
 
         # Include root runner, installer scripts, and documentation
-        for item in ["install.sh", "run.sh", "setup.py", "README.md", "CHANGELOG.md", "LICENSE"]:
+        for item in ["install.sh", "run.sh", "uninstall.sh", "setup.py", "README.md", "CHANGELOG.md", "LICENSE"]:
             p = os.path.join(ROOT_DIR, item)
             if os.path.isfile(p):
                 tar.add(p, arcname=item)
@@ -89,6 +89,7 @@ tail -n +"$PAYLOAD_LINE" "$0" | tar -xzf - -C "$TARGET_DIR"
 ok "Successfully extracted FrameLoad to $TARGET_DIR"
 
 chmod +x "$TARGET_DIR/install.sh" "$TARGET_DIR/run.sh"
+[[ -f "$TARGET_DIR/uninstall.sh" ]] && chmod +x "$TARGET_DIR/uninstall.sh" || true
 
 say "Configuring system services and Steam library shortcuts..."
 (

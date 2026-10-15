@@ -170,22 +170,24 @@ def available_backend() -> str:
                 continue
     except ImportError:
         pass
-    try:
-        if importlib.util.find_spec("webview"):
-            return "pywebview"
-    except (ImportError, ValueError):
-        pass
+    # On Linux pywebview draws with Qt or GTK, which are tried above already; alone it opens nothing.
+    if not sys.platform.startswith("linux"):
+        try:
+            if importlib.util.find_spec("webview"):
+                return "pywebview"
+        except (ImportError, ValueError):
+            pass
     return ""
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="FrameLoad Standalone Window Launcher")
     parser.add_argument("--url", default="http://127.0.0.1:5050", help="URL to display")
     parser.add_argument("--fullscreen", action="store_true", help="Launch in fullscreen mode")
     parser.add_argument("--width", type=int, default=1280, help="Window width")
     parser.add_argument("--height", type=int, default=800, help="Window height")
     parser.add_argument("--check", action="store_true", help="Exit 0 when a native window can be opened, 2 otherwise")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.check:
         sys.exit(0 if available_backend() else 2)
 

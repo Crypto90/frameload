@@ -178,6 +178,16 @@ class TestSteamGrid(Case):
         self.assertIn("_hero", done["111"])
         self.assertIsNone(shortcuts.refresh_grid_artwork(os.path.join(self.tmp, "other.sh"), self.art).get("111"))
 
+    def test_a_rewrite_keeps_the_players_launch_options(self):
+        # Set in Steam (game > Properties), e.g. to keep Steam's menu open; reinstalls and Restart Steam rewrite the entry.
+        launch = os.path.join(self.tmp, "game", "launch.sh")
+        with open(self.vdf, "wb") as f:
+            f.write(vdf_encode({"shortcuts": {"0": {"appid": 3000000002, "appname": "Game", "Exe": f'"{launch}"',
+                                                    "LaunchOptions": "FRAMELOAD_KEEP_DASHBOARD=1 %command%"}}}))
+        shortcuts.register_game_in_steam("Game", launch, os.path.dirname(launch), artwork_dir=self.art)
+        with open(self.vdf, "rb") as f:
+            self.assertEqual(vdf_decode(f.read())["shortcuts"]["0"]["LaunchOptions"], "FRAMELOAD_KEEP_DASHBOARD=1 %command%")
+
 
 class TestUploadRoute(Case):
     def test_dashboard_drawn_artwork_is_stored_and_sent_to_steam(self):

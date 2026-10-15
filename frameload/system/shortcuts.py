@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..config import ANCHOR_DIR, HOME, STEAM_DIR
 from .steam_vdf import shortcut_appid, vdf_decode, vdf_encode
@@ -124,7 +124,7 @@ def upsert_shortcut(
         StartDir=start_dir,
         icon=icon or target_entry.get("icon", ""),
         ShortcutPath="",
-        LaunchOptions=launch_options,
+        LaunchOptions=launch_options or target_entry.get("LaunchOptions", ""),  # keep what the player set in Steam
         IsHidden=0,
         AllowDesktopConfig=1,
         AllowOverlay=1,
@@ -170,8 +170,8 @@ def remove_shortcut_by_exe(vdf_path: str, exe: str) -> bool:
     return True
 
 
-def remove_shortcut_by_title_or_exe(vdf_path: str, title: str = "", exe_substring: str = "") -> List[int]:
-    """Removes shortcuts matching title or containing exe_substring, returning removed appids."""
+def remove_shortcuts_where(vdf_path: str, matches: Callable[[Dict[str, Any]], bool]) -> List[int]:
+    """Removes every shortcut for which matches(entry) is true, returning the removed appids."""
     if not os.path.isfile(vdf_path):
         return []
     try:
@@ -185,19 +185,14 @@ def remove_shortcut_by_title_or_exe(vdf_path: str, title: str = "", exe_substrin
     keep = []
     removed_appids: List[int] = []
     for v in shortcuts.values():
-        if isinstance(v, dict):
-            appname = str(v.get("appname", ""))
-            exe = str(v.get("Exe", ""))
-            match_title = bool(title and appname and appname.strip().lower() == title.strip().lower())
-            match_exe = bool(exe_substring and exe and exe_substring.lower() in exe.lower())
-            if match_title or match_exe:
-                appid = v.get("appid")
-                if appid is not None:
-                    try:
-                        removed_appids.append(int(appid))
-                    except (ValueError, TypeError):
-                        pass
-                continue
+        if isinstance(v, dict) and matches(v):
+            appid = v.get("appid")
+            if appid is not None:
+                try:
+                    removed_appids.append(int(appid))
+                except (ValueError, TypeError):
+                    pass
+            continue
         keep.append(v)
 
     if len(keep) == len(shortcuts):
@@ -210,6 +205,30 @@ def remove_shortcut_by_title_or_exe(vdf_path: str, title: str = "", exe_substrin
         f.write(vdf_encode(root))
     os.replace(tmp, vdf_path)
     return removed_appids
+
+
+def remove_shortcut_by_title_or_exe(vdf_path: str, title: str = "", exe_substring: str = "") -> List[int]:
+    """Removes shortcuts matching title or containing exe_substring, returning removed appids."""
+    def matches(v: Dict[str, Any]) -> bool:
+        appname = str(v.get("appname", ""))
+        exe = str(v.get("Exe", ""))
+        match_title = bool(title and appname and appname.strip().lower() == title.strip().lower())
+        match_exe = bool(exe_substring and exe and exe_substring.lower() in exe.lower())
+        return match_title or match_exe
+    return remove_shortcuts_where(vdf_path, matches)
+
+
+def is_frameload_itself(entry: Dict[str, Any], title: str = "FrameLoad") -> bool:
+    """True for FrameLoad's own shortcut (its run.sh), never for a game it installed.
+
+    Games live in a quest-frame folder, which may sit on a drive whose name contains "FrameLoad".
+    """
+    exe = str(entry.get("Exe", "")).strip().strip('"').replace("\\", "/")
+    if "/quest-frame/" in exe:
+        return False
+    if title and str(entry.get("appname", "")).strip().lower() == title.strip().lower():
+        return True
+    return exe.endswith("/run.sh") and os.path.isfile(os.path.join(os.path.dirname(exe), "frameload", "cli.py"))
 
 
 def install_grid_artwork(user_id: str, appid: int, artwork_dir: str) -> Dict[str, str]:
@@ -337,14 +356,14 @@ def unregister_game_from_steam(launch_script_path: str, appid: Optional[int] = N
     return any_removed
 
 
-def unregister_app_from_steam(title: str = "FrameLoad", exe_substring: str = "frameload") -> bool:
-    """Removes FrameLoad shortcut and all its grid artwork (poster, banner, hero, logo, icon) from all Steam users."""
+def unregister_app_from_steam(title: str = "FrameLoad") -> bool:
+    """Removes FrameLoad's own shortcut and its grid artwork (poster, banner, hero, logo, icon) from all Steam users."""
     users = get_steam_users()
     any_removed = False
 
     for user in users:
         vdf_path = os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf")
-        removed_ids = remove_shortcut_by_title_or_exe(vdf_path, title=title, exe_substring=exe_substring)
+        removed_ids = remove_shortcuts_where(vdf_path, lambda entry: is_frameload_itself(entry, title))
         if removed_ids:
             any_removed = True
             grid_dir = os.path.join(STEAM_DIR, "userdata", user, "config/grid")

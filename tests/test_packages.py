@@ -98,6 +98,28 @@ class TestPackageLoader(unittest.TestCase):
                     res["anchor"], "lepton-app", "obb", "main.1.com.test.xapkgame.obb")))
 
 
+    def test_loose_main_and_patch_obb_are_both_installed(self):
+        """An APK uploaded or copied with main.<v>.<pkg>.obb and patch.<v>.<pkg>.obb beside it."""
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as tmp_target:
+            pkg = "com.test.twoobb"
+            apk = os.path.join(tmp_dir, "game.apk")
+            with zipfile.ZipFile(apk, "w") as zf:
+                zf.writestr("AndroidManifest.xml", build_axml(manifest_node(pkg)))
+                zf.writestr("lib/arm64-v8a/libopenxr_loader.so", b"dummy")
+            obbs = [f"main.3.{pkg}.obb", f"patch.3.{pkg}.obb"]
+            for name in obbs + [f"main.1.{pkg}.demo.obb"]:  # another app's OBB in the same folder stays out
+                with open(os.path.join(tmp_dir, name), "wb") as f:
+                    f.write(b"OBB" * 10)
+
+            for source in (apk, tmp_dir):  # the APK picked on its own, and the whole folder
+                self.assertTrue(PackageLoader.inspect_source(source)["has_obb"], source)
+                with patch("frameload.system.shortcuts.register_game_in_steam", return_value={"success": True}):
+                    res = PackageLoader.install_source(source_path=source, target_anchor=tmp_target, device_id="internal")
+                self.assertTrue(res["success"], res)
+                self.assertEqual(sorted(os.listdir(os.path.join(res["anchor"], "lepton-app", "obb"))), obbs)
+
+
 if __name__ == "__main__":
     unittest.main()
 

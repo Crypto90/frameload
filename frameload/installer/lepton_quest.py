@@ -217,8 +217,13 @@ class LeptonInstaller:
         os.makedirs(obb_target, exist_ok=True)
         obb_count = 0
         if obb_path and os.path.isfile(obb_path):
-            shutil.copy2(obb_path, os.path.join(obb_target, os.path.basename(obb_path)))
-            obb_count = 1
+            # A main.<version>.<package>.obb often comes with a patch.<version>.<package>.obb beside it.
+            folder = os.path.dirname(os.path.abspath(obb_path))
+            own = re.compile(r"(main|patch)\.\d+\." + re.escape(package_name) + r"\.obb", re.I)
+            names = {os.path.basename(obb_path)} | {n for n in os.listdir(folder) if own.fullmatch(n)}
+            for name in sorted(names):
+                shutil.copy2(os.path.join(folder, name), os.path.join(obb_target, name))
+            obb_count = len(names)
         else:
             obb_dir = find_obb_dir(obb_path, package_name)
             if obb_dir:

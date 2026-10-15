@@ -1,0 +1,2 @@
+# Shell scripts run on the Steam Frame: never check them out with Windows line endings.
+*.sh text eol=lf

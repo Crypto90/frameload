@@ -1,40 +1,41 @@
 #!/usr/bin/env bash
-# FrameLoad: Complete Clean Uninstaller for Steam Frame & SteamOS
+# FrameLoad: uninstaller for the Steam Frame and SteamOS.
+# The work is done by FrameLoad's own uninstaller (the one behind System > Clean Uninstallation), which
+# removes only FrameLoad's own Steam shortcut and saves the signing keys of ported games first.
 set -euo pipefail
 
 say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m ✔  %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m ⚠  %s\033[0m\n' "$*"; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "$PWD")"
-FRAMELOAD_DIR="$HOME/.local/share/frameload"
-APPLICATIONS_DIR="$HOME/.local/share/applications"
-SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-GAMES_DIR="$HOME/Applications/quest-frame"
-APP_TARGET="$HOME/Applications/FrameLoad"
+if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
+    warn "Run this as your normal user, not with sudo: FrameLoad lives in your own home folder."
+    exit 1
+fi
 
-# CLI Options
+# systemctl --user needs the session's bus, which a pipe or an SSH shell may not have set.
+if [[ -z "${XDG_RUNTIME_DIR:-}" && -d "/run/user/$(id -u)" ]]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR:-}/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || echo "$PWD")"
+FRAMELOAD_DIR="$HOME/.local/share/frameload"
+DEFAULT_APP_DIR="$HOME/Applications/FrameLoad"
+
 NON_INTERACTIVE=false
 PURGE_GAMES=false
 KEEP_BACKUPS=true
 
 for arg in "$@"; do
     case "$arg" in
-        -y|--yes)
-            NON_INTERACTIVE=true
-            ;;
-        --purge-games)
-            PURGE_GAMES=true
-            ;;
-        --keep-games)
-            PURGE_GAMES=false
-            ;;
-        --keep-backups)
-            KEEP_BACKUPS=true
-            ;;
-        --purge-backups)
-            KEEP_BACKUPS=false
-            ;;
+        -y|--yes) NON_INTERACTIVE=true ;;
+        --purge-games) PURGE_GAMES=true ;;
+        --keep-games) PURGE_GAMES=false ;;
+        --keep-backups) KEEP_BACKUPS=true ;;
+        --purge-backups) KEEP_BACKUPS=false ;;
         --purge-all)
             NON_INTERACTIVE=true
             PURGE_GAMES=true
@@ -42,191 +43,139 @@ for arg in "$@"; do
             ;;
         -h|--help)
             cat <<EOF
-Usage: ./uninstall.sh [OPTIONS]
+Usage: bash uninstall.sh [OPTIONS]
 
-Completely and cleanly uninstalls FrameLoad from the Steam Frame, removing
-systemd services, desktop entries, Steam shortcuts, grid artwork, and caches.
+Removes FrameLoad from this Steam Frame: its background service, desktop entry, the frameload
+command, its own Steam shortcut and artwork, and its data in ~/.local/share/frameload.
+Installed games and their Steam shortcuts stay unless --purge-games is given. The signing keys
+of ported games are saved to ~/Documents/FrameLoad-signing-keys.
 
 Options:
-  -y, --yes          Non-interactive mode (skips confirmation prompts)
-  --purge-games      Also delete all sideloaded VR games in ~/Applications/quest-frame
-  --keep-games       Preserve installed VR games and their Steam shortcuts (default)
-  --keep-backups     Preserve game save backups in ~/.local/share/frameload/backups (default)
-  --purge-backups    Permanently delete all save game backups
-  --purge-all        Total clean wipe: remove app, caches, games, and backups
-  -h, --help         Show this help message
+  -y, --yes          Do not ask questions
+  --purge-games      Also delete every installed game (internal storage, microSD card, USB drives)
+  --keep-games       Keep installed games (default)
+  --keep-backups     Keep save backups in ~/.local/share/frameload/backups (default)
+  --purge-backups    Also delete the save backups
+  --purge-all        Same as --yes --purge-games --purge-backups
+  -h, --help         Show this help
 EOF
             exit 0
+            ;;
+        *)
+            warn "Unknown option: $arg (see --help)"
+            exit 2
             ;;
     esac
 done
 
-say "================================================================="
-say "           FrameLoad Clean Uninstaller for Steam Frame"
-say "================================================================="
+# Questions are read from the terminal, so this also works as `curl ... | bash`.
+ask() {
+    local answer=""
+    read -r -p "$1" answer </dev/tty || answer=""
+    printf '%s' "$answer"
+}
 
-# Interactive prompts if not -y
 if [[ "$NON_INTERACTIVE" != true ]]; then
-    printf "\nThis will completely remove FrameLoad and its system integrations from your device.\n"
-    read -r -p "Are you sure you want to uninstall FrameLoad? [y/N] " confirm_uninstall
-    if [[ "$confirm_uninstall" != "y" && "$confirm_uninstall" != "Y" && "$confirm_uninstall" != "yes" ]]; then
-        warn "Uninstallation cancelled by user."
-        exit 0
+    if ! { true </dev/tty; } 2>/dev/null; then
+        warn "No terminal to ask questions on. Run it again with --yes (and --purge-games / --purge-backups if wanted)."
+        exit 1
     fi
-
-    read -r -p "Do you also want to delete all sideloaded VR games in ~/Applications/quest-frame? [y/N] " confirm_games
-    if [[ "$confirm_games" == "y" || "$confirm_games" == "Y" || "$confirm_games" == "yes" ]]; then
-        PURGE_GAMES=true
-    fi
-
-    read -r -p "Do you want to preserve your game save backups? [Y/n] " confirm_backups
-    if [[ "$confirm_backups" == "n" || "$confirm_backups" == "N" || "$confirm_backups" == "no" ]]; then
-        KEEP_BACKUPS=false
-    fi
+    printf "\nThis removes FrameLoad and its system integration from this device.\n"
+    case "$(ask "Uninstall FrameLoad? [y/N] ")" in
+        y|Y|yes|YES) ;;
+        *) warn "Nothing was changed."; exit 0 ;;
+    esac
+    case "$(ask "Also delete all installed games? [y/N] ")" in
+        y|Y|yes|YES) PURGE_GAMES=true ;;
+    esac
+    case "$(ask "Keep your save backups? [Y/n] ")" in
+        n|N|no|NO) KEEP_BACKUPS=false ;;
+    esac
 fi
 
-say "Beginning clean uninstallation..."
-
-# 1. Stop and remove background systemd user service
-say "1/6 Stopping and disabling systemd background service..."
-if which systemctl >/dev/null 2>&1; then
-    systemctl --user stop frameload.service 2>/dev/null || true
-    systemctl --user disable frameload.service 2>/dev/null || true
-    if [[ -f "$SYSTEMD_USER_DIR/frameload.service" ]]; then
-        rm -f "$SYSTEMD_USER_DIR/frameload.service"
-        systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user reset-failed 2>/dev/null || true
-        ok "Removed $SYSTEMD_USER_DIR/frameload.service"
-    else
-        ok "No systemd service file found"
-    fi
-fi
-
-# Kill any lingering python serve processes
-pkill -f "frameload/cli.py serve" 2>/dev/null || true
+# A server started without systemd (run.sh --daemon, the autostart entry) would keep writing into the
+# folders that are about to be deleted.
 pkill -f "frameload.cli serve" 2>/dev/null || true
 
-# 2. Remove desktop launcher
-say "2/6 Removing desktop application launcher..."
-if [[ -f "$APPLICATIONS_DIR/frameload.desktop" ]]; then
-    rm -f "$APPLICATIONS_DIR/frameload.desktop"
-    if which update-desktop-database >/dev/null 2>&1; then
-        update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null || true
+# The FrameLoad that is installed: this script's own folder, or the standard install folder.
+APP_DIR=""
+for candidate in "$SCRIPT_DIR" "${FRAMELOAD_INSTALL_DIR:-$DEFAULT_APP_DIR}" "$DEFAULT_APP_DIR"; do
+    if [[ -f "$candidate/frameload/cli.py" ]]; then
+        APP_DIR="$candidate"
+        break
     fi
-    ok "Removed $APPLICATIONS_DIR/frameload.desktop"
-else
-    ok "No desktop launcher found"
-fi
+done
 
-# 3. Remove FrameLoad shortcut and grid artwork from Steam
-say "3/6 Unregistering FrameLoad and artwork from Steam..."
-python3 -c "
-import glob, os, sys
-
-steam_dirs = [
-    os.path.expanduser('~/.local/share/Steam'),
-    os.path.expanduser('~/.steam/steam'),
-    os.path.expanduser('~/.steam/root'),
-]
-
-for sdir in steam_dirs:
-    userdata = os.path.join(sdir, 'userdata')
-    if not os.path.isdir(userdata):
-        continue
-    users = [d for d in os.listdir(userdata) if d.isdigit() and d != '0']
-    for user in users:
-        vdf_path = os.path.join(userdata, user, 'config/shortcuts.vdf')
-        if not os.path.isfile(vdf_path):
-            continue
-        try:
-            with open(vdf_path, 'rb') as f:
-                content = f.read()
-            # Find and clean entries matching FrameLoad
-            # Using FrameLoad's built-in decoder if accessible, or clean byte inspection
-            import re
-            cleaned = re.sub(b'\\x00[0-9]+\\x00\\x02appid\\x00[\\s\\S]*?FrameLoad[\\s\\S]*?\\x08\\x08', b'', content)
-            if cleaned != content:
-                with open(vdf_path, 'wb') as f:
-                    f.write(cleaned)
-                print(f'Cleaned FrameLoad shortcut from {vdf_path}')
-        except Exception as e:
-            pass
-
-        # Clean grid artwork
-        grid_dir = os.path.join(userdata, user, 'config/grid')
-        if os.path.isdir(grid_dir):
-            for pattern in ('*FrameLoad*', '*frameload*'):
-                for f in glob.glob(os.path.join(grid_dir, pattern)):
-                    try:
-                        os.remove(f)
-                    except OSError:
-                        pass
-" 2>/dev/null || true
-ok "Cleaned Steam shortcuts and grid artwork"
-
-# 4. Handle Lepton containers & installed games
-say "4/6 Checking running containers and game libraries..."
-if which podman >/dev/null 2>&1; then
-    containers=$(podman ps -a --format "{{.Names}}" 2>/dev/null | grep "^lepton-steamlaunch-" || true)
-    if [[ -n "$containers" ]]; then
-        echo "$containers" | xargs -r podman rm -f 2>/dev/null || true
-        ok "Stopped and removed running Lepton VR game containers"
-    fi
-fi
-
-if [[ "$PURGE_GAMES" == true ]]; then
-    if [[ -d "$GAMES_DIR" ]]; then
-        rm -rf "$GAMES_DIR"
-        ok "Purged sideloaded games directory: $GAMES_DIR"
-    fi
-
-    # Check MicroSD mounts
-    if [[ -f /proc/mounts ]]; then
-        grep -E '/run/media/|/media/|/mnt/' /proc/mounts 2>/dev/null | while read -r line; do
-            m_path=$(echo "$line" | awk '{print $2}')
-            if [[ -d "$m_path/quest-frame" ]]; then
-                rm -rf "$m_path/quest-frame"
-                ok "Purged games on MicroSD at: $m_path/quest-frame"
-            fi
-        done || true
+if [[ -n "$APP_DIR" ]]; then
+    say "Uninstalling FrameLoad ($APP_DIR)..."
+    # Run from a copy of the program: the uninstaller deletes ~/Applications/FrameLoad while it runs.
+    # The function is called directly because it has the same signature in every version since v1.3.0.
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    cp -r "$APP_DIR/frameload" "$work/frameload"
+    (cd "$work" && PYTHONPATH="$work" FL_PURGE_GAMES="$PURGE_GAMES" FL_KEEP_BACKUPS="$KEEP_BACKUPS" python3 -c '
+import glob, os
+from frameload.manager import uninstaller
+from frameload.manager.uninstaller import Uninstaller
+from frameload.system import shortcuts
+if not hasattr(shortcuts, "is_frameload_itself"):
+    # Up to v1.3.6 any shortcut whose path contained "frameload" was taken for FrameLoad itself,
+    # games on a drive named FrameLoad included. Match the title only.
+    def unregister_app_from_steam(title="FrameLoad", **_):
+        removed = False
+        for user in shortcuts.get_steam_users():
+            config = os.path.join(shortcuts.STEAM_DIR, "userdata", user, "config")
+            for appid in shortcuts.remove_shortcut_by_title_or_exe(os.path.join(config, "shortcuts.vdf"), title=title):
+                removed = True
+                for art in glob.glob(os.path.join(config, "grid", f"{appid}*")):
+                    os.remove(art)
+        return removed
+    uninstaller.unregister_app_from_steam = unregister_app_from_steam
+res = Uninstaller.uninstall_frameload_app(purge_games=os.environ["FL_PURGE_GAMES"] == "true",
+                                          keep_backups=os.environ["FL_KEEP_BACKUPS"] == "true")
+for line in res.get("details", []):
+    print("  " + line)
+')
+    # Older versions leave these two behind.
+    rm -f "$HOME/.local/bin/frameload" "$HOME/.config/autostart/frameload.desktop"
+    if [[ -d "$APP_DIR" && "$APP_DIR" != "$DEFAULT_APP_DIR" ]]; then
+        warn "The program folder $APP_DIR was left in place; delete it yourself if you no longer need it."
     fi
 else
-    ok "Preserved installed VR games in $GAMES_DIR"
-fi
-
-# 5. Clean up application data, caches, and configs
-say "5/6 Cleaning data, cache, and configuration files..."
-if [[ -d "$FRAMELOAD_DIR" ]]; then
-    if [[ "$KEEP_BACKUPS" == true ]]; then
-        # Preserve backups, delete cache, data, bin, config
-        find "$FRAMELOAD_DIR" -mindepth 1 -maxdepth 1 ! -name 'backups' -exec rm -rf {} + 2>/dev/null || true
-        ok "Cleaned cache and data, preserved save backups in $FRAMELOAD_DIR/backups"
-    else
-        rm -rf "$FRAMELOAD_DIR"
-        ok "Purged entire FrameLoad data directory: $FRAMELOAD_DIR"
+    # Without FrameLoad's program there is no safe way to edit Steam's shortcut list, so it is left alone.
+    warn "FrameLoad's program folder was not found. Removing its service, launcher and data only."
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user stop frameload.service 2>/dev/null || true
+        systemctl --user disable frameload.service 2>/dev/null || true
+        rm -f "$HOME/.config/systemd/user/frameload.service"
+        systemctl --user daemon-reload 2>/dev/null || true
     fi
+    rm -f "$HOME/.local/share/applications/frameload.desktop" "$HOME/.local/bin/frameload" "$HOME/.config/autostart/frameload.desktop"
+    keys="$FRAMELOAD_DIR/frameport-home/overport-workspace/signatures"
+    if compgen -G "$keys/*.keystore" >/dev/null; then
+        mkdir -p "$HOME/Documents/FrameLoad-signing-keys"
+        cp -n "$keys"/*.keystore "$HOME/Documents/FrameLoad-signing-keys/"
+        ok "Signing keys of ported games saved to ~/Documents/FrameLoad-signing-keys"
+    fi
+    if [[ -d "$FRAMELOAD_DIR" ]]; then
+        if [[ "$KEEP_BACKUPS" == true ]]; then
+            find "$FRAMELOAD_DIR" -mindepth 1 -maxdepth 1 ! -name backups -exec rm -rf {} + 2>/dev/null || true
+        else
+            rm -rf "$FRAMELOAD_DIR"
+        fi
+    fi
+    if [[ "$PURGE_GAMES" == true ]]; then
+        warn "Games were not deleted. Remove ~/Applications/quest-frame (and quest-frame on any card) yourself."
+    fi
+    warn "FrameLoad's Steam shortcut was left in Steam; remove it there (Manage > Remove non-Steam game)."
 fi
 
-if [[ -d "$HOME/.config/frameload" ]]; then
-    rm -rf "$HOME/.config/frameload"
-    ok "Removed $HOME/.config/frameload"
-fi
+pkill -f "frameload.cli serve" 2>/dev/null || true
 
-# 6. Remove FrameLoad installation files (if installed in ~/Applications/FrameLoad)
-say "6/6 Finalizing application removal..."
-if [[ -d "$APP_TARGET" && "$APP_TARGET" != "$SCRIPT_DIR" ]]; then
-    rm -rf "$APP_TARGET"
-    ok "Removed application directory: $APP_TARGET"
-elif [[ "$SCRIPT_DIR" == "$APP_TARGET" ]]; then
-    # We are running inside the directory being deleted; schedule self-cleanup
-    trap 'rm -rf "$APP_TARGET" 2>/dev/null || true' EXIT
-    ok "Scheduled removal of $APP_TARGET upon exit"
-fi
-
-say "================================================================="
-ok "FrameLoad has been completely and cleanly uninstalled!"
+say "FrameLoad was uninstalled."
 if [[ "$KEEP_BACKUPS" == true && -d "$FRAMELOAD_DIR/backups" ]]; then
-    printf "  💾 Your save game backups were preserved at:\n     \033[1;33m%s/backups\033[0m\n" "$FRAMELOAD_DIR"
+    printf "  Save backups were kept in \033[1;33m%s/backups\033[0m\n" "$FRAMELOAD_DIR"
 fi
-printf "  ✨ No background services, shortcuts, or cache files remain.\n"
-say "================================================================="
+if [[ "$PURGE_GAMES" != true ]]; then
+    printf "  Installed games stay in ~/Applications/quest-frame and in your Steam library.\n"
+fi

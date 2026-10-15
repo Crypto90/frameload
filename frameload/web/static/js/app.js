@@ -3321,7 +3321,7 @@ function renderPortingJob(job) {
     : job.status === "running"
       ? (state.porting.launchAfter ? "The game starts by itself when this is done. You can close this window."
         : "This takes a few minutes. You can close this window; it keeps going.")
-      : job.status === "failed" ? "This did not work."
+      : job.status === "error" ? "This did not work."
         : job.kind === "port" ? `${label}. The game is in your library.`
           : ported.length ? `The porting tools are ready, and ${ported.length} waiting game(s) were ported.`
             : "The porting tools are ready.";
@@ -3332,12 +3332,12 @@ function renderPortingJob(job) {
     state.porting.rendered = signature;
     el("steps").innerHTML = (job.steps || []).map((text, i) => {
       const st = job.status === "done" ? "done" : job.status === "queued" ? "todo"
-        : i < job.step ? "done" : i > job.step ? "todo" : job.status === "failed" ? "failed" : "active";
+        : i < job.step ? "done" : i > job.step ? "todo" : job.status === "error" ? "failed" : "active";
       return `<li class="${st}"><span class="job-step-mark"></span><span>${escapeHtml(text)}</span></li>`;
     }).join("");
 
     const result = el("result");
-    if (job.status === "failed") {
+    if (job.status === "error") {
       result.className = "job-result failed";
       result.innerHTML = `<strong>What went wrong</strong><span>${escapeHtml(job.error || "Unknown error")}</span>`;
       result.style.display = "";
@@ -3426,7 +3426,7 @@ async function startPortingJob(url, body) {
 async function setPortingAuto(enabled) {
   try {
     await apiPost("/api/porting/settings", { auto: !!enabled });
-    showToast(enabled ? "Quest games are ported automatically after installing." : "Automatic porting is off. Use Port for Steam Frame on a game.", "info");
+    showToast(enabled ? "Quest games are ported automatically after installing." : "Automatic porting is off. Port & Play on a game ports it when you ask.", "info");
   } catch (e) {
     showToast(e.message, "error");
   }

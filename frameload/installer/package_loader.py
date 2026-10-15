@@ -120,12 +120,17 @@ class PackageLoader:
             elif os.path.isdir(os.path.join(dir_path, "obb", pkg)):
                 matched_obb = os.path.join(dir_path, "obb", pkg)
 
-        # 3. Check loose obb files
+        # 3. Check loose obb files: main./patch.<version>.<pkg>.obb first (the installer takes both)
         if not matched_obb and obbs:
-            for o in obbs:
-                if pkg in os.path.basename(o):
-                    matched_obb = o
-                    break
+            own = re.compile(r"(main|patch)\.\d+\." + re.escape(pkg) + r"\.obb", re.I)
+            exact = sorted(o for o in obbs if own.fullmatch(os.path.basename(o)))
+            if exact:
+                matched_obb = exact[0]
+            else:
+                for o in obbs:
+                    if pkg in os.path.basename(o):
+                        matched_obb = o
+                        break
             if not matched_obb:
                 matched_obb = obbs[0]
 
@@ -260,6 +265,12 @@ class PackageLoader:
         # Check <base_no_ext>.obb
         elif os.path.isfile(f"{base_no_ext}.obb"):
             matched_obb = f"{base_no_ext}.obb"
+        # Loose main./patch.<version>.<pkg>.obb beside the APK (the installer takes all of them)
+        else:
+            own = re.compile(r"(main|patch)\.\d+\." + re.escape(pkg) + r"\.obb", re.I)
+            loose = sorted(n for n in os.listdir(dir_name) if own.fullmatch(n))
+            if loose:
+                matched_obb = os.path.join(dir_name, loose[0])
 
         title = os.path.basename(apk_path).replace(".apk", "").replace("_", " ")
 

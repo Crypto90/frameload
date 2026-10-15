@@ -145,8 +145,11 @@ def main() -> None:
 
     # Uninstall App
     uninst_app_parser = subparsers.add_parser("uninstall-app", help="Completely uninstall FrameLoad and remove all traces from system")
+    uninst_app_parser.add_argument("-y", "--yes", action="store_true", help="Do not ask for confirmation")
     uninst_app_parser.add_argument("--purge-games", action="store_true", help="Also delete all sideloaded VR games in ~/Applications/quest-frame")
-    uninst_app_parser.add_argument("--keep-backups", action="store_true", help="Preserve game save backups in ~/.local/share/frameload/backups")
+    backups_choice = uninst_app_parser.add_mutually_exclusive_group()
+    backups_choice.add_argument("--keep-backups", action="store_true", help="Keep game save backups in ~/.local/share/frameload/backups (the default)")
+    backups_choice.add_argument("--purge-backups", action="store_true", help="Also delete the game save backups")
     # Standalone Window
     win_parser = subparsers.add_parser("window", help="Launch FrameLoad in a standalone native desktop window")
     win_parser.add_argument("--url", default="http://127.0.0.1:5050", help="Dashboard URL")
@@ -289,7 +292,7 @@ def main() -> None:
                     print_info("Aborted.")
                     sys.exit(0)
             print_info("Completely removing FrameLoad and system integrations...")
-            res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=args.keep_backups)
+            res = Uninstaller.uninstall_frameload_app(purge_games=args.purge_games, keep_backups=not args.purge_backups)
             print("Uninstallation summary:", json.dumps(res, indent=2))
             print_ok("FrameLoad successfully removed from the system.")
         elif args.command == "stop":
@@ -329,8 +332,12 @@ def main() -> None:
                 res = porting.port_installed_game(args.package, print)
                 print_ok(f"{res['title']}: {res['compat'].get('label', '')}")
         elif args.command == "window":
-            from .web.window import main as window_main
-            window_main()
+            from .web.window import available_backend, main as window_main
+            if not available_backend():
+                print_err("No native window toolkit (Qt WebEngine or WebKit2GTK) is installed. "
+                          "Run `frameload` without arguments to open the dashboard in an app window.")
+                sys.exit(2)
+            window_main(["--url", args.url] + (["--fullscreen"] if args.fullscreen else []))
         elif args.command == "tune":
             if args.list:
                 print_ok("Presets:")
