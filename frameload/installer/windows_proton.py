@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import ANCHOR_DIR, HOME
 from ..system.shortcuts import register_game_in_steam, shortcut_appid
-from .artwork import ArtworkManager
+from .artwork import ArtworkManager, steam_icon
 
 WINDOWS_LAUNCH_TEMPLATE = r"""#!/usr/bin/env bash
 # FrameLoad Windows Proton Launcher for {title}
@@ -236,12 +236,12 @@ class WindowsProtonInstaller:
             json.dump(meta, f, indent=2)
 
         # Register in Steam library
-        icon_path = os.path.join(art_dir, "icon.png")
+        icon_path = steam_icon(art_dir)
         steam_res = register_game_in_steam(
             title=final_title,
             launch_script_path=launch_script,
             anchor_dir=anchor,
-            icon_path=icon_path if os.path.isfile(icon_path) else "",
+            icon_path=icon_path,
             artwork_dir=art_dir,
             is_vr=is_vr
         )

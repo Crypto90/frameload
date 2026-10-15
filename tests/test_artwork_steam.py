@@ -138,6 +138,82 @@ class TestPlaceholders(Case):
                 artwork.save_composed(self.art, slot, data)
 
 
+class TestIconSource(Case):
+    """The Steam icon is the app's own launcher icon whenever the APK has one, never a copy of the cover."""
+    JPEG_COVER = b"\xff\xd8\xff\xe0 a real cover"
+
+    def ensure(self, cover=True):
+        cover_path = os.path.join(self.tmp, "cover.jpg")
+        with open(cover_path, "wb") as f:
+            f.write(self.JPEG_COVER)
+        with patch.object(ArtworkManager, "_fetch_cover_art", return_value=None), \
+                patch.object(ArtworkManager, "_local_thumbnail", return_value=cover_path if cover else None):
+            ArtworkManager.ensure_artwork("com.art.game", "Art Game", self.art)
+        return artwork.artwork_info(self.art, "com.art.game", "Art Game")
+
+    def test_with_an_apk_icon_the_cover_stays_out_of_the_icon_slot(self):
+        os.makedirs(self.art)
+        with open(os.path.join(self.art, "apk_icon.png"), "wb") as f:
+            f.write(PNG_LARGE)
+        info = self.ensure()
+        self.assertTrue(os.path.isfile(os.path.join(self.art, "poster.jpg")))
+        self.assertFalse(os.path.exists(os.path.join(self.art, "icon.jpg")))
+        self.assertEqual(artwork.read_state(self.art)["icon"], "generated")
+        self.assertIn("icon", info["pending"])  # the dashboard draws it from apk_icon
+        self.assertTrue(info["icon"] and info["cover"])
+        self.assertEqual(artwork.steam_icon(self.art), os.path.join(self.art, "icon.png"))
+
+    def test_without_an_icon_of_its_own_the_cover_is_the_icon(self):
+        info = self.ensure()
+        with open(os.path.join(self.art, "icon.jpg"), "rb") as f:
+            self.assertEqual(f.read(), self.JPEG_COVER)
+        self.assertNotIn("icon", info["pending"])
+        self.assertEqual(artwork.steam_icon(self.art), os.path.join(self.art, "icon.jpg"))
+
+    def test_older_installs_with_the_cover_as_icon_are_redrawn_from_the_apk_icon(self):
+        os.makedirs(self.art)
+        for name in ("poster.jpg", "icon.jpg"):  # what versions up to v1.3.6 wrote
+            with open(os.path.join(self.art, name), "wb") as f:
+                f.write(self.JPEG_COVER)
+        artwork.write_state(self.art, {"poster": "downloaded", "icon": "downloaded"})
+        self.assertNotIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])  # no APK icon: keep it
+        with open(os.path.join(self.art, "apk_icon.webp"), "wb") as f:
+            f.write(b"RIFF\x10\x00\x00\x00WEBPVP8 fake")
+        self.assertIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])
+        artwork.save_composed(self.art, "icon", PNG_SMALL)  # the dashboard's drawing replaces the copy
+        self.assertFalse(os.path.exists(os.path.join(self.art, "icon.jpg")))
+        self.assertNotIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])
+
+    def test_a_downloaded_icon_steam_cannot_show_is_redrawn(self):
+        os.makedirs(self.art)
+        with open(os.path.join(self.art, "icon.webp"), "wb") as f:
+            f.write(b"RIFF\x10\x00\x00\x00WEBPVP8 fake")
+        artwork.write_state(self.art, {"icon": "downloaded"})
+        self.assertEqual(artwork.steam_icon(self.art), "")
+        self.assertIn("icon", artwork.artwork_info(self.art, "com.art.game")["pending"])
+
+    def test_an_install_points_the_shortcut_at_an_icon_that_exists(self):
+        from frameload.installer.lepton_quest import LeptonInstaller
+        from frameload.manager.tuning import DEFAULTS, TuningManager
+        arsc = build_arsc({(2, 0, 640): "res/mipmap-xxxhdpi/app_icon.png"})
+        path = apk(os.path.join(self.tmp, "game.apk"), arsc=arsc, files={"res/mipmap-xxxhdpi/app_icon.png": PNG_LARGE})
+        cover_path = os.path.join(self.tmp, "cover.jpg")
+        with open(cover_path, "wb") as f:
+            f.write(self.JPEG_COVER)
+        calls = []
+        with patch("frameload.installer.lepton_quest.register_game_in_steam",
+                   side_effect=lambda **kw: calls.append(kw) or {"success": True}), \
+                patch.object(TuningManager, "get_global_tuning", side_effect=lambda: DEFAULTS.copy()), \
+                patch.object(ArtworkManager, "_fetch_cover_art", return_value=None), \
+                patch.object(ArtworkManager, "_local_thumbnail", return_value=cover_path):
+            LeptonInstaller.install_quest_game(package_name="com.art.game", title="Art Game", apk_path=path,
+                                               target_anchor=os.path.join(self.tmp, "quest-frame"))
+        art = os.path.join(self.tmp, "quest-frame", "com.art.game", "artwork")
+        self.assertEqual(calls[0]["icon_path"], os.path.join(art, "icon.png"))
+        self.assertTrue(os.path.isfile(calls[0]["icon_path"]))
+        self.assertIn("icon", artwork.artwork_info(art, "com.art.game")["pending"])
+
+
 class TestSteamGrid(Case):
     def setUp(self):
         super().setUp()
@@ -187,6 +263,38 @@ class TestSteamGrid(Case):
         shortcuts.register_game_in_steam("Game", launch, os.path.dirname(launch), artwork_dir=self.art)
         with open(self.vdf, "rb") as f:
             self.assertEqual(vdf_decode(f.read())["shortcuts"]["0"]["LaunchOptions"], "FRAMELOAD_KEEP_DASHBOARD=1 %command%")
+
+
+    def test_restart_steam_writes_frameload_itself_and_every_game_again(self):
+        # Steam writes back the list it read at its start when it exits, which can lack FrameLoad's
+        # own entry (installed while Steam was running).
+        from frameload.manager.installed import InstalledManager
+        from frameload.system import steam_session
+        app = os.path.join(self.tmp, "FrameLoad")
+        assets = os.path.join(app, "frameload", "web", "static", "assets")
+        os.makedirs(assets)
+        open(os.path.join(app, "run.sh"), "w").close()
+        for name in ("poster.png", "banner.png", "hero.png", "logo.png", "icon.png"):
+            with open(os.path.join(assets, name), "wb") as f:
+                f.write(PNG_SMALL)
+        game = os.path.join(self.tmp, "quest-frame", "com.art.game")
+        os.makedirs(game)
+        open(os.path.join(game, "launch.sh"), "w").close()
+        os.rename(self.art, os.path.join(game, "artwork"))
+        os.rename(os.path.join(game, "artwork", "icon.png"), os.path.join(game, "artwork", "icon.jpg"))
+        with patch.object(steam_session, "APP_DIR", app), \
+                patch.object(InstalledManager, "list_installed", return_value=[
+                    {"package": "com.art.game", "title": "Art Game", "anchor": game, "is_vr": True}]):
+            self.assertEqual(steam_session.resync_shortcuts(), 2)
+        with open(self.vdf, "rb") as f:
+            entries = {e["appname"]: e for e in vdf_decode(f.read())["shortcuts"].values()}
+        self.assertEqual(entries["FrameLoad"]["Exe"], '"' + os.path.join(app, "run.sh") + '"')
+        self.assertEqual(entries["FrameLoad"]["icon"], os.path.join(assets, "icon.png"))
+        self.assertEqual(entries["Art Game"]["icon"], os.path.join(game, "artwork", "icon.jpg"))  # the file that is there
+        grid = os.listdir(os.path.join(self.steam, "userdata", "111", "config", "grid"))
+        own = entries["FrameLoad"]["appid"]
+        self.assertEqual(sorted(g for g in grid if g.startswith(str(own))),
+                         sorted(f"{own}{s}.png" for s in ("p", "", "_hero", "_logo", "_icon")))
 
 
 class TestUploadRoute(Case):

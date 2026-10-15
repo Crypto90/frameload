@@ -238,7 +238,7 @@ class LeptonInstaller:
         for sub in ("files", "cache"):
             os.makedirs(os.path.join(data_dir, "external/Android/data", package_name, sub), exist_ok=True)
 
-        from .artwork import extract_apk_icon
+        from .artwork import extract_apk_icon, steam_icon
         extract_apk_icon(dest_apk, art_dir)
         ArtworkManager.ensure_artwork(package_name, title, art_dir, icon_url=icon_url)
 
@@ -290,7 +290,7 @@ class LeptonInstaller:
             title=title,
             launch_script_path=launch_script,
             anchor_dir=anchor,
-            icon_path=os.path.join(art_dir, "icon.png"),  # the dashboard redraws it as a PNG
+            icon_path=steam_icon(art_dir),  # a placeholder icon.png keeps its path when the dashboard redraws it
             artwork_dir=art_dir,
             is_vr=is_vr,
         )

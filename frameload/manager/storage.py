@@ -619,12 +619,13 @@ class StorageManager:
             os.chmod(launch_script, 0o755)
 
         # 5. Update Steam shortcut with new launch script path
+        from ..installer.artwork import steam_icon
         art_dir = os.path.join(new_anchor, "artwork")
         register_game_in_steam(
             title=title,
             launch_script_path=launch_script,
             anchor_dir=new_anchor,
-            icon_path=os.path.join(art_dir, "icon.png"),
+            icon_path=steam_icon(art_dir),
             artwork_dir=art_dir,
             is_vr=dep.get("is_vr", True)
         )

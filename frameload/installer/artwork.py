@@ -104,6 +104,26 @@ def slot_file(output_dir: str, slot: str) -> Optional[str]:
     return None
 
 
+def steam_icon(output_dir: str) -> str:
+    """The icon file a Steam shortcut points at: icon.png or icon.jpg, '' when there is none Steam can
+    show. The dashboard always redraws the icon as icon.png, so a placeholder's path stays valid."""
+    for ext in (".png", ".jpg"):
+        path = os.path.join(output_dir, "icon" + ext)
+        if os.path.isfile(path):
+            return path
+    return ""
+
+
+def _same_content(a: Optional[str], b: Optional[str]) -> bool:
+    try:
+        if not a or not b or os.path.getsize(a) != os.path.getsize(b):
+            return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            return fa.read() == fb.read()
+    except OSError:
+        return False
+
+
 def slot_sources(output_dir: str, package_name: str, title: str = "") -> Dict[str, str]:
     """Where each slot's picture came from. Installs from before artwork.json existed are told
     apart by comparing a slot with the plain gradient FrameLoad would have generated for it."""
@@ -195,10 +215,15 @@ def artwork_info(output_dir: str, package_name: str, title: str = "") -> Dict[st
     """What the dashboard needs to draw better artwork: which slots still hold placeholders and
     which pictures it can draw them from."""
     sources = slot_sources(output_dir, package_name, title)
+    has = lambda name: bool(slot_file(output_dir, name))  # noqa: E731
+    icon_file = slot_file(output_dir, "icon")
+    # The app's own launcher icon beats a copy of the cover, which versions up to v1.3.6 put into the
+    # icon slot; and Steam cannot show a WebP icon. The dashboard redraws either case as icon.png.
+    redraw_icon = bool(icon_file) and (icon_file.endswith(".webp") or (
+        has("apk_icon") and sources.get("icon") == "downloaded" and _same_content(icon_file, slot_file(output_dir, "poster"))))
     pending = [slot for slot in COMPOSED_SLOTS
                if sources.get(slot) == "generated" or (slot == "logo" and "logo" not in sources)
-               or (slot != "logo" and not slot_file(output_dir, slot))]
-    has = lambda name: bool(slot_file(output_dir, name))  # noqa: E731
+               or (slot != "logo" and not slot_file(output_dir, slot)) or (slot == "icon" and redraw_icon)]
     top, bottom = app_colours(package_name or title)
     return {
         "pending": pending if os.path.isdir(output_dir) else [],
@@ -290,7 +315,9 @@ class ArtworkManager:
                 if image_extension(cover):
                     art["poster"] = write("poster", cover)
                     state["poster"] = "downloaded"
-                    if "icon" not in art:
+                    # Without an icon of its own the cover is the best icon there is. With the APK's
+                    # launcher icon, the slot stays a placeholder and the dashboard draws that icon.
+                    if "icon" not in art and not slot_file(output_dir, "apk_icon"):
                         art["icon"] = write("icon", cover)
                         state["icon"] = "downloaded"
 

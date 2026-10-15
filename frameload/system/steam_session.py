@@ -99,22 +99,28 @@ def is_pending(launch_script: str) -> bool:
     return any(p["launch_script"] == launch_script for p in pending())
 
 
+APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def resync_shortcuts() -> int:
-    """Writes the shortcut of every installed game again. Run while Steam is stopped."""
+    """Writes the shortcuts of FrameLoad itself and of every installed game again. Run while Steam
+    is stopped: a Steam that exits writes back the list it read at its start, which can lack them."""
+    from ..installer.artwork import steam_icon
     from ..manager.installed import InstalledManager
-    from .shortcuts import register_game_in_steam
+    from .shortcuts import register_frameload, register_game_in_steam
 
     count = 0
+    if os.path.isfile(os.path.join(APP_DIR, "run.sh")):
+        count += 1 if register_frameload(APP_DIR).get("success") else 0
     for game in InstalledManager.list_installed():
         anchor = game.get("anchor", "")
         launch_script = os.path.join(anchor, "launch.sh")
         if not os.path.isfile(launch_script):
             continue
         art_dir = os.path.join(anchor, "artwork")
-        icon = os.path.join(art_dir, "icon.png")
         result = register_game_in_steam(
             title=game.get("title", game["package"]), launch_script_path=launch_script, anchor_dir=anchor,
-            icon_path=icon if os.path.isfile(icon) else "", artwork_dir=art_dir, is_vr=bool(game.get("is_vr", True)))
+            icon_path=steam_icon(art_dir), artwork_dir=art_dir, is_vr=bool(game.get("is_vr", True)))
         count += 1 if result.get("success") else 0
     return count
 
@@ -133,7 +139,7 @@ def restart_steam() -> Dict[str, Any]:
     Anything Steam started (this dashboard's window, a running game) ends with it."""
     if not can_restart():
         return {"success": False, "error": "Steam does not run as a user service here. Restart Steam yourself to see new games."}
-    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo = APP_DIR
     python = sys.executable or "/usr/bin/python3"
     script = (f"systemctl --user stop {STEAM_UNIT}; sleep 3; "
               f"'{python}' -m frameload.cli sync-shortcuts; "

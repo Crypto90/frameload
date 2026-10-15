@@ -98,8 +98,8 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
 
 ### 🎮 Steam library
 - **Artwork:** every install becomes a non-Steam game with a poster, banner, hero image, logo and icon.
-  - A downloaded cover is used where there is one.
-  - The app's own launcher icon is taken from its APK.
+  - The icon is the app's own launcher icon from its APK. A downloaded cover stands in only for apps without one.
+  - A downloaded cover is used for the poster where there is one.
   - The dashboard draws whatever is still missing from the icon, the cover and the title.
 - **New games:** Steam loads new shortcuts only when it starts. FrameLoad shows which games are waiting, starts them itself in the meantime, and offers **Restart Steam Now**.
 - **Steam's menu:** Steam opens its Resume / Exit menu over a game that has just started. When a ported game shows its first frame, its launcher closes that menu.
@@ -437,7 +437,7 @@ frameload stop [<package>]                       # all running games without a p
 frameload uninstall <package> [--keep-saves]     # --keep-saves: write a save backup first
 frameload storage                                # drives and their ids, as JSON
 frameload move <package> <internal|drive-id|folder>
-frameload sync-shortcuts                         # rewrite every game's Steam shortcut (while Steam is stopped)
+frameload sync-shortcuts                         # rewrite FrameLoad's and every game's Steam shortcut (while Steam is stopped)
 
 # Porting (FramePort)
 frameload port --status
@@ -557,7 +557,7 @@ FrameLoad adds itself to Steam with its own artwork:
 
 ![Hero](docs/images/steam/hero.png)
 
-If FrameLoad is missing from your Steam library, run `bash ~/Applications/FrameLoad/install.sh` again, best while Steam is stopped. `frameload sync-shortcuts` and **Restart Steam Now** only rewrite the games' shortcuts.
+If FrameLoad is missing from your Steam library, **Restart Steam Now** in the dashboard (shown while new games are waiting) writes its shortcut again together with the games'. So does `frameload sync-shortcuts` run while Steam is stopped, or running `bash ~/Applications/FrameLoad/install.sh` again.
 
 ---
 

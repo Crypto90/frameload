@@ -285,6 +285,19 @@ def refresh_grid_artwork(launch_script_path: str, artwork_dir: str) -> Dict[str,
     return done
 
 
+def register_frameload(app_dir: str) -> Dict[str, Any]:
+    """Writes FrameLoad's own shortcut (its run.sh, with the artwork it ships), like install.sh does."""
+    assets = os.path.join(app_dir, "frameload", "web", "static", "assets")
+    return register_game_in_steam(
+        title="FrameLoad",
+        launch_script_path=os.path.join(app_dir, "run.sh"),
+        anchor_dir=app_dir,
+        icon_path=os.path.join(assets, "icon.png"),
+        artwork_dir=assets,
+        is_vr=False,
+    )
+
+
 def register_game_in_steam(
     title: str,
     launch_script_path: str,

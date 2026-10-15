@@ -203,17 +203,9 @@ say "Adding FrameLoad shortcut to Steam library with full Grid artwork..."
 python3 -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR')
-from frameload.system.shortcuts import register_game_in_steam
+from frameload.system.shortcuts import register_frameload
 
-res = register_game_in_steam(
-    title='FrameLoad',
-    launch_script_path='$SCRIPT_DIR/run.sh',
-    anchor_dir='$SCRIPT_DIR',
-    icon_path='$SCRIPT_DIR/frameload/web/static/assets/icon.png',
-    artwork_dir='$SCRIPT_DIR/frameload/web/static/assets',
-    is_vr=False,
-    launch_options=''
-)
+res = register_frameload('$SCRIPT_DIR')
 if res.get('success'):
     print('✔ Successfully registered FrameLoad in Steam shortcuts.vdf!')
     for u in res.get('users', {}):
