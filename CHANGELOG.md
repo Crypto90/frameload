@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.7] - 2026-10-15
+
+### Fixed
+- **Uninstalling from a terminal damaged the Steam library.** `uninstall.sh` removed every non-Steam shortcut up to FrameLoad's own, all FrameLoad games included, never removed FrameLoad's artwork, and deleted the signing keys of ported games without saving them. Piped from curl it cancelled itself at the first question. It now asks its questions on the terminal (also through a pipe) and leaves the work to FrameLoad's own uninstaller, which removes only FrameLoad's shortcut, saves the keys first and keeps them in place if that fails. Games on a drive whose name contains "FrameLoad" keep their shortcuts, also when an older FrameLoad is uninstalled this way.
+- **Uninstalling in the headset (System > Clean Uninstallation) did nothing.** It stopped FrameLoad's service first, which ended the uninstall itself. The service is now disabled first and stopped last.
+- **A game could be uninstalled although its save backup failed**, after the dialog had said its save data is kept. The game now stays when the backup fails or is incomplete, and its page offers "Uninstall anyway" with the reason. A game that never saved anything still uninstalls normally; Windows and Linux apps, whose data backups do not cover, are only removed after that question. The Storage tab's batch uninstall reports removed and kept games separately, keeps the kept ones selected, and counts the space of games on a microSD card or USB drive.
+- **A failed self-update on a git install was reported as done**: it stashed local changes, pulled again without checking the result, and restarted on the old version. It now stops, names the local files that block the update, and leaves everything as it was.
+- `frameload uninstall-app` crashed (it now has `--yes` and `--purge-backups`, and keeps save backups by default), and `frameload window` exited with an argument error.
+- **Port & Play did nothing with automatic porting switched off**; it now ports the game you pressed it on (fetching the tools first if needed), and only that game: games queued while the switch was on wait until it is on again. A failed port showed as finished in the porting dialog, and one that failed right after the tool download left the dialog waiting without a word.
+- **Install links went around the dashboard's checks:** `frameload://launch` started apps that cannot run and games that still need porting; it now refuses the first and ports the second first, as far as the automatic porting switches allow. A confirmed `frameload://sideload` is ported like any other install and keeps the headset awake while it copies.
+- **Saving a game's Settings froze every value**, so later changes under System > Default Game Settings never reached it. A game now keeps only the values that differ from the defaults; settings saved by older versions still apply.
+- **Games ported or updated while Steam was running were treated as new to Steam**: FrameLoad started them itself (so Steam's Exit could not end them) and listed them as waiting for a Steam restart. Only games Steam really does not know yet count now, and FrameLoad itself is never listed.
+- **Only one of a game's OBB files was installed** when a main and a patch OBB lay next to the APK; both are installed now, and an OBB of another app in the same folder is left out.
+- **The Steam icon of a game with a downloaded cover was the cover**, not the app's own icon, and the shortcut could point at an icon file that did not exist. The icon now comes from the APK when it has a complete one (an adaptive icon's foreground layer alone is drawn over the app's colours); games installed earlier are redrawn by the dashboard, and WebP icons Steam cannot show are converted.
+- **FrameLoad could vanish from the Steam library for good**: Steam writes back the list it read at its start, and only the installer ever wrote FrameLoad's shortcut. Restart Steam Now and `frameload sync-shortcuts` now add it back when it is missing. Neither they nor an update rename a FrameLoad tile you renamed or replace pictures you picked for it any more.
+- Launch options you set for a game in Steam (such as `FRAMELOAD_KEEP_DASHBOARD=1 %command%`) are kept when FrameLoad rewrites its shortcut.
+- **Installs from the Install File tab or a phone did not keep the headset awake**; they do now, like downloads and ports.
+- **Reset Lepton Shader Caches only reached games on internal storage**; it now covers every drive.
+- **Move Drive always moved a game to the first other drive**, even one that cannot hold games. It now asks which drive, shows each drive's free space against the game's size, and explains drives that cannot take it.
+- **Moving a game left a dead tile in Steam**: a second shortcut was added for the new place and the old one stayed, with the id FrameLoad kept using. The shortcut now moves with the game and keeps its id, pictures and launch options.
+- Storage cards called USB drives "SSD"; they show Internal, microSD or USB now.
+- Windows and Linux apps were shown as "Lepton (Android VR)" on their page, and the System card promised Windows VR games through WineOpenXR, which FrameLoad never set up. Both now say what really happens: experimental, started with Proton or Wine.
+- `install.sh` could add a second `[containers]` table to podman's `containers.conf`, which stops every container from starting; it now adds the keyring line to the existing table.
+- `install.sh` installed pywebview where no app-mode browser was found; on Linux it opens no window and kept Firefox from being used. It is no longer installed or counted as a native window.
+
+### Changed
+- **README rewritten** for what FrameLoad does today, checked against the code: features, install, opening, updating, uninstalling, a guide, controller bindings, every command, files and settings.
+- Messages no longer point to buttons and tabs that do not exist ("Port for Steam Frame", "Sideload", "System & Diagnostics", porting "on a PC"); the Storage menu's keyring item has the same name as the System button, and Big Picture's hint bar says what X does.
+- The Storage batch bar's backup checkbox, which nothing read, is gone; the uninstall confirmation asks about the backup.
+- The uninstaller also removes the autostart entry and the browser profile of FrameLoad's window, and stops a FrameLoad server that runs without systemd. The in-headset uninstall says what it removes (only FrameLoad's own Steam shortcut) and writes what it kept to the service's log; its end page is readable in every look.
+- Release archives include `uninstall.sh`; `frameload --help` prints the command list.
+
+---
+
 ## [v1.3.6] - 2026-10-14
 
 ### Added
