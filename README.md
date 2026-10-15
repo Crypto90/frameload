@@ -81,7 +81,7 @@ The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `f
   - Each app's page shows its screenshots, and its trailer where it has one.
   - **Update N Apps** appears when installed apps have newer versions.
   - Apps open as a flat window with Android's navigation bar hidden.
-- **Install links:** `frameload://install?url=…` (an https link to an `.apk`), `frameload://sideload?path=…` and `frameload://launch?package=…`. A link never installs anything by itself: the dashboard shows where it comes from and waits for you to press **Install**. A launch link starts the game right away.
+- **Install links:** `frameload://install?url=…` (an https link to an `.apk`), `frameload://sideload?path=…` and `frameload://launch?package=…`. A link never installs anything by itself: the dashboard shows where it comes from and waits for you to press **Install**, and a Quest game installed that way is ported like any other install. A launch link does what **Play** does: it starts the game right away, ports a game built for Meta's runtime first, and refuses an app that cannot run on the Frame.
 
 ### 🔧 Quest games, ported on the headset
 - Games built for Meta's Quest runtime are converted for the Frame on the headset with [FramePort](https://github.com/spoopyghosty0/frameport): OVRPort conversion, the FrameBridge adapter, and signing.
@@ -257,7 +257,7 @@ The signing keys of ported games are always copied to `~/Documents/FrameLoad-sig
 
 ### Per-game settings
 
-Open a game in the **Library** and press **Settings**. Every control maps to something the headset reads. **System → Default Game Settings → Edit Defaults** sets the values for every game whose Settings you have not saved yet. Once you save a game's Settings (or pick a preset there), its values are its own and the defaults no longer change them.
+Open a game in the **Library** and press **Settings**. Every control maps to something the headset reads. **System → Default Game Settings → Edit Defaults** sets the values every game starts from. When you save a game's Settings, the game keeps as its own only the values you set differently from those defaults; every other setting goes on following them, so a later change of the defaults still reaches it. Setting a value back to the default makes it follow the defaults again.
 
 **For every Android app (Lepton)**
 
@@ -280,7 +280,7 @@ Open a game in the **Library** and press **Settings**. Every control maps to som
 
 FrameLoad writes only the keys whose value differs from the adapter's default into `settings.conf` and `framebridge.conf`, and leaves every other line of those files alone. For an APK without the adapter these controls are greyed out, because nothing would read them.
 
-**Presets:** *Game defaults*, *Sharper* (1.3x), *120 Hz*, *Battery saver* (0.85x at 72 Hz). A preset sets scale, refresh rate and foveation and keeps everything else.
+**Presets:** *Game defaults*, *Sharper* (1.3x), *120 Hz*, *Battery saver* (0.85x at 72 Hz). A preset sets scale, refresh rate and foveation and keeps everything else. As with any saved value, the game keeps only the preset values that differ from the defaults: with the built-in defaults, *Sharper* stores just the scale, and the game still follows the default refresh rate.
 
 **What is deliberately not here:** Lepton writes its own Android system properties (`ro.product.model=Lepton`) and offers no per-game override. So a launcher cannot spoof a Quest model, force MSAA or anisotropic filtering, or set CPU/GPU levels. Earlier FrameLoad versions showed such controls; they changed nothing and were removed in v1.3.2.
 
@@ -312,7 +312,7 @@ When a ported game shows its first frame, Steam opens its own menu (Resume / Exi
 
 To switch this off for one game, put `FRAMELOAD_KEEP_DASHBOARD=1 %command%` in its launch options in Steam (game → Properties).
 
-If Steam's "Exit game" does not end a game, use **Stop** in FrameLoad. That happens when FrameLoad started the game itself because Steam had not loaded its shortcut yet: after a new install, and right after a game was ported or updated while Steam was running.
+If Steam's "Exit game" does not end a game, use **Stop** in FrameLoad. That happens when FrameLoad started the game itself because Steam had not loaded its shortcut yet: the game was installed (or moved to another drive) while Steam was running. A game Steam already had in its library stays there when it is ported or updated, and starts through Steam.
 
 ### Hand tracking
 

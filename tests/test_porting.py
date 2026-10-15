@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.parse
 from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -393,6 +394,62 @@ class TestAutomaticPorting(LibraryTestCase):
         with patch.object(porting, "is_auto", return_value=False):
             self.assertEqual(porting.auto_port(other)["reason"], "disabled")
             self.assertEqual(porting.setup_and_port_pending(lambda line: None)["ported"], [])
+
+    def test_launch_link_does_what_play_does(self):
+        from frameload.manager.launcher import GameLauncher
+        from frameload.system.protocol import ProtocolHandler
+        porting.setup(lambda line: None)
+        pkg = "com.studio.linked"
+        self.install_unported(pkg)
+        link = f"frameload://launch?package={pkg}"
+
+        # A link is a request to play: the game is ported first, even with automatic porting off.
+        with patch.object(porting, "is_auto", return_value=False), patch.object(GameLauncher, "launch") as launch:
+            res = ProtocolHandler.handle_url(link)
+            self.assertTrue(res["success"])
+            self.assertFalse(res["result"]["launched"])
+            self.assertTrue(res["result"]["porting"]["started"])
+            launch.assert_not_called()
+            self.assertEqual(self.wait(res["result"]["porting"]["job"])["status"], "done")
+        self.assertEqual(InstalledManager.get_game(pkg)["compat"]["level"], "ready")
+
+        # Ported: the next link starts it.
+        with patch.object(GameLauncher, "launch", return_value={"success": True, "package": pkg}) as launch:
+            self.assertTrue(ProtocolHandler.handle_url(link)["success"])
+        launch.assert_called_once_with(pkg)
+
+        # An app that cannot run on the Frame is refused with its reason.
+        edit_json(self.path(pkg, "deployment.json"), lambda dep: dep.update(compat={"level": "blocked", "issues": [
+            {"severity": "error", "code": "signature_check", "message": "It checks its own signature."}]}))
+        with patch.object(GameLauncher, "launch") as launch:
+            res = ProtocolHandler.handle_url(link)
+        self.assertEqual((res["success"], res["error"]), (False, "It checks its own signature."))
+        launch.assert_not_called()
+
+        for bad in ("frameload://launch?package=com.not.installed", "frameload://launch?package=../../etc"):
+            self.assertFalse(ProtocolHandler.handle_url(bad)["success"], bad)
+
+    def test_confirmed_sideload_link_is_ported_like_a_dashboard_install(self):
+        from frameload.installer.package_loader import PackageLoader
+        from frameload.system.protocol import ProtocolHandler
+        porting.setup(lambda line: None)
+        source = os.path.join(self.tmp, "linked.apk")
+        write_text(source, "apk")
+
+        def confirm(pkg):
+            link = ProtocolHandler.handle_url("frameload://sideload?path=" + urllib.parse.quote(source))
+            with patch.object(PackageLoader, "install_source", side_effect=lambda **kw: self.install_unported(pkg)):
+                return ProtocolHandler.confirm(link["pending_id"])["result"]["porting"]
+
+        port = confirm("com.studio.sideloaded")
+        self.assertTrue(port["started"])
+        self.assertEqual(self.wait(port["job"])["status"], "done")
+        self.assertEqual(InstalledManager.get_game("com.studio.sideloaded")["compat"]["level"], "ready")
+
+        # With automatic porting off it waits for Port & Play, as after any other install.
+        with patch.object(porting, "is_auto", return_value=False):
+            self.assertEqual(confirm("com.studio.later")["reason"], "disabled")
+        self.assertEqual(InstalledManager.get_game("com.studio.later")["compat"]["level"], "needs_port")
 
 
 class TestMigration(LibraryTestCase):

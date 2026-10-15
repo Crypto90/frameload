@@ -3195,6 +3195,8 @@ function selectTuningPreset(presetId) {
 async function saveGameTuningFromModal() {
   const btn = document.getElementById("btn-save-tuning");
   const isGlobal = state.tuningTarget === "__global__";
+  // Every visible value is sent. For a game the server keeps only those that differ from the defaults,
+  // so the defaults go on reaching the settings left as they were.
   const settings = {};
   visibleTuningSpecs(state.tuningInfo || {}, isGlobal).forEach(spec => {
     const value = readTuningValue(spec);
@@ -3775,8 +3777,21 @@ async function answerLink(install) {
   try {
     const res = await apiPost(install ? "/api/links/confirm" : "/api/links/dismiss", { id: link.id });
     if (install) {
-      showToast(res.action === "sideload" ? "Installed." : "Download started.", "success");
+      const port = (res.result && res.result.porting) || {};
+      if (port.started) {
+        // Built for Meta's runtime: ported right away, as after an install from the Sideload tab.
+        state.porting.jobId = port.job.id;
+        openPortingModal();
+        showToast(port.reason === "setting_up"
+          ? "Installed. Getting the porting tools first (one time), then porting it..."
+          : "Installed. Porting it for the Steam Frame now...", "info");
+      } else if (port.needed) {
+        showToast("Installed. It needs porting before it starts: open it in the library and press Port & Play.", "warning");
+      } else {
+        showToast(res.action === "sideload" ? "Installed." : "Download started.", "success");
+      }
       loadInstalled();
+      loadSteamStatus();
     }
   } catch (e) {
     showToast(e.message, "error");

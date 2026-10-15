@@ -437,7 +437,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 games = InstalledManager.list_installed()
             except Exception:
                 games = []
-            self.send_json(hand_tracking.status_report(games))
+            self.send_json(hand_tracking.status_report(games, TuningManager.get_global_tuning()["hand_input"]))
         elif path == "/api/system/doctor":
             from .system.doctor import run_checks
             self.send_json(run_checks())
@@ -754,23 +754,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/installed/launch":
             pkg = body.get("package", "")
             try:
-                # A game built for Meta's runtime cannot start as it is: port it first, then start it.
-                dep = InstalledManager.get_game(pkg)
-                compat = (dep or {}).get("compat") or {}
-                if compat.get("level") == "blocked":
-                    reasons = [i["message"] for i in compat.get("issues", []) if i.get("severity") == "error"]
-                    self.send_json({"success": False, "launched": False, "package": pkg,
-                                    "error": reasons[0] if reasons else "This app cannot run on the Steam Frame."})
-                    return
-                if dep and porting.needs_port(dep):
-                    # Pressing Play (Port & Play) on such a game is a request to port it, whatever the switches say.
-                    outcome = porting.auto_port(dep, requested=True)
-                    if outcome.get("started") or outcome.get("reason") in ("failed", "disabled", "not_set_up"):
-                        self.send_json({"success": True, "launched": False, "package": pkg,
-                                        "title": dep.get("title", pkg), "porting": outcome})
-                        return
-                res = GameLauncher.launch(pkg)
-                self.send_json(res)
+                # Refuses apps that cannot run, and ports a game built for Meta's runtime before it starts.
+                self.send_json(GameLauncher.play(pkg))
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/installed/stop-all":

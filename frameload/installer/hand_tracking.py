@@ -37,14 +37,15 @@ def effective_mode(mode: str, requirement: str = "none") -> str:
     return "game" if fix is None else ("controllers" if fix else "hands")
 
 
-def status_report(games: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """Diagnostics for the dashboard: what the Frame supports and how each installed game is set up."""
+def status_report(games: Optional[List[Dict[str, Any]]] = None, default_mode: str = "auto") -> Dict[str, Any]:
+    """Diagnostics for the dashboard: what the Frame supports and how each installed game is set up.
+    default_mode: the hand input of games without their own (System > Default Game Settings)."""
     rows = []
     for g in games or []:
         if not g.get("is_vr", True) or g.get("kind") not in ("quest", None):
             continue
         requirement = g.get("hand_tracking", "none")
-        mode = (g.get("settings") or {}).get("hand_input", "auto")
+        mode = (g.get("settings") or {}).get("hand_input", default_mode)
         rows.append({
             "package": g.get("package", ""),
             "title": g.get("title", ""),

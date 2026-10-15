@@ -280,17 +280,27 @@ class TuningManager:
 
     @staticmethod
     def save_game_tuning(package_name: str, settings: Dict[str, Any]) -> Dict[str, Any]:
-        """Stores a game's settings and rewrites its launcher and FrameBridge files."""
+        """Stores a game's settings and rewrites its launcher and FrameBridge files.
+
+        The game keeps only the values that differ from what it would get anyway (the defaults under
+        System, else the built-in ones). A submitted value equal to that is removed from the game's own
+        settings, so a later change of the defaults still reaches it. Keys not submitted stay as they are."""
         dep = TuningManager._dep(package_name)
         if dep.get("kind", "quest") not in LEPTON_KINDS:
             raise ValueError("Settings apply to Android apps running in Lepton only.")
         if not isinstance(settings, dict):
             raise ValueError("settings must be an object")
 
+        inherited = TuningManager.get_global_tuning()
         current = normalize_settings(dep.get("settings", {}), keep_defaults=True)
         for key, value in settings.items():
-            if key in SCHEMA_BY_KEY:
-                current[key] = _coerce(key, value)
+            if key not in SCHEMA_BY_KEY:
+                continue
+            value = _coerce(key, value)
+            if value == inherited[key]:
+                current.pop(key, None)
+            else:
+                current[key] = value
         dep["settings"] = current
         TuningManager._write_dep(dep)
         TuningManager.apply_tuning_to_game(package_name)
@@ -376,6 +386,8 @@ class TuningManager:
 
     @staticmethod
     def apply_preset(package_name: str, preset_name: str) -> Dict[str, Any]:
+        """Sets a preset's scale, refresh rate and foveation. Like any saved value, a preset value equal
+        to the default is not stored: the game keeps following the defaults for it."""
         preset = PRESETS.get(preset_name)
         if not preset:
             raise ValueError(f"Unknown preset: {preset_name}")

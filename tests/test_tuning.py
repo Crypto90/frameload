@@ -218,6 +218,58 @@ class TestInstallAndApply(TuningTestCase):
         self.assertEqual((res["applied_count"], res["total"]), (1, 2))
         self.assertEqual(self.conf(pkg), {})
 
+    def stored(self, package):
+        return json.loads(self.read(package, "deployment.json"))["settings"]
+
+    def test_defaults_still_reach_settings_a_game_did_not_change(self):
+        pkg = "com.studio.defaults"
+        self.install(pkg, libs=["libframe_settings.so"])
+        defaults = DEFAULTS.copy()
+        with patch.object(TuningManager, "get_global_tuning", side_effect=lambda: dict(defaults)):
+            # The dialog sends every value it shows; only the one the player changed becomes the game's own.
+            shown = TuningManager.get_game_tuning(pkg)
+            sent = {s["key"]: shown[s["key"]] for s in SETTINGS_SCHEMA if s["scope"] == "vr"}
+            TuningManager.save_game_tuning(pkg, dict(sent, scale=1.3))
+            self.assertEqual(self.stored(pkg), {"scale": 1.3})
+
+            # A later change of the defaults reaches the refresh rate, not the scale the player set.
+            defaults.update(refresh_rate=90, scale=1.5)
+            TuningManager.apply_tuning_to_game(pkg)  # what saving the defaults does for every game
+            self.assertEqual(self.conf(pkg), {"scale": "1.30", "refresh_rate": "90"})
+
+            # Back to the default: the game follows the defaults again.
+            TuningManager.save_game_tuning(pkg, {"scale": 1.5, "refresh_rate": 90})
+            self.assertEqual(self.stored(pkg), {})
+            # The built-in value is the player's own choice while the defaults say otherwise.
+            TuningManager.save_game_tuning(pkg, {"refresh_rate": 0})
+            self.assertEqual(self.stored(pkg), {"refresh_rate": 0})
+            self.assertEqual(self.conf(pkg), {"scale": "1.50"})
+
+    def test_preset_stores_only_what_differs_from_the_defaults(self):
+        pkg = "com.studio.presetdefaults"
+        self.install(pkg, libs=["libframe_settings.so"])
+        defaults = dict(DEFAULTS, refresh_rate=90)
+        with patch.object(TuningManager, "get_global_tuning", side_effect=lambda: dict(defaults)):
+            TuningManager.apply_preset(pkg, "sharp")  # scale 1.3, game's refresh rate, follow gaze
+            self.assertEqual(self.stored(pkg), {"scale": 1.3, "refresh_rate": 0})
+            self.assertEqual(self.conf(pkg), {"scale": "1.30"})
+            TuningManager.apply_preset(pkg, "default")
+            self.assertEqual(self.stored(pkg), {"refresh_rate": 0})
+
+    def test_settings_saved_by_older_versions_still_apply(self):
+        # Up to v1.3.6 a saved dialog stored every value, the defaults included.
+        pkg = "com.studio.everything"
+        self.install(pkg, libs=["libframe_settings.so"])
+        path = os.path.join(self.anchor_root, pkg, "deployment.json")
+        dep = json.loads(self.read(pkg, "deployment.json"))
+        dep["settings"] = dict(DEFAULTS, refresh_rate=120)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dep, f)
+        self.assertEqual(TuningManager.get_game_tuning(pkg)["refresh_rate"], 120)
+        TuningManager.save_game_tuning(pkg, {k: v for k, v in DEFAULTS.items() if k != "refresh_rate"})
+        self.assertEqual(self.stored(pkg), {"refresh_rate": 120})
+        self.assertEqual(self.conf(pkg), {"refresh_rate": "120"})
+
     def test_rejects_invalid_values_and_unknown_games(self):
         pkg = "com.studio.invalid"
         self.install(pkg)

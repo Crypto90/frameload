@@ -72,6 +72,37 @@ class TestSteamSession(TempCase):
         steam_session.forget(self.script)
         self.assertEqual(steam_session.pending(started=now - 60), [])
 
+    def test_a_rewritten_shortcut_steam_already_had_is_not_waiting(self):
+        from frameload.system import shortcuts
+        from frameload.system.steam_vdf import vdf_encode
+        steam = os.path.join(self.tmp, "steam")
+        self.patch(shortcuts, "STEAM_DIR", steam)
+        self.patch(shortcuts, "get_steam_users", return_value=["111"])
+        known, new = self.script, self.write("new", "launch.sh")
+        # What Steam read when it started a minute ago.
+        self.write("steam", "userdata", "111", "config", "shortcuts.vdf", data=vdf_encode(
+            {"shortcuts": {"0": {"appid": 3000000001, "appname": "Known", "Exe": f'"{known}"'}}}))
+        started = time.time() - 60
+
+        shortcuts.register_game_in_steam("Known", known, os.path.dirname(known))  # ported while Steam runs
+        shortcuts.register_game_in_steam("New", new, os.path.dirname(new))        # installed while Steam runs
+        shortcuts.register_game_in_steam("New", new, os.path.dirname(new))        # and ported right after
+        self.assertEqual(steam_session.pending(started=started), [{"launch_script": new, "title": "New"}])
+        self.assertFalse(steam_session.pending(started=time.time() + 1))  # Steam restarted since: it has both
+
+        # A record from an older version holds only the last write: waiting until Steam restarts.
+        with open(steam_session.STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({known: {"title": "Known", "time": time.time()}}, f)
+        steam_session.note_written(known, "Known", existed=True)
+        self.assertEqual([p["title"] for p in steam_session.pending(started=started)], ["Known"])
+
+    def test_frameload_itself_is_never_a_waiting_game(self):
+        run_sh = self.write("FrameLoad", "run.sh")
+        self.write("FrameLoad", "frameload", "cli.py")
+        steam_session.note_written(run_sh, "FrameLoad")  # install.sh during an update, while Steam runs
+        steam_session.note_written(self.script, "New Game")
+        self.assertEqual([p["title"] for p in steam_session.pending(started=time.time() - 60)], ["New Game"])
+
     def test_restart_refuses_without_the_steam_service(self):
         with patch.object(steam_session, "can_restart", return_value=False), patch("subprocess.run") as run:
             self.assertFalse(steam_session.restart_steam()["success"])

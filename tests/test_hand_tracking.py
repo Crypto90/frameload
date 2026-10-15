@@ -42,6 +42,14 @@ class TestHandInput(unittest.TestCase):
         self.assertEqual(report["games_requiring_hands"], 1)
         self.assertEqual(hand_tracking.status_report()["games"], [])
 
+    def test_games_without_their_own_hand_input_follow_the_default(self):
+        # A game stores only the settings that differ from System > Default Game Settings.
+        games = [{"package": "a.vr", "kind": "quest", "is_vr": True, "framebridge": True, "settings": {}},
+                 {"package": "b.vr", "kind": "quest", "is_vr": True, "framebridge": True,
+                  "settings": {"hand_input": "auto"}}]
+        rows = hand_tracking.status_report(games, default_mode="controllers")["games"]
+        self.assertEqual([(r["mode"], r["effective"]) for r in rows], [("controllers", "controllers"), ("auto", "game")])
+
     def test_dashboard_no_longer_ships_the_fake_hand_engine(self):
         with open(os.path.join(WEB, "static", "js", "gamepad.js"), "r", encoding="utf-8") as f:
             js = f.read()

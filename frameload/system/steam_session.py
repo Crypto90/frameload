@@ -2,8 +2,8 @@
 
 Steam reads shortcuts.vdf once, when it starts, and writes its own copy back when it exits. A game
 installed while Steam is running is therefore not in the library yet, `steam://rungameid` cannot
-start it, and the entry can be overwritten on Steam's way out. FrameLoad tracks which shortcuts were
-written after Steam started, launches those games itself, and can restart Steam the safe way:
+start it, and the entry can be overwritten on Steam's way out. FrameLoad tracks which shortcuts first
+appeared after Steam started, launches those games itself, and can restart Steam the safe way:
 stop it, write every shortcut again, start it.
 """
 from __future__ import annotations
@@ -68,11 +68,20 @@ def _save(data: Dict[str, Dict[str, Any]]) -> None:
         pass
 
 
-def note_written(launch_script: str, title: str) -> None:
-    """Records that a shortcut was (re)written now."""
+def note_written(launch_script: str, title: str, existed: bool = False) -> None:
+    """Records that a shortcut was written now. existed: shortcuts.vdf already held it, so this only
+    changed it, and the time it first appeared there is kept: that time decides whether the running
+    Steam loaded it."""
     with _lock:
         data = _load()
-        data[launch_script] = {"title": title, "time": time.time()}
+        now = time.time()
+        first = now
+        if existed:
+            entry = data.get(launch_script) or {}
+            # No record: it is older than this tracking. A record from before "first" existed holds
+            # its last write, which errs towards starting the game directly.
+            first = entry.get("first", entry.get("time", 0))
+        data[launch_script] = {"title": title, "time": now, "first": first}
         _save(data)
 
 
@@ -84,7 +93,11 @@ def forget(launch_script: str) -> None:
 
 
 def pending(started: Optional[float] = None) -> List[Dict[str, Any]]:
-    """Shortcuts written after the running Steam started: not in its library yet."""
+    """Games whose shortcut first appeared after the running Steam started: not in its library yet.
+    A shortcut Steam already had and FrameLoad rewrote since (port, update) is not one of them, and
+    FrameLoad's own shortcut is not a game."""
+    from .shortcuts import is_frameload_itself
+
     started = steam_started_at() if started is None else started
     if started is None:
         return []  # Steam is not running: it reads the file fresh on its next start
@@ -92,7 +105,8 @@ def pending(started: Optional[float] = None) -> List[Dict[str, Any]]:
         data = _load()
     return [{"launch_script": path, "title": entry.get("title", "")}
             for path, entry in data.items()
-            if entry.get("time", 0) > started and os.path.isfile(path)]
+            if entry.get("first", entry.get("time", 0)) > started and os.path.isfile(path)
+            and not is_frameload_itself({"Exe": path}, title="")]
 
 
 def is_pending(launch_script: str) -> bool:

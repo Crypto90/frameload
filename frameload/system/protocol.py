@@ -5,7 +5,8 @@
     frameload://launch?package=org.example.app
 
 A link can come from any web page, so nothing is downloaded or installed until the person wearing
-the headset confirms it in the dashboard.
+the headset confirms it in the dashboard. A launch link does what Play does for a game that is
+already installed (GameLauncher.play).
 """
 from __future__ import annotations
 
@@ -102,7 +103,18 @@ class ProtocolHandler:
             if not pkg:
                 return {"success": False, "error": "Missing 'package' parameter in frameload://launch"}
             from ..manager.launcher import GameLauncher
-            return {"success": True, "action": "launch", "package": pkg, "result": GameLauncher.launch(pkg)}
+            from ..server import is_valid_package
+            if not is_valid_package(pkg):
+                return {"success": False, "action": "launch", "error": f"Invalid package name: {pkg[:120]}"}
+            # Same as Play in the dashboard: an app that cannot run is refused, a Quest game is ported first.
+            try:
+                result = GameLauncher.play(pkg)
+            except FileNotFoundError as e:  # not installed
+                result = {"success": False, "error": str(e)}
+            res = {"success": bool(result.get("success")), "action": "launch", "package": pkg, "result": result}
+            if not res["success"]:
+                res["error"] = result.get("error") or "The game could not be started."
+            return res
 
         if action == "sync":
             from ..catalog.vrp_mirror import VrpMirror
@@ -115,9 +127,15 @@ class ProtocolHandler:
         """Carries out an install request the user approved."""
         item = PendingLinks.take(link_id)
         if item["kind"] == "sideload":
+            from ..installer import porting
             from ..installer.package_loader import PackageLoader
             result = PackageLoader.install_source(source_path=item["path"], title=item["title"],
                                                   device_id=item.get("device") or None)
+            # Like an install from the dashboard: a Quest game is ported unless automatic porting is off.
+            try:
+                result["porting"] = porting.auto_port(result)
+            except Exception as e:  # the install itself succeeded
+                result["porting"] = {"needed": True, "started": False, "reason": "error", "error": str(e)}
             return {"success": True, "action": "sideload", "result": result}
 
         from ..catalog.downloader import Downloader

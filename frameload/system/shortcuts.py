@@ -144,6 +144,16 @@ def upsert_shortcut(
     return ident
 
 
+def has_shortcut(vdf_path: str, exe: str) -> bool:
+    """Whether shortcuts.vdf holds a shortcut for exe."""
+    try:
+        with open(vdf_path, "rb") as f:
+            root = vdf_decode(f.read())
+    except (OSError, ValueError, VdfError):
+        return False
+    return any(isinstance(v, dict) and v.get("Exe") == exe for v in (root.get("shortcuts") or {}).values())
+
+
 def remove_shortcut_by_exe(vdf_path: str, exe: str) -> bool:
     """Removes a shortcut matching exe."""
     if not os.path.isfile(vdf_path):
@@ -329,9 +339,11 @@ def register_game_in_steam(
     exe = f'"{launch_script_path}"'
     appid = shortcut_appid(exe, title)
     results = {}
+    vdf_paths = [os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf") for user in users]
+    # Rewriting a shortcut (after a port, update or reinstall) does not make it new to a running Steam.
+    existed = all(has_shortcut(path, exe) for path in vdf_paths)
 
-    for user in users:
-        vdf_path = os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf")
+    for user, vdf_path in zip(users, vdf_paths):
         # Steam names grid files after the id stored in the shortcut, which keeps the value it got
         # when the shortcut was first made (an older title gave another id).
         user_appid = upsert_shortcut(
@@ -351,7 +363,7 @@ def register_game_in_steam(
         results[user] = {"appid": user_appid, "artwork": art}
 
     from . import steam_session
-    steam_session.note_written(launch_script_path, title)
+    steam_session.note_written(launch_script_path, title, existed=existed)
 
     return {
         "success": True,

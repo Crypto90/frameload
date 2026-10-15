@@ -16,6 +16,26 @@ CONTAINER_PREFIX = "lepton-steamlaunch-"
 
 class GameLauncher:
     @staticmethod
+    def play(package_name: str) -> Dict[str, Any]:
+        """What Play in the dashboard and a frameload://launch link do: refuse an app that cannot run
+        on the Frame, port a game built for Meta's runtime first, and start everything else."""
+        from ..installer import porting
+
+        dep = InstalledManager.get_game(package_name)
+        compat = (dep or {}).get("compat") or {}
+        if compat.get("level") == "blocked":
+            reasons = [i["message"] for i in compat.get("issues", []) if i.get("severity") == "error"]
+            return {"success": False, "launched": False, "package": package_name,
+                    "error": reasons[0] if reasons else "This app cannot run on the Steam Frame."}
+        if dep and porting.needs_port(dep):
+            # Asking to play such a game is a request to port it, whatever the automatic switches say.
+            outcome = porting.auto_port(dep, requested=True)
+            if outcome.get("started") or outcome.get("reason") in ("failed", "disabled", "not_set_up"):
+                return {"success": True, "launched": False, "package": package_name,
+                        "title": dep.get("title", package_name), "porting": outcome}
+        return GameLauncher.launch(package_name)
+
+    @staticmethod
     def launch(package_name: str) -> Dict[str, Any]:
         """Launches a game via Steam rungameid or direct launch script."""
         dep = InstalledManager.get_game(package_name)
