@@ -7,6 +7,12 @@ const ICON_DIR = DATA_DIR . '/icons';
 const ICON_SIZE = 128;            // re-encoded to this square size when GD is available
 const ICON_MAX_BYTES = 262144;    // what an upload may be before decoding
 const ICON_TYPES = [IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp', IMAGETYPE_JPEG => 'jpg'];
+// Launcher icons an engine puts into apps that set none: they would show the engine, not the game.
+// 8 x 8 average hashes (icon_hash); an upload within DEFAULT_ICON_DISTANCE bits of one is refused.
+const DEFAULT_ICONS = [
+    '00003c3c3c3c0000', // Unity's default app icon (white cube on black): TriptoVR, QuestCraft, SKYBOX
+];
+const DEFAULT_ICON_DISTANCE = 8;
 
 function icon_file(string $package): ?string
 {
@@ -26,6 +32,46 @@ function icon_url(string $package): ?string
 {
     $file = icon_file($package);
     return $file ? '/icon.php?package=' . rawurlencode($package) . '&v=' . filemtime($file) : null;
+}
+
+/** 64-bit average hash of an image (8 x 8 greys, each bit: brighter than the mean), as 16 hex digits. */
+function icon_hash(GdImage $src): string
+{
+    $small = imagecreatetruecolor(8, 8);
+    imagefill($small, 0, 0, imagecolorallocate($small, 0, 0, 0)); // transparent areas count as black
+    imagecopyresampled($small, $src, 0, 0, 0, 0, 8, 8, imagesx($src), imagesy($src));
+    $greys = [];
+    for ($y = 0; $y < 8; $y++) {
+        for ($x = 0; $x < 8; $x++) {
+            $c = imagecolorat($small, $x, $y);
+            $greys[] = (($c >> 16) & 255) * 0.299 + (($c >> 8) & 255) * 0.587 + ($c & 255) * 0.114;
+        }
+    }
+    $mean = array_sum($greys) / 64;
+    $hex = '';
+    foreach (array_chunk($greys, 4) as $nibble) {
+        $value = 0;
+        foreach ($nibble as $grey) {
+            $value = ($value << 1) | ($grey > $mean ? 1 : 0);
+        }
+        $hex .= dechex($value);
+    }
+    return $hex;
+}
+
+function is_default_icon(GdImage $src): bool
+{
+    $hash = icon_hash($src);
+    foreach (DEFAULT_ICONS as $known) {
+        $distance = 0;
+        for ($i = 0; $i < 16; $i++) {
+            $distance += substr_count(decbin(hexdec($hash[$i]) ^ hexdec($known[$i])), '1');
+        }
+        if ($distance <= DEFAULT_ICON_DISTANCE) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -60,6 +106,9 @@ function save_icon(string $package, string $bytes): string
         $src = @imagecreatefromstring($bytes);
         if (!$src) {
             return 'the image could not be read';
+        }
+        if (is_default_icon($src)) {
+            return "this is an engine's default icon, not the game's";
         }
         $dst = imagecreatetruecolor(ICON_SIZE, ICON_SIZE);
         imagealphablending($dst, false);
