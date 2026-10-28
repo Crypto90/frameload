@@ -1587,7 +1587,7 @@ window.stopRunningGames = stopRunningGames;
 // (Show for a VR game), Stop and live numbers. It opens again by itself for a game that is running
 // when the dashboard opens, unless the player went Back to the Library from it for that game.
 state.play = { pkg: null, phase: "", error: "", launch: null, guard: null, perf: null, timer: null,
-  polls: 0, closeTimer: null, dismissed: new Set(), seenRunning: false };
+  polls: 0, missing: 0, closeTimer: null, dismissed: new Set(), seenRunning: false };
 
 const PLAY_STATS = [
   ["fps", "Frame rate"], ["gpu", "GPU"], ["cpu", "CPU"], ["mem", "Memory"], ["temp", "Temperature"], ["battery", "Battery"],
@@ -1602,7 +1602,7 @@ function openPlayOverlay(pkg = null, opts = {}) {
   if (!target) return;
   const play = state.play;
   if (play.pkg !== target) {
-    Object.assign(play, { pkg: target, guard: null, error: "", seenRunning: false, polls: 0 });
+    Object.assign(play, { pkg: target, guard: null, error: "", seenRunning: false, polls: 0, missing: 0 });
     play.launch = null;
   }
   play.dismissed.delete(target);
@@ -1678,16 +1678,19 @@ async function pollPlayOverlay() {
   }
   const entry = guard && Array.isArray(guard.games) ? guard.games.find(g => g.package === pkg) : null;
   // The guard finds a session by its lock; the library asks podman, so it is asked less often.
-  if (play.polls % 3 === 1 || (play.guard && !entry) || (!entry && play.phase === "launching")) await refreshRunningGames();
-  play.guard = entry;
+  if (play.polls % 3 === 1 || (play.guard && !entry) || play.missing || (!entry && play.phase === "launching")) await refreshRunningGames();
   const game = playGame();
   const running = !!entry || !!(game && game.is_running);
+  // One answer without the game is not its end: the guard's list and podman both blink now and then,
+  // so the screen keeps showing the last state until a second answer agrees.
+  play.missing = running || !guard ? 0 : play.missing + 1;
+  if (entry || play.missing !== 1) play.guard = entry;
   if (running) {
     play.seenRunning = true;
     if (play.phase === "launching") play.phase = "";
   } else if (play.phase !== "error" && play.phase !== "ended") {
     const starting = play.phase === "launching" && Date.now() < (state.launchingUntil || 0);
-    if (!starting) {
+    if (!starting && play.missing >= 2) {
       play.phase = "ended";
       play.error = play.seenRunning ? "" : "It did not start.";
       clearTimeout(play.closeTimer);
@@ -1719,7 +1722,7 @@ function renderPlayOverlay() {
   const name = game.title || play.pkg;
   const vr = game.is_vr !== false;
   const entry = play.guard;
-  const running = !!entry || !!game.is_running;
+  const running = !!entry || !!game.is_running || (play.missing === 1 && play.seenRunning);
   let kicker = "Now Playing";
   let status = "";
   let tone = "";
@@ -1788,7 +1791,7 @@ function renderPlayStats(entry, perf, vr) {
   const clock = gpu.mhz ? `${gpu.mhz} MHz` : "";
   if (entry && entry.gpu !== null && entry.gpu !== undefined) setPlayStat("gpu", `${entry.gpu}%`, `this game${clock ? ` · ${clock}` : ""}`);
   else if (typeof gpu.busy === "number") setPlayStat("gpu", `${gpu.busy}%`, clock || "busy");
-  else setPlayStat("gpu", gpu.mhz ? `${gpu.mhz}` : "–", gpu.mhz ? `MHz of ${gpu.max_mhz || "?"}` : "");
+  else setPlayStat("gpu", gpu.mhz ? `${gpu.mhz} MHz` : "–", gpu.mhz ? `clock, up to ${gpu.max_mhz || "?"} MHz` : "");
   setPlayStat("cpu", typeof perf.cpu_percent === "number" ? `${Math.round(perf.cpu_percent)}%` : "–",
     perf.cores ? `${perf.cores} cores` : "");
   const mem = perf.memory;
