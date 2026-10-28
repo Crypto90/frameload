@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.6] - 2026-10-28
+
+### Added
+- **The compatibility list is linked.** System → Compatibility List has an **Open the Compatibility List** button, and a game's page links to its own entry on frameload.crypto90.de. The README has it at the top and in a section of its own.
+
+---
+
 ## [v1.4.5] - 2026-10-28
 
 ### Added

@@ -9,6 +9,7 @@
 [![CI/CD](https://img.shields.io/github/actions/workflow/status/Crypto90/frameload/release.yml?logo=githubactions&logoColor=white)](https://github.com/Crypto90/frameload/actions)
 [![Platform](https://img.shields.io/badge/Platform-SteamOS%20%7C%20Linux%20ARM64-blue)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green.svg)](LICENSE)
+[![Compatibility list](https://img.shields.io/badge/Compatibility%20list-frameload.crypto90.de-00f2fe)](https://frameload.crypto90.de/#compatibility)
 [![ko-fi](https://img.shields.io/badge/Support-Ko--Fi-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/K3K314GUP?ref=frameload_readme)
 
 ---
@@ -21,7 +22,9 @@ FrameLoad runs on the Steam Frame itself (SteamOS on ARM64), so no PC is needed.
 
 Its dashboard is built for the controller's laser pointer in the headset. You can also open it from a phone or PC on the same Wi-Fi.
 
-**Contents:** [Looks](#-six-looks) · [Features](#-features) · [Install](#-install) · [Opening FrameLoad](#-opening-frameload) · [Updating](#-updating) · [Uninstalling](#-uninstalling) · [Guide](#-guide) · [Controls](#-controls) · [Command line](#-command-line) · [Files and folders](#-files-and-folders) · [Configuration](#-configuration) · [Support](#-support-the-project)
+**Which games work?** See the **[compatibility list at frameload.crypto90.de](https://frameload.crypto90.de/#compatibility)**: every tested game with its status, notes and best settings.
+
+**Contents:** [Looks](#-six-looks) · [Compatibility list](#-compatibility-list) · [Features](#-features) · [Install](#-install) · [Opening FrameLoad](#-opening-frameload) · [Updating](#-updating) · [Uninstalling](#-uninstalling) · [Guide](#-guide) · [Controls](#-controls) · [Command line](#-command-line) · [Files and folders](#-files-and-folders) · [Configuration](#-configuration) · [Support](#-support-the-project)
 
 ---
 
@@ -47,6 +50,14 @@ FrameLoad comes in six looks. Pick one under **System → Appearance**. It chang
 The fonts of the looks are bundled with FrameLoad (SIL Open Font License, see `frameload/web/static/fonts/OFL.txt`), so they work without a network. Game titles and covers in these pictures are examples.
 
 ---
+
+## ✅ Compatibility list
+
+**[frameload.crypto90.de](https://frameload.crypto90.de/#compatibility)** lists which games and apps work on the Steam Frame: **Working**, **Partial**, **Not working** or **Untested**, each with notes and the settings that work best. It starts with the FrameLoad team's own tests on the headset and grows from players' reports.
+
+- FrameLoad shows each game's status on its card in the library and on its page, with a link to the game's entry. Switch this off under **System → Compatibility List**.
+- Turn on **Share compatibility reports** there to add your sessions. After each session your headset sends the game, how long it ran, whether it showed its picture, how it ended and its settings, plus the game's icon while the list has none. It sends no name, account or log; the site keeps your headset's random id and your address only as one-way hashes.
+- The list can be read by anyone through its [API](https://frameload.crypto90.de/api.php). The site's source is in [`website/`](website/).
 
 ## ⚡ Features
 

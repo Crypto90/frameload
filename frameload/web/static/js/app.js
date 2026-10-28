@@ -4502,9 +4502,12 @@ function renderCommunityNotice(el, community) {
   const tips = (community.settings_text || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
   const reports = community.reports ? ` · ${community.reports} report${community.reports === 1 ? "" : "s"}` : " · team test";
   el.className = `compat-notice community-${escapeHtml(community.status)}`;
+  // Only the site's own address is linked, whatever the cached list says.
+  const url = typeof community.url === "string" && community.url.startsWith("https://frameload.crypto90.de/") ? community.url : "";
   el.innerHTML = `<div class="compat-title">Compatibility list: ${escapeHtml(community.label || community.status)}${escapeHtml(reports)}</div>
     ${community.note ? `<p style="margin:6px 0 0;">${escapeHtml(community.note)}</p>` : ""}
-    ${tips ? `<ul>${tips}</ul>` : ""}`;
+    ${tips ? `<ul>${tips}</ul>` : ""}
+    ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent-cyan);">Open on frameload.crypto90.de</a>` : ""}`;
   el.style.display = "block";
 }
 
