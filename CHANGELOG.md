@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.3] - 2026-10-28
+
+### Added
+- **Automatic quality.** After each session FrameLoad looks at how a ported VR game did: its frame rate against the rate it ran at (FrameBridge's pacing) and how busy it kept the graphics processor. A game that held its rate with power to spare gets one step more resolution next time (up to 1.3x); one that could not keep up steps back, first its extra resolution, then to 72 Hz, then below 1.0x. A hang or crash after a raise undoes it. Your own settings for a game always win, its settings say what automatic quality did and why, and System > Default settings turns it off.
+- **Now Playing shows what the game runs with**: its refresh rate, resolution and the headset it is told it runs on, and the frame rate against that rate. **Restart** stops and starts the game (settings apply at a start) and **Settings** opens its settings.
+- **FrameLoad Log** (System > Self-Test): FrameLoad's own log, when systemd started and stopped it and why, and any out-of-memory kills, redacted like a session report.
+- **Saves are backed up before a game changes.** An update, port or reinstall of a game with saves first makes a backup; FrameLoad keeps the newest three of these per game (backups you make yourself are never removed).
+- **Where a stuck game waits.** Stop now records every thread of the game before stopping it: their states, Android's own stack trace and, where it works, debuggerd's. A game that loads forever leaves no crash; this shows where it hangs, and the session's report carries it.
+- **Self-test**: whether every ported game sees a Meta Quest 3, and whether SteamVR's per-game settings (the refresh rate) answer.
+
+---
+
 ## [v1.5.2] - 2026-10-28
 
 ### Added
