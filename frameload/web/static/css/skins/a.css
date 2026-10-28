@@ -986,6 +986,29 @@ input:checked + .slider { background-color: #1a9fff; }
 .a-flag.port { background: #e9a23b; color: #1d1203; }
 .a-flag.update { background: #1a9fff; color: #04121f; }
 .a-flag.bad { background: #c3323c; color: #fff; }
+/* The compatibility list's verdict (frameload.crypto90.de), bottom left of the poster */
+.a-compat {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: rgba(9, 12, 18, 0.85);
+  color: #dcdedf;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a-compat i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.a-compat.working i { background: #59bf40; }
+.a-compat.partial i { background: #e9a23b; }
+.a-compat.broken i { background: #c3323c; }
 
 .a-empty {
   padding: 64px 24px;

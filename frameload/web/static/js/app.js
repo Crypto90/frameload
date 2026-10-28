@@ -1303,7 +1303,7 @@ function libraryCardHtml(game) {
           ${game.is_running ? '<span class="badge installed">Running</span>' : ''}
           ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
           ${needsAttention ? `<span class="badge compat-${escapeHtml(level)}" title="${escapeHtml(game.compat.label)}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ''}
-          ${!needsAttention && game.community && game.community.status !== "untested" ? `<span class="badge community-${escapeHtml(game.community.status)}" title="${escapeHtml(game.community.note || "Compatibility list")}">${escapeHtml(game.community.label)}</span>` : ''}
+          ${!needsAttention && communityStatus(game) ? `<span class="badge community-${escapeHtml(game.community.status)}" title="${escapeHtml(communityStatus(game).note)}">${escapeHtml(communityStatus(game).label)}</span>` : ''}
         </div>
       </div>
       <div class="card-body">
@@ -4491,6 +4491,12 @@ async function saveCompatList() {
   }
 }
 
+function communityStatus(game) {
+  const c = game && game.community;
+  if (!c || !["working", "partial", "broken"].includes(c.status)) return null;
+  return { status: c.status, label: c.label || c.status, note: c.note || "Compatibility list" };
+}
+
 // What players report about a game (the community list), on its page.
 function renderCommunityNotice(el, community) {
   if (!el) return;
@@ -5553,6 +5559,9 @@ function skinContext() {
     // showButton(game, cls, {short, icon}): Show for a running VR game, "" for anything else.
     showButton: showButtonHtml,
     updateFor: libraryUpdateFor,
+    // community(game): {status, label, note} from the compatibility list, or null (unlisted, untested,
+    // or the list is switched off). Each look draws it in its own style.
+    community: communityStatus,
     cardHtml: libraryCardHtml,
     sortSelect: () => {
       const options = [["recent", "Recently played"], ["name", "Name"], ["installed", "Recently installed"], ["size", "Size"]];

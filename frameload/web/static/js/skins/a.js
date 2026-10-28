@@ -65,6 +65,13 @@
     return "";
   }
 
+  // The compatibility list's verdict, unless the tile already says the game cannot run.
+  function compatPill(ctx, g) {
+    const c = ctx.community(g);
+    if (!c || ((g.compat && g.compat.level) || "") === "blocked") return "";
+    return `<span class="a-compat ${ctx.esc(c.status)}" title="${ctx.esc(c.note)}"><i></i>${ctx.esc(c.label)}</span>`;
+  }
+
   function metaFor(ctx, g) {
     if (g.is_running) return "Playing now";
     const parts = [];
@@ -142,6 +149,7 @@
         <div class="a-poster">
           ${img(ctx, g, "poster", "a-poster-art")}
           ${flag || `<span class="a-kind">${g.is_vr ? "VR" : "2D"}</span>`}
+          ${compatPill(ctx, g)}
         </div>
         <div class="a-name" title="${ctx.esc(g.title)}">${ctx.esc(g.title)}</div>
         <div class="a-meta">${ctx.esc(metaFor(ctx, g))}</div>

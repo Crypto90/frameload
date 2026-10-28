@@ -249,6 +249,11 @@
     if (ctx.updateFor(g)) return '<span class="f-pill f-up"><i></i>Update ready</span>';
     if (level === "blocked") return '<span class="f-pill f-bad"><i></i>Cannot run</span>';
     if (level === "needs_port") return g.port_failed ? '<span class="f-pill f-bad"><i></i>Port failed</span>' : '<span class="f-pill f-port"><i></i>Needs porting</span>';
+    const c = ctx.community(g);
+    if (c) {
+      const tone = { working: "f-ok", partial: "f-port", broken: "f-bad" }[c.status];
+      return `<span class="f-pill ${tone}" title="Compatibility list: ${ctx.esc(c.note)}"><i></i>${ctx.esc(c.label)}</span>`;
+    }
     return "";
   }
 

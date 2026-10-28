@@ -991,6 +991,19 @@ a { color: inherit; }
 .sp-pip.run::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .sp-pip.blocked { background: #ffb4ab; color: #3b0b07; }
 .sp-pip.update { background: #ffffff; color: var(--accent-ink); }
+/* The compatibility list's verdict: a dot at the icon's lower right (the pip sits at its top) */
+.sp-compat {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid rgba(14, 18, 28, 0.9);
+}
+.sp-compat.working { background: var(--ok); }
+.sp-compat.partial { background: var(--warn); }
+.sp-compat.broken { background: var(--danger); }
 
 /* Controller focus on a tile: the icon lifts and gets a white ring, like the mockup. */
 .sp-app.gamepad-focused,

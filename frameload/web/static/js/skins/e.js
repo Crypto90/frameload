@@ -67,6 +67,11 @@
     if (level(g) === "blocked") return '<span class="e-chip bad">Cannot run</span>';
     if (level(g) === "needs_port") return '<span class="e-chip warn">Needs porting</span>';
     if (view.ctx.updateFor(g)) return '<span class="e-chip info">Update</span>';
+    const c = view.ctx.community(g);
+    if (c) {
+      const tone = { working: "ok", partial: "warn", broken: "bad" }[c.status];
+      return `<span class="e-chip ${tone}" title="Compatibility list: ${esc(c.note)}"><i></i>${esc(c.label)}</span>`;
+    }
     return "";
   }
 

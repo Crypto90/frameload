@@ -59,6 +59,10 @@
     }
     if (g.is_external) parts.push(`<span>${ctx.icon("drive")}${ctx.esc(g.device_name || "External drive")}</span>`);
     if (ctx.updateFor(g)) parts.push(`<span class="upd">${ctx.icon("update")}Update available</span>`);
+    const c = ctx.community(g);
+    if (c && lv !== "blocked") {
+      parts.push(`<span class="compat ${ctx.esc(c.status)}" title="${ctx.esc(c.note)}"><i></i>Compatibility list: ${ctx.esc(c.label)}</span>`);
+    }
     return parts.join("");
   }
 
@@ -116,6 +120,8 @@
     if (level(g) === "needs_port") return `<i class="port">Port</i>`;
     if (level(g) === "blocked") return `<i class="bad">Blocked</i>`;
     if (ctx.updateFor(g)) return `<i class="upd">Update</i>`;
+    const c = ctx.community(g);
+    if (c) return `<i class="compat ${ctx.esc(c.status)}"><b></b>${ctx.esc(c.label)}</i>`;
     if (!g.is_vr) return `<i>2D</i>`;
     return "";
   }

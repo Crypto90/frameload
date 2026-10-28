@@ -108,6 +108,7 @@
           <div class="badge-overlay nd-right">
             ${update ? '<span class="badge update" title="A newer version is on the mirror">Update</span>' : ""}
             ${attention ? `<span class="badge compat-${ctx.esc(level)}" title="${ctx.esc(game.compat.label || "")}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ""}
+            ${!attention && ctx.community(game) ? `<span class="badge community-${ctx.esc(ctx.community(game).status)}" title="${ctx.esc(ctx.community(game).note)}">${ctx.esc(ctx.community(game).label)}</span>` : ""}
           </div>
         </div>
         <div class="card-body">

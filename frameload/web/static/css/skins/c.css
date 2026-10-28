@@ -505,6 +505,12 @@ body.page-scrolls .main-content:has(#tab-library.active .c-show) { padding-right
 .c-tile i.port { background: #f0a43a; color: #1f1102; }
 .c-tile i.upd { background: #fff; color: #07080d; }
 .c-tile i.bad { background: #ff6373; color: #1f0306; }
+/* The compatibility list's verdict (tile badge and the hero's meta line) */
+.c-tile i.compat { display: inline-flex; align-items: center; gap: 6px; background: rgb(7 8 13 / 0.82); color: #f4f4f6; }
+.c-tile i.compat b, .c-meta .compat i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.c-tile i.compat.working b, .c-meta .compat.working i { background: #5ee08a; }
+.c-tile i.compat.partial b, .c-meta .compat.partial i { background: #f0a43a; }
+.c-tile i.compat.broken b, .c-meta .compat.broken i { background: #ff6373; }
 .c-live {
   position: absolute; top: 8px; right: 8px;
   width: 14px; height: 14px; border-radius: 50%;

@@ -94,14 +94,17 @@
     const p = pip(ctx, game);
     const kind = game.is_vr ? "VR game" : "2D app";
     const apk = ctx.esc(ctx.art(game, "apk_icon"));
+    const c = ctx.community(game);
     return `
       <button type="button" class="sp-app" data-sp-key="app:${ctx.esc(game.package)}"
-              aria-label="${title}, ${kind}${p ? `, ${p.say}` : ""}" title="${title}"
+              aria-label="${title}, ${kind}${p ? `, ${p.say}` : ""}${c ? `, compatibility list: ${ctx.esc(c.label)}` : ""}"
+              title="${title}${c ? ` · ${ctx.esc(c.label)}` : ""}"
               onclick="openGameModal(${pkg}, 'installed')">
         <span class="sp-icon">
           <img src="${ctx.esc(ctx.art(game, "icon"))}" alt="" draggable="false" decoding="async" loading="lazy"
                onerror="if (this.dataset.tried) { this.onerror = null; this.src = '/static/assets/fallback_cover.svg'; } else { this.dataset.tried = '1'; this.src = '${apk}'; }">
           ${p ? `<i class="sp-pip ${p.cls}">${p.text}</i>` : ""}
+          ${c ? `<b class="sp-compat ${ctx.esc(c.status)}" aria-hidden="true"></b>` : ""}
         </span>
         <span class="sp-name">${title}</span>
       </button>`;

@@ -860,6 +860,7 @@ input[type="checkbox"]:not(.toggle-switch input) { accent-color: var(--accent); 
 .f-pill.f-up i { background: var(--accent-2); }
 .f-pill.f-port i { background: #d97706; }
 .f-pill.f-bad i { background: var(--danger); }
+.f-pill.f-ok i { background: var(--ok); }
 .f-none {
   grid-column: 1 / -1;
   display: grid;
