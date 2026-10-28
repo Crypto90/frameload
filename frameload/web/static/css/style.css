@@ -3391,3 +3391,185 @@ button.dropdown-item { width: 100%; border: 0; background: none; font: inherit; 
 
 #github-reports-status[data-kind="ok"] { color: var(--accent-emerald); }
 #github-reports-status[data-kind="error"] { color: var(--danger); }
+
+/* Now Playing: the running game's screen (openPlayOverlay in app.js). It is a dialog, so the
+   controller's focus and B stay inside it, but it fills the page over the game's own art. */
+.telemetry-chip.playing-chip {
+  min-height: 40px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.telemetry-chip.playing-chip .ic { width: 14px; height: 14px; flex: none; }
+.telemetry-chip.playing-chip:hover,
+.telemetry-chip.playing-chip:focus-visible { box-shadow: var(--glow); }
+
+.modal-backdrop.play-overlay {
+  z-index: 190;  /* under the other dialogs: Stop or Show may still ask something */
+  padding: 0;
+  background: var(--bg);
+  backdrop-filter: none;
+  overflow: hidden;
+}
+.play-art {
+  position: absolute;
+  inset: -40px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) saturate(1.15);
+  opacity: 0.55;
+  transform: scale(1.04);
+}
+.play-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 35%, rgb(var(--bg-rgb) / 0.25), rgb(var(--bg-rgb) / 0.85) 75%),
+    linear-gradient(to bottom, rgb(var(--bg-rgb) / 0.1), rgb(var(--bg-rgb) / 0.75));
+  pointer-events: none;
+}
+.play-overlay .modal-content.play-panel {
+  position: relative;
+  z-index: 1;
+  max-width: 920px;
+  width: calc(100% - 32px);
+  max-height: calc(100vh - 32px);
+  padding: 36px 40px 28px;
+  background: rgb(var(--bg-rgb) / 0.55);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid rgb(var(--fg-rgb) / 0.12);
+  box-shadow: 0 30px 80px rgb(var(--shade-rgb) / 0.55);
+}
+.play-head { display: flex; align-items: center; gap: 24px; }
+.play-icon {
+  flex: none;
+  width: 88px;
+  height: 88px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  background: rgb(var(--fg-rgb) / 0.06);
+  box-shadow: 0 10px 30px rgb(var(--shade-rgb) / 0.45);
+}
+.play-heading { min-width: 0; }
+.play-kicker {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.play-heading h2 {
+  margin: 4px 0 6px;
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 4vw, 2.6rem);
+  line-height: 1.1;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+.play-status { font-size: 1.05rem; color: var(--text); }
+.play-status[data-tone="ok"] { color: var(--ok); }
+.play-status[data-tone="warn"] { color: var(--warn); }
+.play-status[data-tone="bad"] { color: var(--danger); }
+
+.play-progress {
+  height: 4px;
+  margin: 22px 0 4px;
+  border-radius: var(--radius-full);
+  background: rgb(var(--fg-rgb) / 0.08);
+  overflow: hidden;
+  visibility: hidden;
+}
+.play-progress.busy { visibility: visible; }
+.play-progress span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-end));
+}
+.play-progress.busy span { animation: play-progress 1.4s ease-in-out infinite; }
+@keyframes play-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+
+.play-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 26px;
+}
+.play-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgb(var(--fg-rgb) / 0.05);
+  border: 1px solid rgb(var(--fg-rgb) / 0.08);
+}
+.play-stat-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.play-stat-value {
+  font-size: 1.7rem;
+  line-height: 1.2;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.play-stat-note {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  min-height: 1.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.play-stat[data-tone="warn"] { border-color: rgb(var(--warn-rgb) / 0.6); }
+.play-stat[data-tone="warn"] .play-stat-value { color: var(--warn); }
+.play-stat[data-tone="bad"] { border-color: rgb(var(--danger-rgb) / 0.6); }
+.play-stat[data-tone="bad"] .play-stat-value { color: var(--danger); }
+
+.play-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.play-actions button {
+  min-height: 52px;
+  padding: 0 26px;
+  font-size: 1.02rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.play-actions .ic { width: 18px; height: 18px; flex: none; }
+#play-resume { flex: 1 1 260px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#play-resume:disabled, #play-stop:disabled { opacity: 0.5; cursor: default; }
+.play-hint { margin: 16px 0 0; font-size: 0.9rem; color: var(--text-muted); }
+.play-hint:empty { display: none; }
+
+@media (max-width: 700px) {
+  .play-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .play-overlay .modal-content.play-panel { padding: 24px 18px 20px; }
+  .play-head { gap: 16px; }
+  .play-icon { width: 64px; height: 64px; }
+  .play-actions button { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .play-progress.busy span { animation-duration: 4s; }
+}

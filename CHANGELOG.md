@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.9] - 2026-10-28
+
+### Added
+- **Now Playing screen.** Pressing Play covers the dashboard with the game's own screen: its art and icon, what it is doing (starting Android, loading, running, paused, picture frozen, ended), and three big buttons: **Resume** (closes Steam's menu so the VR game is in front), **Stop**, and **Back to Library** (the game keeps running). Live numbers update every 2 seconds: the game's frame rate, its share of the GPU and the GPU clock, CPU, memory, the hottest of CPU and GPU temperature, and battery, turning amber or red when something runs hot or low.
+- The screen also opens by itself when you come back to FrameLoad while a game runs, unless you went Back to the Library from it. A **Now Playing** chip in the header brings it back. When the game ends it says so and closes after a few seconds; if the session ended badly, What happened follows. A game that cannot start says why on the same screen instead of in a toast.
+
+---
+
 ## [v1.4.8] - 2026-10-28
 
 ### Fixed

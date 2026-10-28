@@ -581,8 +581,19 @@ class TestDashboardWiring(unittest.TestCase):
             self.assertTrue(needle in self.page, needle)
         # Right beside the Stop chip.
         self.assertRegex(self.page, r'id="header-show-game"[^\n]*</button>\n\s*<button id="header-stop-game"')
-        for needle in ("/api/installed/show-game", "/api/ui/starting", "If you only hear it, press Show ${name}.",
+        for needle in ("/api/installed/show-game", "/api/ui/starting", "If you only hear the game, press Resume.",
                        steam_ui.MENU_LEFT_OPEN):
+            self.assertTrue(needle in self.js, needle)
+
+    def test_now_playing_screen(self):
+        # Play opens the running game's screen: Resume is Show, Stop, and Back (B on a controller) keeps it running.
+        for needle in ('id="play-overlay"', 'onclick="playOverlayResume()"', 'onclick="playOverlayStop()"',
+                       'data-back onclick="closePlayOverlay(true)"', 'id="header-now-playing"'):
+            self.assertTrue(needle in self.page, needle)
+        launch = self.js[self.js.index("async function launchGame("):]
+        self.assertIn('openPlayOverlay(pkg, { launching: true })', launch[:launch.index("\n}\n")])
+        for needle in ('apiGet("/api/guard")', 'apiGet("/api/system/perf")', "showGame(state.play.pkg)",
+                       "await stopGame(pkg)"):
             self.assertTrue(needle in self.js, needle)
 
 

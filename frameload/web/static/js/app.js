@@ -1207,6 +1207,7 @@ async function loadInstalled() {
     state.installedLoaded = true;  // from now on "no game is running" can be told (noteSessionAlerts)
     renderInstalledGrid();
     renderStopChip();
+    offerPlayOverlay();
   } catch (err) {
     console.error("Error loading installed library:", err);
     container.innerHTML = `
@@ -1418,10 +1419,13 @@ async function launchGame(pkg) {
   const game = (state.installed || []).find(g => g.package === pkg);
   const name = game ? game.title : pkg;
   state.launchingUntil = Date.now() + 60000;  // no "What happened" dialog over a game that is starting
-  showToast(`Starting ${name}...`, "info");
+  const modal = document.getElementById("game-modal");
+  if (modal && modal.classList.contains("open")) closeModal();
+  openPlayOverlay(pkg, { launching: true });
   try {
     const data = await apiPost("/api/installed/launch", { package: pkg });
     const port = data.porting;
+    if (port && (port.started || port.needed || port.reason === "failed")) closePlayOverlay();
     if (port && port.started) {
       // Built for Meta's runtime: it is ported first and started as soon as that is done.
       state.porting.jobId = port.job.id;
@@ -1436,20 +1440,18 @@ async function launchGame(pkg) {
       showToast(`${name} needs porting before it can start. Open the game and press Port & Play.`, "warning");
     } else if (data.success) {
       // A VR game appears when it shows its first picture; until then (or if Steam's menu stays
-      // over it) it can only be heard, and Show brings it to the front.
+      // over it) it can only be heard, and Resume (Show) brings it to the front.
       const direct = !data.launched_via_steam && data.in_steam_library === false;
-      showToast(game && game.is_vr
-        ? `Starting ${name}. If you only hear it, press Show ${name}.${direct ? " Steam has not loaded it yet, so end it with Stop here." : ""}`
-        : data.launched_via_steam ? "Starting through Steam..."
-        : direct ? "Starting directly: Steam has not loaded this game yet. Use Stop in FrameLoad to close it."
-        : "Starting...", "success");
+      if (state.play.pkg === pkg && state.play.launch) state.play.launch.direct = direct;
+      if (playOverlayOpen()) renderPlayOverlay();
+      else showToast(direct ? "Starting directly: Steam has not loaded this game yet. Use Stop in FrameLoad to close it." : `Starting ${name}...`, "success");
       loadInstalled();
       [4000, 12000, 25000].forEach(delay => setTimeout(refreshRunningGames, delay));
-    } else {
+    } else if (!playOverlayFailed(pkg, data.error || "FrameLoad could not start it.")) {
       showToast(data.error || "Failed to launch game", "error");
     }
   } catch (err) {
-    showToast(`Error: ${err.message}`, "error");
+    if (!playOverlayFailed(pkg, err.message)) showToast(`Error: ${err.message}`, "error");
   }
 }
 
@@ -1462,10 +1464,17 @@ function renderStopChip() {
     chip.style.display = running.length ? "" : "none";
     chip.textContent = running.length === 1 ? `Stop ${running[0].title}` : `Stop ${running.length} Games`;
   }
+  // The running game's screen has Resume; the header offers it back while that screen is closed.
+  const playing = document.getElementById("header-now-playing");
+  const screenOpen = playOverlayOpen();
+  if (playing) {
+    playing.style.display = running.length && !screenOpen ? "" : "none";
+    playing.innerHTML = `${icon("play")}${running.length === 1 ? escapeHtml(running[0].title) : `${running.length} Games Running`}`;
+  }
   const show = document.getElementById("header-show-game");
   if (show) {
     const vr = running.filter(g => g.is_vr);
-    show.style.display = vr.length ? "" : "none";
+    show.style.display = vr.length && !playing ? "" : "none";
     show.textContent = vr.length === 1 ? `Show ${vr[0].title}` : "Show Game";
     show.title = vr.length === 1 ? `Close Steam's menu so ${vr[0].title} is in front` : "Close Steam's menu so the running game is in front";
   }
@@ -1540,6 +1549,8 @@ async function refreshRunningGames() {
     state.installedLoaded = true;
     if (before.join(",") !== after.join(",")) renderInstalledGrid();  // only redraw when something started or stopped
     renderStopChip();
+    offerPlayOverlay();
+    before.filter(pkg => !after.includes(pkg)).forEach(pkg => state.play.dismissed.delete(pkg));
     // A game ended: its session is recorded within seconds, then "What happened" can open.
     if (before.some(pkg => !after.includes(pkg))) [3000, 10000].forEach(delay => setTimeout(loadSystemTelemetry, delay));
   } catch (e) {
@@ -1571,6 +1582,255 @@ async function stopRunningGames() {
 }
 window.stopGame = stopGame;
 window.stopRunningGames = stopRunningGames;
+
+// Now Playing: a full-page screen over the dashboard from Play until the game ends, with Resume
+// (Show for a VR game), Stop and live numbers. It opens again by itself for a game that is running
+// when the dashboard opens, unless the player went Back to the Library from it for that game.
+state.play = { pkg: null, phase: "", error: "", launch: null, guard: null, perf: null, timer: null,
+  polls: 0, closeTimer: null, dismissed: new Set(), seenRunning: false };
+
+const PLAY_STATS = [
+  ["fps", "Frame rate"], ["gpu", "GPU"], ["cpu", "CPU"], ["mem", "Memory"], ["temp", "Temperature"], ["battery", "Battery"],
+];
+
+function playGame() {
+  return (state.installed || []).find(g => g.package === state.play.pkg) || null;
+}
+
+function openPlayOverlay(pkg = null, opts = {}) {
+  const target = pkg || ((state.installed || []).find(g => g.is_running) || {}).package;
+  if (!target) return;
+  const play = state.play;
+  if (play.pkg !== target) {
+    Object.assign(play, { pkg: target, guard: null, error: "", seenRunning: false, polls: 0 });
+    play.launch = null;
+  }
+  play.dismissed.delete(target);
+  play.phase = opts.launching ? "launching" : "";
+  if (opts.launching) play.launch = { at: Date.now() };
+  clearTimeout(play.closeTimer);
+  const overlay = document.getElementById("play-overlay");
+  const game = playGame() || { package: target, title: target };
+  const art = document.getElementById("play-art");
+  art.style.backgroundImage = `url("${artUrl(game, "hero")}")`;
+  const iconEl = document.getElementById("play-icon");
+  iconEl.style.visibility = "";
+  iconEl.onerror = () => { iconEl.style.visibility = "hidden"; };
+  iconEl.src = artUrl(game, "icon");
+  document.getElementById("play-title").textContent = game.title || target;
+  const stats = document.getElementById("play-stats");
+  stats.innerHTML = PLAY_STATS.map(([key, label]) =>
+    `<div class="play-stat" data-stat="${key}"><span class="play-stat-label">${label}</span><strong class="play-stat-value">–</strong><span class="play-stat-note"></span></div>`).join("");
+  overlay.classList.add("open");
+  renderPlayOverlay();
+  renderStopChip();
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  const first = ["play-resume", "play-stop", "play-back"].map(id => document.getElementById(id))
+    .find(b => b && b.style.display !== "none" && !b.disabled);
+  if (first) {
+    first.focus({ preventScroll: true });
+    if (window.gamepadNav && window.gamepadNav.setFocus) window.gamepadNav.setFocus(first);
+  }
+  clearInterval(play.timer);
+  play.timer = setInterval(pollPlayOverlay, 2000);
+  pollPlayOverlay();
+}
+
+function closePlayOverlay(dismiss = false) {
+  const play = state.play;
+  clearInterval(play.timer);
+  clearTimeout(play.closeTimer);
+  play.timer = null;
+  if (dismiss && play.pkg && play.phase !== "ended" && play.phase !== "error") play.dismissed.add(play.pkg);
+  document.getElementById("play-overlay").classList.remove("open");
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+  renderStopChip();
+}
+
+function playOverlayOpen() {
+  const overlay = document.getElementById("play-overlay");
+  return !!(overlay && overlay.classList.contains("open"));
+}
+
+// Launch errors land here instead of a toast while the screen is up.
+function playOverlayFailed(pkg, message) {
+  if (!playOverlayOpen() || state.play.pkg !== pkg) return false;
+  state.play.phase = "error";
+  state.play.error = message;
+  state.launchingUntil = 0;
+  renderPlayOverlay();
+  return true;
+}
+
+async function pollPlayOverlay() {
+  const play = state.play;
+  if (!play.pkg || !playOverlayOpen() || document.hidden) return;
+  play.polls += 1;
+  const pkg = play.pkg;
+  const [guard, perf] = await Promise.all([
+    apiGet("/api/guard").catch(() => null),
+    apiGet("/api/system/perf").catch(() => null),
+  ]);
+  if (pkg !== play.pkg) return;
+  if (perf) {
+    play.perf = perf;
+    if (state.perf) state.perf.last = perf;
+  }
+  const entry = guard && Array.isArray(guard.games) ? guard.games.find(g => g.package === pkg) : null;
+  // The guard finds a session by its lock; the library asks podman, so it is asked less often.
+  if (play.polls % 3 === 1 || (play.guard && !entry) || (!entry && play.phase === "launching")) await refreshRunningGames();
+  play.guard = entry;
+  const game = playGame();
+  const running = !!entry || !!(game && game.is_running);
+  if (running) {
+    play.seenRunning = true;
+    if (play.phase === "launching") play.phase = "";
+  } else if (play.phase !== "error" && play.phase !== "ended") {
+    const starting = play.phase === "launching" && Date.now() < (state.launchingUntil || 0);
+    if (!starting) {
+      play.phase = "ended";
+      play.error = play.seenRunning ? "" : "It did not start.";
+      clearTimeout(play.closeTimer);
+      play.closeTimer = setTimeout(() => { if (state.play.phase === "ended") closePlayOverlay(); }, 4000);
+      setTimeout(loadSystemTelemetry, 4500);  // "What happened" may follow, once this screen is gone
+    }
+  }
+  renderPlayOverlay();
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h} h ${m} min` : m ? `${m} min` : `${s} s`;
+}
+
+function setPlayStat(key, value, note = "", tone = "") {
+  const el = document.querySelector(`#play-stats [data-stat="${key}"]`);
+  if (!el) return;
+  el.querySelector(".play-stat-value").textContent = value;
+  el.querySelector(".play-stat-note").textContent = note;
+  el.dataset.tone = tone;
+}
+
+function renderPlayOverlay() {
+  const play = state.play;
+  const game = playGame() || { package: play.pkg, title: play.pkg, is_vr: true };
+  const name = game.title || play.pkg;
+  const vr = game.is_vr !== false;
+  const entry = play.guard;
+  const running = !!entry || !!game.is_running;
+  let kicker = "Now Playing";
+  let status = "";
+  let tone = "";
+  let busy = false;
+  if (play.phase === "error") {
+    kicker = "Could Not Start";
+    status = play.error || `${name} could not be started.`;
+    tone = "bad";
+  } else if (play.phase === "ended") {
+    kicker = play.error ? "Did Not Start" : "Ended";
+    status = play.error ? `${name} closed before it showed a picture.` : `${name} has closed.`;
+    tone = play.error ? "bad" : "";
+  } else if (!running) {
+    kicker = "Starting";
+    status = `Starting Android for ${name}…`;
+    busy = true;
+  } else if (!entry || entry.state === "loading") {
+    kicker = "Loading";
+    status = vr ? `${name} is loading. It appears in the headset with its first picture.` : `${name} is opening in its own window.`;
+    busy = true;
+  } else if (entry.state === "paused") {
+    status = `Paused because ${entry.paused || "it is in the background"}.`;
+  } else if (entry.state === "silent") {
+    status = `No new picture for ${entry.frame_age || 0} s.`;
+    tone = "warn";
+  } else {
+    status = entry.fps ? `Running at ${Math.round(entry.fps)} fps.` : "Running.";
+    tone = "ok";
+  }
+  if (running && game.last_played && !play.phase) kicker += ` · ${formatClock(Date.now() / 1000 - game.last_played)}`;
+  document.getElementById("play-kicker").textContent = kicker;
+  const statusEl = document.getElementById("play-status");
+  statusEl.textContent = status;
+  statusEl.dataset.tone = tone;
+  document.getElementById("play-progress").classList.toggle("busy", busy);
+
+  const over = play.phase === "ended" || play.phase === "error";
+  const resume = document.getElementById("play-resume");
+  resume.innerHTML = `${icon("play")}Resume ${escapeHtml(name)}`;
+  resume.style.display = vr && !over ? "" : "none";
+  resume.disabled = !running;
+  resume.title = `Close Steam's menu so ${name} is in front`;
+  const stop = document.getElementById("play-stop");
+  stop.innerHTML = `${icon("stop")}Stop`;
+  stop.style.display = over ? "none" : "";
+  stop.disabled = !running && play.phase !== "launching";
+  document.getElementById("play-back").textContent = over ? "Close" : "Back to Library";
+  document.getElementById("play-stats").style.display = over ? "none" : "";
+
+  const launch = play.launch || {};
+  document.getElementById("play-hint").textContent = over ? ""
+    : launch.direct ? "Steam has not loaded this game yet, so close it with Stop here, not from Steam's menu."
+    : vr ? "Open Steam's menu to come back here. If you only hear the game, press Resume."
+    : "";
+  renderPlayStats(entry, play.perf || {}, vr);
+}
+
+function renderPlayStats(entry, perf, vr) {
+  const sys = state.system || {};
+  if (entry && entry.fps) {
+    setPlayStat("fps", `${Math.round(entry.fps)}`, entry.state === "silent" ? "picture stopped" : "fps", entry.state === "silent" ? "warn" : "");
+  } else {
+    setPlayStat("fps", "–", !vr ? "2D window" : entry && !entry.framebridge ? "not reported by this game" : "waiting for the first picture");
+  }
+  const gpu = perf.gpu || {};
+  const clock = gpu.mhz ? `${gpu.mhz} MHz` : "";
+  if (entry && entry.gpu !== null && entry.gpu !== undefined) setPlayStat("gpu", `${entry.gpu}%`, `this game${clock ? ` · ${clock}` : ""}`);
+  else if (typeof gpu.busy === "number") setPlayStat("gpu", `${gpu.busy}%`, clock || "busy");
+  else setPlayStat("gpu", gpu.mhz ? `${gpu.mhz}` : "–", gpu.mhz ? `MHz of ${gpu.max_mhz || "?"}` : "");
+  setPlayStat("cpu", typeof perf.cpu_percent === "number" ? `${Math.round(perf.cpu_percent)}%` : "–",
+    perf.cores ? `${perf.cores} cores` : "");
+  const mem = perf.memory;
+  if (mem) {
+    const share = mem.used / mem.total;
+    setPlayStat("mem", `${(mem.used / 1024 ** 3).toFixed(1)} GB`, `of ${Math.round(mem.total / 1024 ** 3)} GB`, share > 0.9 ? "bad" : share > 0.8 ? "warn" : "");
+  }
+  const temps = perf.temps || {};
+  const hottest = Math.max(temps.cpu || 0, temps.gpu || 0);
+  if (hottest) {
+    const parts = [temps.cpu ? `CPU ${Math.round(temps.cpu)}°` : "", temps.gpu ? `GPU ${Math.round(temps.gpu)}°` : ""].filter(Boolean);
+    setPlayStat("temp", `${Math.round(hottest)}°C`, parts.join(" · "), hottest >= 90 ? "bad" : hottest >= 80 ? "warn" : "");
+  }
+  if (sys.battery) {
+    const pct = sys.battery.percent;
+    setPlayStat("battery", `${pct}%`, sys.battery.plugged ? "charging" : "", !sys.battery.plugged && pct <= 10 ? "bad" : !sys.battery.plugged && pct <= 20 ? "warn" : "");
+  }
+}
+
+function playOverlayResume() {
+  if (state.play.pkg) showGame(state.play.pkg);
+}
+
+async function playOverlayStop() {
+  const pkg = state.play.pkg;
+  if (!pkg) return;
+  document.getElementById("play-stop").disabled = true;
+  await stopGame(pkg);
+  pollPlayOverlay();
+}
+
+// A game that is running when the dashboard opens (or starts from Steam) gets the screen too.
+function offerPlayOverlay() {
+  if (playOverlayOpen() || document.querySelector(".modal-backdrop.open")) return;
+  const game = (state.installed || []).find(g => g.is_running && !state.play.dismissed.has(g.package));
+  if (game) openPlayOverlay(game.package);
+}
+
+window.openPlayOverlay = openPlayOverlay;
+window.closePlayOverlay = closePlayOverlay;
+window.playOverlayResume = playOverlayResume;
+window.playOverlayStop = playOverlayStop;
 
 async function uninstallGame(pkg, keepSaves = true) {
   const target = (state.installed || []).find(g => g.package === pkg);

@@ -62,6 +62,7 @@
       </div>
       <div id="header-lepton" class="telemetry-chip lepton missing" style="display:none;"></div>
       <button id="header-perf" class="telemetry-chip perf-chip" style="display:none;" onclick="openPerformanceCard()" title="CPU and memory use"></button>
+      <button id="header-now-playing" class="telemetry-chip playing-chip" style="display:none;" onclick="openPlayOverlay()" title="Open the running game's screen"></button>
       <button id="header-show-game" class="telemetry-chip show-chip" style="display:none;" onclick="showRunningGame()" title="Close Steam's menu so the running game is in front"></button>
       <button id="header-stop-game" class="telemetry-chip stop-chip" style="display:none;" onclick="stopRunningGames()" title="Stop the running game"></button>
       <button id="header-porting" class="telemetry-chip porting-chip" style="display:none;" onclick="openPortingModal()" title="Show porting progress"></button>
@@ -865,6 +866,29 @@
         <button id="drawer-pause-btn" class="btn-secondary" style="padding:6px 14px; font-size:0.8rem;" onclick="toggleActiveDownloadPause()">Pause</button>
         <button class="btn-secondary" style="padding:6px 14px; font-size:0.8rem;" onclick="document.querySelector('[data-tab=downloads]').click()">View Queue</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Now Playing: covers the page while a game starts and runs (openPlayOverlay in app.js) -->
+  <div id="play-overlay" class="modal-backdrop play-overlay" role="dialog" aria-modal="true" aria-labelledby="play-title">
+    <div id="play-art" class="play-art" aria-hidden="true"></div>
+    <div class="modal-content play-panel">
+      <div class="play-head">
+        <img id="play-icon" class="play-icon" alt="" width="88" height="88">
+        <div class="play-heading">
+          <div id="play-kicker" class="play-kicker">Starting</div>
+          <h2 id="play-title"></h2>
+          <div id="play-status" class="play-status" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <div id="play-progress" class="play-progress" aria-hidden="true"><span></span></div>
+      <div id="play-stats" class="play-stats"></div>
+      <div class="play-actions">
+        <button id="play-resume" type="button" class="btn-primary" onclick="playOverlayResume()"></button>
+        <button id="play-stop" type="button" class="btn-danger" onclick="playOverlayStop()"></button>
+        <button id="play-back" type="button" class="btn-secondary" data-back onclick="closePlayOverlay(true)">Back to Library</button>
+      </div>
+      <p id="play-hint" class="play-hint"></p>
     </div>
   </div>
 
