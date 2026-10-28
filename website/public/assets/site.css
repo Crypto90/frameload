@@ -23,7 +23,9 @@
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-display: "Space Grotesk", var(--font);
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  color-scheme: dark;
+  /* "only": the page is dark by design, so Chrome's forced dark, Samsung Internet's and Opera's dark
+     modes do not repaint it (see also meta color-scheme and darkreader-lock in app/layout.php). */
+  color-scheme: dark only;
 }
 
 * { box-sizing: border-box; }

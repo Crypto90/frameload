@@ -16,8 +16,13 @@ function page_start(string $title, string $description, string $active = ''): vo
 <meta property="og:description" content="<?= h($description) ?>">
 <meta property="og:image" content="/assets/img/hero.jpg">
 <meta name="theme-color" content="#070b15">
+<!-- The page is dark by design: browsers' automatic dark modes and Dark Reader leave it alone. -->
+<meta name="color-scheme" content="dark only">
+<meta name="supported-color-schemes" content="dark">
+<meta name="darkreader-lock">
+<script src="/assets/guard.js?v=2"></script>
 <link rel="icon" href="/assets/img/favicon.png">
-<link rel="stylesheet" href="/assets/site.css?v=1">
+<link rel="stylesheet" href="/assets/site.css?v=2">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
