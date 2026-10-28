@@ -81,7 +81,8 @@ LEPTON_VERSION_RE = re.compile(r"Lepton (\S+) \(rootfs (\S+)\) starting up")
 # launchlog findings that mean the game never really started.
 START_FAILURES = ("The APK has no launcher activity", "Lepton could not read the APK", "podman ran out of kernel keyrings",
                   "Android refused to install the APK", "The game's files were not found", "Lepton was not found",
-                  "The game asks for OpenXR 1.1", "The game needs Meta's runtime", "The container stopped early")
+                  "The game asks for OpenXR 1.1", "The game needs Meta's runtime", "The container stopped early",
+                  "The game's data files are missing")
 # Where a crash happened, by the library of the backtrace's first frame that says something.
 LIBRARY_PLACES = (
     (("libgallium_dri", "freedreno", "zink", "mesa"), "the headset's graphics driver"),

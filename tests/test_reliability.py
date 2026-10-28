@@ -23,7 +23,7 @@ from frameload.catalog.fdroid import FDroidCatalog  # noqa: E402
 from frameload.catalog.models import CatalogGame  # noqa: E402
 from frameload.installer import artwork  # noqa: E402
 from frameload.manager import files as file_manager  # noqa: E402
-from frameload.manager import launchlog, updates  # noqa: E402
+from frameload.manager import launchlog, sessions, updates  # noqa: E402
 from frameload.manager.backup import SaveBackupManager  # noqa: E402
 from frameload.manager.installed import InstalledManager  # noqa: E402
 from frameload.manager.launcher import GameLauncher  # noqa: E402
@@ -664,6 +664,27 @@ class TestLaunchLog(TempCase):
         self.assertEqual(titles("nothing special"), ["No known problem found in the log"])
         # An error outranks an earlier sign of life.
         self.assertNotIn("The game was running (72 fps)", titles("FrameBridge: pacing: 72 fps\nFatal signal 11 (SIGSEGV)"))
+
+    def test_openxr_fallback_and_missing_data_or_services(self):
+        def titles(*lines):
+            return [f["title"] for f in launchlog.diagnose(list(lines))]
+
+        # Unity asks for 1.1 first and goes on with 1.0: the loader's line alone is no failure.
+        fallback = ("E OpenXR-Loader: Error [GENERAL | xrCreateInstance | OpenXR-Loader] : LoaderInstance::CreateInstance "
+                    "chained CreateInstance call failed")
+        self.assertNotIn("The game asks for OpenXR 1.1", titles(fallback, "I FrameBridge: pacing: 72.0 fps"))
+        self.assertIn("The game asks for OpenXR 1.1", titles("xrCreateInstance: XR_ERROR_API_VERSION_UNSUPPORTED"))
+        # Epic Roller Coasters without its OBB folder.
+        self.assertIn("The game's data files are missing", titles(
+            "E Unity   : RemoteProviderException : TextDataProvider : unable to load from url : "
+            "jar:file:///data/app/~~x==/games.b4t.epic-y==/base.apk!/assets/aa/settings.json",
+            "E Unity   : RuntimeData is null.  Please ensure you have built the correct Player Content."))
+        # Vision Player Pro on Lepton, which has no NsdManager.
+        self.assertIn("The app needs an Android service that Lepton does not have", titles(
+            "E AndroidRuntime: FATAL EXCEPTION: main",
+            "E AndroidRuntime: Caused by: java.lang.NullPointerException: null cannot be cast to non-null type "
+            "android.net.nsd.NsdManager"))
+        self.assertIn("The game's data files are missing", sessions.START_FAILURES)
 
     def test_advice_names_buttons_and_tabs_the_dashboard_has(self):
         web = os.path.join(os.path.dirname(HERE), "frameload", "web")

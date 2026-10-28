@@ -29,8 +29,20 @@ RULES = [
      "If the game is on a microSD card, check that the card is inserted and mounted."),
     (r"Lepton runtime not found", "error", "Lepton was not found",
      "Lepton ships with the Steam Frame. Run the self-test under System."),
-    (r"XR_ERROR_API_VERSION_UNSUPPORTED|CreateInstance.*failed", "error", "The game asks for OpenXR 1.1",
+    # Not "CreateInstance ... failed": Unity asks for OpenXR 1.1 first, the loader logs "chained CreateInstance
+    # call failed" and Unity goes on with 1.0, in games that run fine.
+    (r"XR_ERROR_API_VERSION_UNSUPPORTED", "error", "The game asks for OpenXR 1.1",
      "The Frame's runtime accepts OpenXR 1.0. Porting the game with FramePort adds an adapter that handles this."),
+    (r"RuntimeData is null|unable to load from url : jar:file:\S*!/assets/aa/settings\.json|"
+     r"(?:No|Unable to (?:find|open|mount)) (?:the )?OBB|OBB (?:file )?not found", "error",
+     "The game's data files are missing",
+     "Its OBB data is not where Android looks for it (Android/obb/<package>). Install the game again from the "
+     "catalog, or copy the release's <package> folder into lepton-app/obb of the game."),
+    (r"null cannot be cast to non-null type android\.[\w.]+Manager", "error",
+     "The app needs an Android service that Lepton does not have",
+     "It asked Android for a system service (for example NsdManager, which finds media servers on the network) "
+     "and got none, so it stopped while starting. Lepton's Android does not include that service; the app can "
+     "only start on the Frame once Lepton or the app changes."),
     (r"dlopen failed.*(libOVRPlugin|libvrapi|libovrplatform)|UnsatisfiedLinkError.*(OVR|vrapi)", "error",
      "The game needs Meta's runtime", "It was built for Quest and has not been ported. Press Port & Play on its page."),
     (r"already starting or running", "warn", "The game was already starting",
