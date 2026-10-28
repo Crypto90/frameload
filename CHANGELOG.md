@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.3] - 2026-10-28
+
+### Added
+- **Releases with an install.txt are installed completely.** Some catalog releases carry their own install steps (Rookie's install.txt), with their data packed in `_bin.7z`: PortalVR's Source engine files go to `/sdcard/source`. FrameLoad now carries out those steps on the game's own storage: it unpacks the release's `_bin` archive, copies what `adb push` names, makes the folders `adb shell mkdir` names, and leaves installing the APK to itself. Permissions such as `appops set` and `pm grant` for the game's own package are set in its container at each start, and nothing else from a release ever runs there. Games already installed get this on the first start after the update when their release is still on the headset.
+- **Install File shows what an install would leave out.** Inspecting a folder lists the files neither the APK nor the OBB data would take, and the release's own instructions (install.txt, release.manifest), so data in an unexpected place no longer goes missing silently.
+
+### Changed
+- **Presets combine.** Sharper and 120 Hz can now be on together: each preset sets only its own values, every preset that matches the settings is lit, and pressing a lit one turns it off. Presets no longer switch foveated rendering back on for games where FrameLoad turned it off.
+
+### Fixed
+- **A stopped or frozen game's report had no Android log.** Lepton saves the log only after the game's container is gone, which fails when Stop or Freeze Guard ended it. FrameLoad now copies the log before stopping the game.
+- 7-Zip no longer waits forever for the password of an encrypted archive.
+
+### Known issues
+- PortalVR installs completely now but still stops at its start: it needs "all files access", which Lepton's Android cannot grant from outside (it has no `appops` service).
+
+---
+
 ## [v1.4.2] - 2026-10-28
 
 ### Fixed
