@@ -557,6 +557,7 @@ class TestMigration(LibraryTestCase):
         code = InstalledManager.get_game(pkg)["version_code"]
         data = os.path.join(self.tmp, "data")
         release = os.path.join(data, f"Script v{code}+1 -JF", f"Script v{code}+1 -JF")
+        write_text(os.path.join(release, f"{pkg}.apk"), "apk")
         write_text(os.path.join(release, "install.txt"), "adb install -g x.apk\nadb push source/game /sdcard/source/\n")
         write_text(os.path.join(release, "source", "game", "pak.vpk"), "data")
         with patch.object(migrate, "DATA_DIR", data):
@@ -564,6 +565,37 @@ class TestMigration(LibraryTestCase):
         self.assertTrue(any("install.txt" in c for c in report[pkg]), report)
         self.assertTrue(os.path.isfile(os.path.join(base, "lepton-data", "external", "source", "game", "pak.vpk")))
         self.assertFalse(os.path.exists(os.path.dirname(release)))  # nothing left the game needs
+
+    def test_another_games_release_of_the_same_version_is_not_used(self):
+        # Rick and Morty, PortalVR and Playroom are all version 1.
+        mine, other = "com.studio.rick", "com.studio.portal"
+        base = self.make_legacy(mine)
+        code = InstalledManager.get_game(mine)["version_code"]
+        data = os.path.join(self.tmp, "data")
+        release = os.path.join(data, f"Portal v{code}+1 -JF", f"Portal v{code}+1 -JF")
+        write_text(os.path.join(release, f"{other}.apk"), "apk")
+        write_text(os.path.join(release, "install.txt"), "adb push source/portal /sdcard/source/\n")
+        write_text(os.path.join(release, "source", "portal", "pak.vpk"), "data")
+        with patch.object(migrate, "DATA_DIR", data):
+            migrate.migrate_installs()
+        self.assertFalse(os.path.exists(os.path.join(base, "lepton-data", "external", "source")))
+        self.assertTrue(os.path.isfile(os.path.join(release, "source", "portal", "pak.vpk")))
+
+    def test_data_placed_in_the_wrong_game_goes_to_the_one_its_script_names(self):
+        wrong, owner = "com.studio.rick", "com.studio.portal"
+        wrong_base, owner_base = self.make_legacy(wrong), self.make_legacy(owner)
+        # What the first layout 9 left: the data and the record in the wrong game.
+        write_text(os.path.join(wrong_base, "lepton-data", "external", "source", "portal", "pak.vpk"), "data")
+        write_text(os.path.join(wrong_base, "install_txt.json"), json.dumps({
+            "script": "x/install.txt", "failed": [], "permissions": [],
+            "skipped": [f"adb shell pm uninstall {owner}", f'adb install -g -r "{owner}.apk"'],
+            "done": ["extracted _bin.7z", "adb shell mkdir -p /sdcard/source", "adb push source/portal /sdcard/source/"]}))
+        report = migrate.migrate_installs()
+        self.assertTrue(any(owner in c for c in report[wrong]), report)
+        self.assertTrue(os.path.isfile(os.path.join(owner_base, "lepton-data", "external", "source", "portal", "pak.vpk")))
+        self.assertFalse(os.path.exists(os.path.join(wrong_base, "lepton-data", "external", "source")))
+        self.assertFalse(os.path.exists(os.path.join(wrong_base, "install_txt.json")))
+        self.assertEqual(json.loads(read_text(os.path.join(owner_base, "install_txt.json")))["package"], owner)
 
     def test_obb_already_in_place_is_left_alone(self):
         pkg = "com.studio.hasobb"

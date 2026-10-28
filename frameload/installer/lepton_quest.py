@@ -343,7 +343,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 9,
+            "layout_version": 10,
             "time": time.time(),
         }
         if origin is None:

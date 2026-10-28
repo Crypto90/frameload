@@ -131,7 +131,8 @@ def run(release_dir: str, package: str, base: str, password: Optional[str] = Non
     folder = os.path.dirname(script)
     with open(script, "r", encoding="utf-8", errors="replace") as f:
         cmds = commands(f.read())
-    record: Dict[str, Any] = {"script": os.path.relpath(script, release_dir), "done": [], "skipped": [],
+    record: Dict[str, Any] = {"package": package, "release": os.path.basename(os.path.normpath(release_dir)),
+                              "script": os.path.relpath(script, release_dir), "done": [], "skipped": [],
                               "permissions": [], "failed": []}
     if needs_files(cmds):
         bundle = unpack_bundle(folder, password)

@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional
 from ..config import DATA_DIR
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 9  # 9: a left-behind release's install.txt is carried out (8: its OBB folder is moved in)
+LAYOUT_VERSION = 10  # 10: install.txt data placed in another game of the same version code is moved to its own
+# (9: a left-behind release's install.txt is carried out; 8: its OBB folder is moved in)
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (
@@ -47,14 +48,8 @@ def restore_release_obb(app_dir: str, package: str, version_code: str, data_dir:
     obb_target = os.path.join(app_dir, "obb")
     if not version_code or (os.path.isdir(obb_target) and os.listdir(obb_target)):
         return 0
-    try:
-        data_dir = data_dir or DATA_DIR
-        releases = sorted(n for n in os.listdir(data_dir) if f" v{version_code}+" in n)
-    except OSError:
-        return 0
-    for name in releases:
-        release = os.path.join(data_dir, name)
-        found = find_release_obb(release, None, package) if os.path.isdir(release) else None
+    for release in _releases_of(package, version_code, data_dir):
+        found = find_release_obb(release, None, package)
         if not found:
             continue
         os.makedirs(obb_target, exist_ok=True)
@@ -67,14 +62,89 @@ def restore_release_obb(app_dir: str, package: str, version_code: str, data_dir:
     return 0
 
 
-def _releases_of(version_code: str, data_dir: Optional[str] = None) -> List[str]:
-    """Extracted mirror releases of this version that an install left in DATA_DIR."""
+def release_belongs_to(release: str, package: str) -> bool:
+    """Whether an extracted release is this package's: it holds <package>.apk or a <package> folder, or its
+    release.manifest names the package. A version code alone says nothing (many games are version 1)."""
+    for dirpath, dirnames, filenames in os.walk(release):
+        if dirpath[len(release):].count(os.sep) >= 3:
+            dirnames[:] = []
+        if f"{package}.apk" in filenames or package in dirnames:
+            return True
+        if "release.manifest" in filenames:
+            try:
+                with open(os.path.join(dirpath, "release.manifest"), "r", encoding="utf-8", errors="replace") as f:
+                    if f";{package};" in f.read():
+                        return True
+            except OSError:
+                pass
+    return False
+
+
+def _releases_of(package: str, version_code: str, data_dir: Optional[str] = None) -> List[str]:
+    """Extracted mirror releases of this game and version that an install left in DATA_DIR."""
     data_dir = data_dir or DATA_DIR
     try:
         names = sorted(n for n in os.listdir(data_dir) if version_code and f" v{version_code}+" in n)
     except OSError:
         return []
-    return [os.path.join(data_dir, n) for n in names if os.path.isdir(os.path.join(data_dir, n))]
+    paths = [os.path.join(data_dir, n) for n in names if os.path.isdir(os.path.join(data_dir, n))]
+    return [p for p in paths if release_belongs_to(p, package)]
+
+
+def move_misplaced_script_data(base: str, package: str, bases: Dict[str, str]) -> List[str]:
+    """Layout 9 as first shipped matched releases by version code alone, so a game of the same version
+    code (Rick and Morty, version 1) got another game's install.txt data (PortalVR's /sdcard/source).
+    The game the script names gets it back."""
+    import re
+    import shlex
+    from ..installer import release_script
+
+    path = os.path.join(base, release_script.RECORD_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            record = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if record.get("package"):
+        return []  # recorded by a version that matched releases by package
+    named = {p for line in record.get("done", []) + record.get("skipped", []) + record.get("permissions", [])
+             for p in re.findall(r"[A-Za-z][\w]*(?:\.[\w]+)+", line) if p in bases}
+    if package in named or len(named) != 1:
+        record["package"] = package
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2)
+        return []
+    owner = named.pop()
+    owner_base = bases[owner]
+    moved = 0
+    for line in record.get("done", []):
+        args = shlex.split(line)
+        if args[:2] != ["adb", "push"] or len(args) < 4:
+            continue
+        src, dst = args[-2], args[-1]
+        here = release_script.device_path(dst, base, package)
+        there = release_script.device_path(dst, owner_base, owner)
+        if not here or not there:
+            continue
+        if dst.endswith("/"):
+            here, there = os.path.join(here, os.path.basename(src)), os.path.join(there, os.path.basename(src))
+        if not os.path.exists(here) or os.path.exists(there):
+            continue
+        os.makedirs(os.path.dirname(there), exist_ok=True)
+        shutil.move(here, there)
+        moved += 1
+    for line in reversed(record.get("done", [])):  # the folders its mkdir lines made, if now empty
+        args = shlex.split(line)
+        if args[:3] == ["adb", "shell", "mkdir"]:
+            for target in reversed(args[3:]):
+                folder = release_script.device_path(target, base, package) if not target.startswith("-") else None
+                if folder and os.path.isdir(folder) and not os.listdir(folder):
+                    os.rmdir(folder)
+    record["package"] = owner
+    with open(os.path.join(owner_base, release_script.RECORD_NAME), "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+    os.remove(path)
+    return [f"moved {moved} item(s) of {owner}'s install.txt to {owner}"]
 
 
 def run_release_script(base: str, package: str, version_code: str, data_dir: Optional[str] = None) -> List[str]:
@@ -84,7 +154,7 @@ def run_release_script(base: str, package: str, version_code: str, data_dir: Opt
 
     if os.path.isfile(os.path.join(base, release_script.RECORD_NAME)):
         return []
-    for release in _releases_of(version_code, data_dir):
+    for release in _releases_of(package, version_code, data_dir):
         if not release_script.find_script(release):
             continue
         record = release_script.run(release, package, base)
@@ -99,13 +169,15 @@ def run_release_script(base: str, package: str, version_code: str, data_dir: Opt
     return []
 
 
-def migrate_game(game: Dict[str, Any]) -> List[str]:
-    """Migrates one install. Returns what was changed."""
+def migrate_game(game: Dict[str, Any], bases: Optional[Dict[str, str]] = None) -> List[str]:
+    """Migrates one install. Returns what was changed. bases: every installed game's folder."""
     from .tuning import TuningManager
 
     package = game["package"]
     base = game.get("base") or game.get("anchor")
     changes: List[str] = []
+
+    changes += move_misplaced_script_data(base, package, bases or {package: base})
 
     moved = flatten_obb(os.path.join(base, "lepton-app"), package)
     if moved:
@@ -159,6 +231,9 @@ def migrate_installs() -> Dict[str, List[str]]:
     except Exception as e:
         print(f"[FrameLoad] Migration skipped: {e}")
         return report
+    running = {g["package"] for g in games if g.get("is_running")}
+    bases = {g["package"]: g.get("base") or g.get("anchor") for g in games
+             if g.get("kind") in LEPTON_KINDS and g["package"] not in running}
     for game in games:
         if game.get("kind") not in LEPTON_KINDS or game.get("is_running"):
             continue
@@ -167,7 +242,7 @@ def migrate_installs() -> Dict[str, List[str]]:
         if dep.get("installed_by") != "frameload" or dep.get("layout_version", 1) >= LAYOUT_VERSION:
             continue
         try:
-            report[game["package"]] = migrate_game(game)
+            report[game["package"]] = migrate_game(game, bases)
         except Exception as e:
             report[game["package"]] = [f"failed: {e}"]
             print(f"[FrameLoad] Could not migrate {game['package']}: {e}")
