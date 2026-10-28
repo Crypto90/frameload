@@ -849,7 +849,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         if fix in ("foveation_off", "gpu_sysmem"):
             result["auto_fix"] = fix
 
-    asked_rate = learn_refresh_rate(pkg, dep, lines)
+    # Lepton's copy of the log can stop early; Android's own log (its dump, or the copy Stop took) has the rest.
+    asked_rate = learn_refresh_rate(pkg, dep, lines + dumps.get("main_log", []) + dumps.get("system_log", []))
 
     lepton = LEPTON_VERSION_RE.search("\n".join(lines[:400]))
     gs = guard_state or {}
