@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FrameLoad Live View</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" type="image/png" href="/static/assets/icon.png">
+  <style>
+    body { background: var(--bg); color: var(--text); margin: 0; }
+    .live-wrap { max-width: 1280px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 100vh; box-sizing: border-box; }
+    .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; }
+    .live-head h1 { font-size: 1.2rem; margin: 0; color: var(--text-strong); }
+    .live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim); margin-right: 8px; vertical-align: middle; }
+    .live-dot.on { background: var(--danger); box-shadow: 0 0 10px rgb(var(--danger-rgb) / 0.8); }
+    .live-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .live-controls select, .live-controls button { min-height: 40px; }
+    .live-stage { position: relative; background: rgb(var(--shade-rgb)); border-radius: var(--radius-md); overflow: hidden; aspect-ratio: 16 / 9; }
+    .live-stage video { width: 100%; height: 100%; display: block; background: rgb(var(--shade-rgb)); }
+    .live-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--text-muted); pointer-events: none; }
+    .live-overlay:empty { display: none; }
+    #live-sound { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); }
+    .live-status { font-size: 0.85rem; color: var(--text-muted); }
+    .live-note { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
+  </style>
+</head>
+<body>
+  <main class="live-wrap">
+    <div class="live-head">
+      <h1><span id="live-dot" class="live-dot"></span>FrameLoad Live View</h1>
+      <div class="live-controls">
+        <label for="live-quality" class="live-status">Quality</label>
+        <select id="live-quality" class="select-styled">
+          <option value="480p">480p</option>
+          <option value="720p" selected>720p</option>
+          <option value="1080p">1080p</option>
+        </select>
+        <button type="button" id="live-toggle" class="btn-secondary">Pause</button>
+        <a class="btn-secondary" href="/" style="display:inline-flex; align-items:center; text-decoration:none;">Dashboard</a>
+      </div>
+    </div>
+    <div class="live-stage">
+      <video id="live-video" autoplay muted playsinline controls></video>
+      <div id="live-overlay" class="live-overlay">Connecting to the headset…</div>
+      <button type="button" id="live-sound" class="btn-primary" style="display:none;">Sound On</button>
+    </div>
+    <div id="live-status" class="live-status"></div>
+    <p class="live-note">What the person in the headset sees and hears, a moment later. The picture is black while nobody wears the headset. The video's own controls set the volume and fullscreen.</p>
+  </main>
+  <script>
+  (() => {
+    const video = document.getElementById("live-video");
+    const overlay = document.getElementById("live-overlay");
+    const status = document.getElementById("live-status");
+    const dot = document.getElementById("live-dot");
+    const soundBtn = document.getElementById("live-sound");
+    const quality = document.getElementById("live-quality");
+    const toggle = document.getElementById("live-toggle");
+    const MS = window.ManagedMediaSource || window.MediaSource;
+    let session = 0, paused = false, wantSound = false, reader = null, retry = null;
+    try { quality.value = localStorage.getItem("frameload.liveQuality") || "720p"; } catch (e) { /* private window */ }
+
+    function say(text) { overlay.textContent = text || ""; }
+
+    async function connect() {
+      const mine = ++session;
+      clearTimeout(retry);
+      if (reader) { try { reader.cancel(); } catch (e) { /* gone */ } reader = null; }
+      if (!MS) { say("This browser cannot play the live view (no Media Source support)."); return; }
+      say("Connecting to the headset…");
+      dot.classList.remove("on");
+      let resp;
+      try {
+        resp = await fetch(`/api/live/stream?quality=${encodeURIComponent(quality.value)}`, { cache: "no-store" });
+      } catch (e) { return again(mine, "The headset is not reachable."); }
+      if (!resp.ok) {
+        let msg = `The live view could not start (${resp.status}).`;
+        try { msg = (await resp.json()).error || msg; } catch (e) { /* not JSON */ }
+        return again(mine, msg);
+      }
+      const codecs = resp.headers.get("X-Codecs") || "avc1.640028";
+      const ms = new MS();
+      video.disableRemotePlayback = true;
+      video.src = URL.createObjectURL(ms);
+      await new Promise(r => ms.addEventListener("sourceopen", r, { once: true }));
+      if (mine !== session) return;
+      let sb;
+      try {
+        sb = ms.addSourceBuffer(`video/mp4; codecs="${codecs}"`);
+      } catch (e) { return again(mine, `This browser cannot play ${codecs}.`); }
+      sb.mode = "segments";
+      const pending = [];
+      const pump = () => {
+        if (sb.updating || !pending.length || mine !== session) return;
+        try { sb.appendBuffer(pending.shift()); } catch (e) {
+          if (e.name === "QuotaExceededError") trim(sb, 0); else again(mine, "The stream broke off.");
+        }
+      };
+      sb.addEventListener("updateend", () => { trim(sb, 20); pump(); });
+      reader = resp.body.getReader();
+      say("");
+      soundBtn.style.display = wantSound ? "none" : "";
+      video.muted = !wantSound;
+      video.play().catch(() => {});
+      dot.classList.add("on");
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || mine !== session) break;
+          pending.push(value);
+          pump();
+        }
+      } catch (e) { /* closed */ }
+      if (mine === session && !paused) again(mine, "The stream ended. Reconnecting…");
+    }
+
+    // Keep only the last seconds in the buffer and stay at the live edge.
+    function trim(sb, keep) {
+      if (sb.updating || !sb.buffered.length) return;
+      const start = sb.buffered.start(0), end = sb.buffered.end(sb.buffered.length - 1);
+      if (end - start > keep + 10) { try { sb.remove(start, end - keep); } catch (e) { /* busy */ } }
+    }
+    setInterval(() => {
+      if (paused || !video.buffered.length) return;
+      const end = video.buffered.end(video.buffered.length - 1);
+      const behind = end - video.currentTime;
+      if (behind > 1.5) video.currentTime = end - 0.3;
+      if (video.paused && !paused) video.play().catch(() => {});
+    }, 1000);
+
+    function again(mine, text) {
+      if (mine !== session) return;
+      say(text);
+      dot.classList.remove("on");
+      retry = setTimeout(() => { if (mine === session && !paused) connect(); }, 3000);
+    }
+
+    async function refreshStatus() {
+      try {
+        const st = await fetch("/api/live/status", { cache: "no-store" }).then(r => r.json());
+        const parts = [];
+        if (st.running) {
+          parts.push(`${st.quality} · ${st.encoder === "hardware" ? "hardware encoder" : "software encoder"}`);
+          parts.push(st.sound ? "with sound" : "no sound");
+          parts.push(`${st.viewers} watching`);
+          parts.push(`${(st.bytes / 1048576).toFixed(1)} MB sent`);
+        }
+        if (st.error) parts.push(`last message: ${st.error}`);
+        status.textContent = parts.join(" · ");
+      } catch (e) { /* next time */ }
+    }
+    setInterval(refreshStatus, 3000);
+    refreshStatus();
+
+    soundBtn.addEventListener("click", () => {
+      wantSound = true;
+      video.muted = false;
+      if (video.volume === 0) video.volume = 1;
+      soundBtn.style.display = "none";
+      video.play().catch(() => {});
+    });
+    video.addEventListener("volumechange", () => {
+      wantSound = !video.muted;
+      soundBtn.style.display = wantSound ? "none" : "";
+    });
+    quality.addEventListener("change", () => {
+      try { localStorage.setItem("frameload.liveQuality", quality.value); } catch (e) { /* private window */ }
+      connect();
+    });
+    toggle.addEventListener("click", () => {
+      paused = !paused;
+      toggle.textContent = paused ? "Resume" : "Pause";
+      if (paused) {
+        session++;
+        if (reader) { try { reader.cancel(); } catch (e) { /* gone */ } reader = null; }
+        video.pause();
+        dot.classList.remove("on");
+        say("Paused. The headset stops streaming when nobody watches.");
+      } else {
+        connect();
+      }
+    });
+    connect();
+  })();
+  </script>
+</body>
+</html>

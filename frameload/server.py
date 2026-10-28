@@ -7,6 +7,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import queue
 import re
 import socket
 import subprocess
@@ -198,7 +199,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 if key in params and not is_valid_package(params[key][0]):
                     self.send_json({"error": "Invalid package name"}, status=HTTPStatus.BAD_REQUEST)
                     return
-        elif path in ("/", "/index.html") and not self.authorized():
+        elif path in ("/", "/index.html", "/live") and not self.authorized():
             self.serve_file(os.path.join(WEB_DIR, "templates", "pair.html"), "text/html; charset=utf-8")
             return
 
@@ -240,6 +241,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                                 "producer": source})
                 return
             self.serve_file(shot, "image/jpeg" if shot.endswith(".jpg") else "image/png")
+        elif path == "/api/live/status":
+            from .system.livestream import LiveStream
+            self.send_json(LiveStream.status())
+        elif path == "/api/live/stream":
+            self.stream_live(params.get("quality", [""])[0])
+            return
         elif path == "/api/system/log":
             # System > FrameLoad Log: the server's own output and why it last stopped (redacted like a report).
             from .system import applog
@@ -652,6 +659,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json({"success": True, "logs": "\\n".join(logs)})
         elif path == "/" or path == "/index.html":
             self.serve_index()
+        elif path == "/live":
+            # Live view: what the headset shows, with its sound, for a paired device (system/livestream.py)
+            self.serve_file(os.path.join(WEB_DIR, "templates", "live.html"), "text/html; charset=utf-8")
         elif path.startswith("/static/"):
             rel = path.replace("/static/", "")
             clean_rel = os.path.normpath(rel).lstrip("/")
@@ -874,6 +884,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/installed/show-game":
             # Closes SteamVR's dashboard (FrameLoad's window lives in it) so the running game is in front.
             self.send_json(GameLauncher.show(body.get("package", "")))
+        elif path == "/api/live/stop":
+            from .system.livestream import LiveStream
+            LiveStream.stop()
+            self.send_json({"success": True})
         elif path == "/api/window/close":
             # What Show offers when Steam's menu stays: FrameLoad's window goes, games keep running.
             self.send_json(GameLauncher.close_window())
@@ -1378,6 +1392,35 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def stream_live(self, quality: str) -> None:
+        """Fragmented MP4 of the headset view for as long as the viewer stays (system/livestream.py)."""
+        from .system.livestream import LiveStream
+
+        try:
+            init, gop, feed = LiveStream.subscribe(quality)
+        except OSError as e:
+            self.send_json({"error": str(e)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        self.close_connection = True
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("X-Codecs", LiveStream.status().get("codecs") or "")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            for chunk in [init] + gop:
+                self.wfile.write(chunk)
+            while True:
+                chunk = feed.get(timeout=30)
+                if chunk is None:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError, OSError, queue.Empty):
+            pass
+        finally:
+            LiveStream.unsubscribe(feed)
 
     def serve_file(self, file_path: str, content_type: str) -> None:
         try:
