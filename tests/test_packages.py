@@ -52,6 +52,7 @@ class TestPackageLoader(unittest.TestCase):
             self.assertEqual([f["path"] for f in res["left_out"]],
                              [os.path.join("srceng", "portal", "portal_pak_dir.vpk"), "install.txt"])
             self.assertEqual(res["left_out_bytes"], 300 + len("copy srceng to /sdcard"))
+            self.assertEqual(res["instructions"], {"install.txt": "copy srceng to /sdcard"})
 
     def test_inspect_archive_bundle(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

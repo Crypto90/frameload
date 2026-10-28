@@ -18,6 +18,8 @@ from .windows_proton import WindowsProtonInstaller
 # What an install from a file records as its origin: such an app gets no updates from an app source.
 FILE_ORIGIN = {"source": "file"}
 LEFT_OUT_LISTED = 40  # files of a folder an install would not copy, largest first
+INSTRUCTION_FILES = ("install.txt", "release.manifest", "readme.txt", "notes.txt")
+INSTRUCTIONS_MAX = 16 * 1024
 
 
 class PackageLoader:
@@ -181,8 +183,17 @@ class PackageLoader:
                 except OSError:
                     continue
         left.sort(key=lambda f: -f["bytes"])
+        # A release's own instructions (Rookie's install.txt, release.manifest), small text read as is.
+        instructions = {}
+        for f in left:
+            if os.path.basename(f["path"]).lower() in INSTRUCTION_FILES and f["bytes"] <= INSTRUCTIONS_MAX:
+                try:
+                    with open(os.path.join(dir_path, f["path"]), "r", encoding="utf-8", errors="replace") as fh:
+                        instructions[f["path"]] = fh.read()
+                except OSError:
+                    continue
         return {"left_out": left[:LEFT_OUT_LISTED], "left_out_count": len(left),
-                "left_out_bytes": sum(f["bytes"] for f in left)}
+                "left_out_bytes": sum(f["bytes"] for f in left), "instructions": instructions}
 
     @staticmethod
     def _inspect_archive(archive_path: str, ext: str) -> Dict[str, Any]:
