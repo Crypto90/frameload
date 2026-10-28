@@ -9,8 +9,9 @@ from typing import Any, Dict, List, Optional
 from ..config import DATA_DIR
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 10  # 10: install.txt data placed in another game of the same version code is moved to its own
-# (9: a left-behind release's install.txt is carried out; 8: its OBB folder is moved in)
+LAYOUT_VERSION = 11  # 11: launch.sh sets the permissions a release's install.txt asks for (container_setup.txt)
+# 10: install.txt data placed in another game of the same version code is moved to its own
+# 9: a left-behind release's install.txt is carried out; 8: its OBB folder is moved in
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (
@@ -169,6 +170,21 @@ def run_release_script(base: str, package: str, version_code: str, data_dir: Opt
     return []
 
 
+def container_setup_from_record(base: str, package: str) -> List[str]:
+    """Layouts 9 and 10 recorded an install.txt's permission lines without setting them."""
+    from ..installer import release_script
+
+    if os.path.isfile(os.path.join(base, release_script.SETUP_NAME)):
+        return []
+    try:
+        with open(os.path.join(base, release_script.RECORD_NAME), "r", encoding="utf-8") as f:
+            record = json.load(f)
+    except (OSError, ValueError):
+        return []
+    count = release_script.write_container_setup(base, package, record.get("permissions", []))
+    return [f"sets {count} permission(s) of its install.txt at each start"] if count else []
+
+
 def migrate_game(game: Dict[str, Any], bases: Optional[Dict[str, str]] = None) -> List[str]:
     """Migrates one install. Returns what was changed. bases: every installed game's folder."""
     from .tuning import TuningManager
@@ -183,6 +199,7 @@ def migrate_game(game: Dict[str, Any], bases: Optional[Dict[str, str]] = None) -
     if moved:
         changes.append(f"moved {moved} OBB file(s) to where Lepton reads them")
     changes += run_release_script(base, package, str(game.get("version_code") or ""))
+    changes += container_setup_from_record(base, package)
     restored = restore_release_obb(os.path.join(base, "lepton-app"), package, str(game.get("version_code") or ""))
     if restored:
         changes.append(f"installed {restored} OBB item(s) the download had left behind")

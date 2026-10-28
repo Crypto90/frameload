@@ -69,6 +69,18 @@ class TestReleaseScript(unittest.TestCase):
                          ["adb shell appops set --uid com.portalVR.source MANAGE_EXTERNAL_STORAGE allow"])
         self.assertIn("adb install -r -g PortalVR.apk", record["skipped"])
         self.assertTrue(os.path.isfile(os.path.join(self.base, release_script.RECORD_NAME)))
+        with open(os.path.join(self.base, release_script.SETUP_NAME)) as f:
+            self.assertEqual(f.read(), "appops set --uid com.portalVR.source MANAGE_EXTERNAL_STORAGE allow\n")
+
+    def test_only_plain_permission_commands_for_the_game_reach_the_container(self):
+        lines = [f"adb shell appops set --uid {PKG} MANAGE_EXTERNAL_STORAGE allow",
+                 f"adb shell pm grant {PKG} android.permission.RECORD_AUDIO",
+                 "adb shell appops set --uid com.other.app MANAGE_EXTERNAL_STORAGE allow",
+                 f"adb shell pm grant {PKG} android.permission.X;reboot",
+                 f"adb shell appops set --uid {PKG} MANAGE_EXTERNAL_STORAGE allow; rm -rf /data"]
+        self.assertEqual(release_script.container_commands(lines, PKG), [
+            ["appops", "set", "--uid", PKG, "MANAGE_EXTERNAL_STORAGE", "allow"],
+            ["pm", "grant", PKG, "android.permission.RECORD_AUDIO"]])
 
     def test_obb_paths_and_escapes(self):
         self.write("install.txt", "\n".join([

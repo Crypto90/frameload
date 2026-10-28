@@ -3,20 +3,23 @@
 Rookie-style releases (PortalVR: a Source engine port) carry an install.txt of adb commands, often with
 their data packed in _bin.7z. Lepton has no adb, so the commands are carried out on the game's own
 folders: /sdcard is <base>/lepton-data/external, /sdcard/Android/obb/<package> is lepton-app/obb.
-Only `adb push` and `adb shell mkdir` change anything; installing the APK is FrameLoad's own job, and
-permission commands (pm grant, appops) are recorded, since nothing outside a running container can set them.
+Only `adb push` and `adb shell mkdir` change anything here; installing the APK is FrameLoad's own job.
+Permission commands (appops set, pm grant) for the game's own package go to container_setup.txt, which
+launch.sh runs in the game's container once Android has the app.
 """
 from __future__ import annotations
 
 import json
 import os
 import posixpath
+import re
 import shlex
 import shutil
 from typing import Any, Dict, List, Optional
 
 SCRIPT_NAME = "install.txt"
 RECORD_NAME = "install_txt.json"  # <base>/install_txt.json: what was done, for the game's report
+SETUP_NAME = "container_setup.txt"  # <base>/container_setup.txt: commands launch.sh runs in the container
 SDCARD_PREFIXES = ("/sdcard/", "/storage/emulated/0/", "/mnt/sdcard/", "/storage/self/primary/")
 BUNDLES = ("_bin.7z", "_bin.zip")
 
@@ -123,6 +126,34 @@ def unpack_bundle(folder: str, password: Optional[str] = None) -> Optional[str]:
     return None
 
 
+def container_commands(lines: List[str], package: str) -> List[List[str]]:
+    """The permission lines of an install.txt that may run in the game's container: appops set and
+    pm grant, for this package only, with plain names. Anything else from a release never runs there."""
+    out = []
+    for line in lines:
+        args = line.split()
+        if args[:2] == ["adb", "shell"]:
+            args = args[2:]
+        if (len(args) == 6 and args[:3] == ["appops", "set", "--uid"] and args[3] == package
+                and re.fullmatch(r"[A-Z][A-Z0-9_]*", args[4]) and args[5] in ("allow", "ignore", "deny", "default")):
+            out.append(args)
+        elif (len(args) == 4 and args[:2] == ["pm", "grant"] and args[2] == package
+              and re.fullmatch(r"android\.permission\.[A-Z][A-Z0-9_]*", args[3])):
+            out.append(args)
+    return out
+
+
+def write_container_setup(base: str, package: str, permission_lines: List[str]) -> int:
+    """Writes the container commands of a release for launch.sh; their number."""
+    cmds = container_commands(permission_lines, package)
+    path = os.path.join(base, SETUP_NAME)
+    if not cmds:
+        return 0
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("".join(" ".join(c) + "\n" for c in cmds))
+    return len(cmds)
+
+
 def run(release_dir: str, package: str, base: str, password: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Carries out a release's install.txt for the installed game in base. None when it has none."""
     script = find_script(release_dir)
@@ -176,6 +207,7 @@ def run(release_dir: str, package: str, base: str, password: Optional[str] = Non
             record["permissions"].append(line)
         else:
             record["skipped"].append(line)
+    record["container"] = write_container_setup(base, package, record["permissions"])
     try:
         with open(os.path.join(base, RECORD_NAME), "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2)
