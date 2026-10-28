@@ -231,9 +231,13 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 # For a reader that cannot look at the picture: a black one usually means the headset sleeps.
                 from .manager.guard import hmd_state
                 state = hmd_state() or ""
+                from .manager.sessions import redact
+                source = screenshot.producer()
+                source["log"] = [redact(line) for line in source["log"]]
                 self.send_json({"name": os.path.basename(shot), "size": os.path.getsize(shot),
                                 "time": os.path.getmtime(shot), "headset_state": state,
-                                "asleep": "standby" in state.lower(), "url": "/api/system/screenshot"})
+                                "asleep": "standby" in state.lower(), "url": "/api/system/screenshot",
+                                "producer": source})
                 return
             self.serve_file(shot, "image/jpeg" if shot.endswith(".jpg") else "image/png")
         elif path == "/api/system/log":

@@ -145,6 +145,18 @@ def take(width: int = 1920) -> Dict[str, Any]:
             "method": method}
 
 
+def producer() -> Dict[str, Any]:
+    """The state of SteamVR's v4l2cam service, which writes the headset view, and its last log lines. Without it
+    the webcam can still answer with a black placeholder frame."""
+    from .applog import _run
+
+    unit = "steamvr-v4l2cam.service"
+    show = _run(["systemctl", "--user", "show", unit, "-p", "ActiveState,SubState,Result,NRestarts,ExecMainStartTimestamp,ExecStart"])
+    state = dict(line.split("=", 1) for line in show.splitlines() if "=" in line)
+    journal = _run(["journalctl", "--user", "-u", unit, "-n", "15", "--no-pager", "-o", "short-iso"]).splitlines()
+    return {"unit": unit, "state": state, "log": journal[-15:]}
+
+
 def latest() -> Optional[str]:
     shots = sorted(glob.glob(os.path.join(SCREENSHOT_DIR, "headset-*.*")))
     return shots[-1] if shots else None
