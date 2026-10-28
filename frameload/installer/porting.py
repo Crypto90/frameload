@@ -74,12 +74,24 @@ def _env() -> Dict[str, str]:
     return env
 
 
+def _lowest_priority() -> None:
+    """In the child: OVRPort (Java) and the signing tools take every core for minutes; a game that runs
+    meanwhile (Epic Roller Coasters hung the GPU while one was porting) gets the CPU first."""
+    try:
+        os.nice(19)
+    except OSError:
+        pass
+
+
 def _run(cmd: List[str], log: Log, timeout: int) -> Tuple[int, str]:
     """Runs a command, streaming its output to the log. Returns (exit code, output)."""
     log("$ " + " ".join(cmd))
+    # Idle disk priority too (ionice -c3: reads only when nothing else does); children inherit both.
+    ionice = shutil.which("ionice")
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=_env(),
-                                text=True, encoding="utf-8", errors="replace")
+        proc = subprocess.Popen(([ionice, "-c3"] if ionice else []) + cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, env=_env(), text=True, encoding="utf-8",
+                                errors="replace", preexec_fn=_lowest_priority if os.name == "posix" else None)
     except OSError as e:
         raise PortingError(f"Could not start {cmd[0]}: {e}") from e
     lines: List[str] = []

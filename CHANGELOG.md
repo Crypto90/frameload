@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.2] - 2026-10-28
+
+### Added
+- **Games see a Meta Quest 3.** Games ported before FramePort 1.4.0 told the game it runs on an Oculus Quest 2, so they picked Quest 2 quality presets and refresh rates. FrameLoad now finds those games (it reads the headset name inside the game's OpenXR loader) and ports them again in the background with the current FramePort, which reports a Meta Quest 3: one game at a time, never while you play, and each only once per FramePort version. A game whose new port fails keeps its working build. Epic Roller Coasters now logs `HeadsetType: Meta_Quest_3` instead of `Oculus_Quest_2`.
+
+### Fixed
+- **Games get the refresh rate they ask for.** The Frame only offers the rate its panel already runs at, so a game asking for 90 or 120 Hz (as many do on a Quest 3) was refused and stayed at 72 Hz, and so was FrameLoad's own Refresh rate setting. FrameLoad now sets the rate in SteamVR before the game starts: your Refresh rate for the game, or with Game's choice the rate the game asked for last time, so a game that wants 90 Hz gets it from its second start on.
+
+---
+
 ## [v1.5.1] - 2026-10-28
 
 ### Added
