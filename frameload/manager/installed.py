@@ -150,6 +150,9 @@ class InstalledManager:
                         "xr_runtime": dep.get("xr_runtime", ""),
                         "framebridge": bool(dep.get("framebridge", False)),
                         "hand_tracking": dep.get("hand_tracking", "none"),
+                        # The headset a ported game is told it runs on, and the display rate it asked for.
+                        "headset": dep.get("headset", ""),
+                        "game_refresh_rate": int(dep.get("game_refresh_rate") or 0),
                         "compat": dep.get("compat", {}) if isinstance(dep.get("compat"), dict) else {},
                         "port_failed": bool(dep.get("port_failed", False)),
                         "port_error": str(dep.get("port_error", "")),
