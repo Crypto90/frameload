@@ -17,6 +17,7 @@ from .windows_proton import WindowsProtonInstaller
 
 # What an install from a file records as its origin: such an app gets no updates from an app source.
 FILE_ORIGIN = {"source": "file"}
+LEFT_OUT_LISTED = 40  # files of a folder an install would not copy, largest first
 
 
 class PackageLoader:
@@ -155,7 +156,33 @@ class PackageLoader:
             "has_obb": matched_obb is not None,
             "obb_count": len(obbs),
             "size_bytes": sum(os.path.getsize(a) for a in apks) + (sum(os.path.getsize(o) for o in obbs) if obbs else 0),
+            **PackageLoader._left_out(dir_path, primary_apk, matched_obb, pkg),
         }
+
+    @staticmethod
+    def _left_out(dir_path: str, primary_apk: str, matched_obb: Optional[str], pkg: str) -> Dict[str, Any]:
+        """The files of a folder an install would not copy (neither the APK nor the OBB data): a release
+        whose data lies somewhere the installer does not look shows up here instead of going missing."""
+        from .lepton_quest import is_own_obb
+
+        installed_dir = matched_obb if matched_obb and os.path.isdir(matched_obb) else None
+        loose_obb_dir = os.path.dirname(matched_obb) if matched_obb and os.path.isfile(matched_obb) else None
+        left: List[Dict[str, Any]] = []
+        for root, dirs, files in os.walk(dir_path):
+            if installed_dir and os.path.abspath(root).startswith(os.path.abspath(installed_dir)):
+                dirs[:] = []
+                continue
+            for name in files:
+                full = os.path.join(root, name)
+                if full == primary_apk or (loose_obb_dir and root == loose_obb_dir and is_own_obb(name, pkg)):
+                    continue
+                try:
+                    left.append({"path": os.path.relpath(full, dir_path), "bytes": os.path.getsize(full)})
+                except OSError:
+                    continue
+        left.sort(key=lambda f: -f["bytes"])
+        return {"left_out": left[:LEFT_OUT_LISTED], "left_out_count": len(left),
+                "left_out_bytes": sum(f["bytes"] for f in left)}
 
     @staticmethod
     def _inspect_archive(archive_path: str, ext: str) -> Dict[str, Any]:

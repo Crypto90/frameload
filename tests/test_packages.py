@@ -40,6 +40,18 @@ class TestPackageLoader(unittest.TestCase):
             self.assertTrue(res["has_obb"])
             self.assertEqual(res["matched_obb"], obb_folder)
             self.assertTrue(res["primary_apk"].endswith("base.apk"))
+            self.assertEqual(res["left_out_count"], 0)
+
+            # Data the installer does not take is named, not silently dropped.
+            os.makedirs(os.path.join(game_folder, "srceng", "portal"))
+            with open(os.path.join(game_folder, "srceng", "portal", "portal_pak_dir.vpk"), "wb") as f:
+                f.write(b"V" * 300)
+            with open(os.path.join(game_folder, "install.txt"), "w") as f:
+                f.write("copy srceng to /sdcard")
+            res = PackageLoader.inspect_source(game_folder)
+            self.assertEqual([f["path"] for f in res["left_out"]],
+                             [os.path.join("srceng", "portal", "portal_pak_dir.vpk"), "install.txt"])
+            self.assertEqual(res["left_out_bytes"], 300 + len("copy srceng to /sdcard"))
 
     def test_inspect_archive_bundle(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

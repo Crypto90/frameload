@@ -2110,7 +2110,8 @@ async function inspectSideloadPath() {
       if (preview) preview.style.display = "block";
       if (titleEl) titleEl.textContent = insp.title || insp.package_name;
       if (pkgEl) pkgEl.textContent = `${insp.package_name} • Type: ${insp.source_type} ${insp.format ? '(' + insp.format + ')' : ''}`;
-      if (metaEl) metaEl.textContent = `Size: ${formatBytes(insp.size_bytes || 0)} • OBB: ${insp.has_obb ? 'Included' : 'None'}`;
+      if (metaEl) metaEl.textContent = `Size: ${formatBytes(insp.size_bytes || 0)} • OBB: ${insp.has_obb ? 'Included' : 'None'}` +
+        (insp.left_out_count ? ` • Not installed: ${insp.left_out_count} other file(s), ${formatBytes(insp.left_out_bytes || 0)}` : '');
       if (badgeEl) {
         if (insp.source_type === "windows_proton") {
           badgeEl.textContent = insp.is_vr ? "Proton VR" : "Proton Windows";
