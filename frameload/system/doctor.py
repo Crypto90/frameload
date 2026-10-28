@@ -152,6 +152,11 @@ def run_checks() -> Dict[str, Any]:
                             if quest2 else "")
                          if ported else "No ported games yet."))
     checks.append(_steamvr_settings())
+    from . import screenshot
+    view = screenshot.device()
+    checks.append(_check("Headset view", OK if view else INFO,
+                         f"{view}: screenshots of what the headset shows (System > Headset Screenshot)." if view else
+                         "SteamVR's headset view webcam (/dev/video99) is not there: no headset screenshots."))
     if port.get("version"):
         try:
             from ..installer import framebridge_patch

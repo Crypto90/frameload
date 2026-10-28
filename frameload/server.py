@@ -213,6 +213,21 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json(summary)
         elif path == "/api/system/perf":
             self.send_json(perf.snapshot())
+        elif path == "/api/system/screenshot":
+            # What the headset shows (SteamVR's headset view): ?take=1 takes a new one (&width=960), else the newest.
+            from .system import screenshot
+            try:
+                if params.get("take", [""])[0] in ("1", "true"):
+                    shot = screenshot.take(int(params.get("width", ["1920"])[0] or 1920))["path"]
+                else:
+                    shot = screenshot.latest()
+            except (OSError, ValueError) as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+                return
+            if not shot:
+                self.send_json({"error": "No screenshot yet: add ?take=1"}, status=HTTPStatus.NOT_FOUND)
+                return
+            self.serve_file(shot, "image/jpeg" if shot.endswith(".jpg") else "image/png")
         elif path == "/api/system/log":
             # System > FrameLoad Log: the server's own output and why it last stopped (redacted like a report).
             from .system import applog
