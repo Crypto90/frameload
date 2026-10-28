@@ -303,6 +303,32 @@ class TestStop(TempCase):
         self.assertEqual((everything["stopped"], everything["running"]), (1, 1))
         self.assertEqual(running, {"some-other-container"})  # only Lepton games are touched
 
+    def test_stop_keeps_androids_log_first(self):
+        base = os.path.join(self.tmp, "game")
+        os.makedirs(base)
+        self.patch(InstalledManager, "get_game", return_value={"package": "a.b", "appid": 77, "base": base})
+        self.patch("time.sleep")
+        running = {"lepton-steamlaunch-77"}
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd[:3])
+            result = type("R", (), {"stdout": "", "returncode": 0})()
+            if cmd[:2] == ["podman", "ps"]:
+                result.stdout = "\n".join(sorted(running))
+            elif cmd[:2] == ["podman", "exec"]:
+                result.stdout = b"10-28 12:00:00.000  1224  1224 E SRCENG  : no gameinfo.txt\r\n"
+            elif cmd[:2] == ["podman", "kill"]:
+                running.discard(cmd[2])
+            return result
+
+        self.patch("subprocess.run", side_effect=fake_run)
+        GameLauncher.stop("a.b")
+        self.assertLess(calls.index(["podman", "exec", "lepton-steamlaunch-77"]),
+                        calls.index(["podman", "kill", "lepton-steamlaunch-77"]))
+        with open(os.path.join(base, ".stop_logcat.log"), "rb") as f:
+            self.assertEqual(f.read(), b"10-28 12:00:00.000  1224  1224 E SRCENG  : no gameinfo.txt\n")
+
     def test_container_that_survives_kill_is_removed(self):
         self.patch(InstalledManager, "get_game", return_value={"package": "a.b", "appid": 5})
         self.patch("time.sleep")

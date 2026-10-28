@@ -16,6 +16,8 @@ CONTAINER_PREFIX = "lepton-steamlaunch-"
 LAST_LAUNCH = ".last_launch"
 SHOW_LOG = "show.log"          # <base>/show.log: every press of Show, for the game's report
 SHOW_LOG_MAX = 32 * 1024
+STOP_LOGCAT = ".stop_logcat.log"  # <base>/.stop_logcat.log: Android's log, taken just before a stop
+STOP_LOGCAT_MAX = 4 * 1024 * 1024
 
 
 class GameLauncher:
@@ -228,12 +230,33 @@ class GameLauncher:
         if by:
             from . import sessions
             sessions.mark_stop(package_name, by)
+        GameLauncher._keep_logcat(name, dep.get("base") or dep.get("anchor") or "")
         stopped = GameLauncher._stop_container(name)
         if not stopped and by:
             from . import sessions
             sessions.clear_stop(package_name)
         return {"success": stopped, "package": package_name, "stopped": stopped,
                 "error": "" if stopped else "The game's container could not be stopped."}
+
+    @staticmethod
+    def _keep_logcat(container: str, base: str) -> bool:
+        """Copies Android's log out of a game's container before it is stopped. Lepton dumps it only after
+        the container is gone, which fails, so a stopped or frozen game's session had no Android log."""
+        if not base or not os.path.isdir(base):
+            return False
+        try:
+            out = subprocess.run(["podman", "exec", container, "logcat", "-d", "-v", "threadtime"],
+                                 capture_output=True, timeout=8)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if out.returncode != 0 or not out.stdout:
+            return False
+        try:
+            with open(os.path.join(base, STOP_LOGCAT), "wb") as f:
+                f.write(out.stdout[-STOP_LOGCAT_MAX:].replace(b"\r\n", b"\n"))
+            return True
+        except OSError:
+            return False
 
     @staticmethod
     def stop_all(by: str = "player") -> Dict[str, Any]:
@@ -245,5 +268,9 @@ class GameLauncher:
             for game in installed_games():
                 if f"{CONTAINER_PREFIX}{game.get('appid')}" in names:
                     sessions.mark_stop(game["package"], by)
+        for game in InstalledManager.list_installed():
+            name = f"{CONTAINER_PREFIX}{game.get('appid')}"
+            if name in names:
+                GameLauncher._keep_logcat(name, game.get("base") or game.get("anchor") or "")
         stopped = [name for name in names if GameLauncher._stop_container(name)]
         return {"success": len(stopped) == len(names), "stopped": len(stopped), "running": len(names)}

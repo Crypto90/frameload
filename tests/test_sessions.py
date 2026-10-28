@@ -311,6 +311,14 @@ class TestRecords(SessionCase):
         self.dep["installed_by"] = "frameport"
         self.assertFalse(sessions._foveation_off_after_hang(PKG, self.dep))
 
+    def test_a_stopped_games_log_comes_from_the_copy_stop_took(self):
+        start, end = self.session([START_PROC])
+        snapshot = self.write(".stop_logcat.log", lc(9, 1234, "E", "SRCENG", "Unable to load gameinfo.txt") + "\n")
+        os.utime(snapshot, (end, end))
+        record = sessions.finalize(PKG)
+        self.assertTrue(record["sources"]["main_log"])
+        self.assertIn("Unable to load gameinfo.txt", sessions.report_text(PKG, full=True))
+
     def test_uninstalling_forgets_the_mute_too(self):
         _, end = self.session([START_PROC, PACING, NATIVE_CRASH], crash=TOMBSTONE)
         sessions.finalize(PKG)

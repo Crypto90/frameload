@@ -793,6 +793,20 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
             dumps[key] = text.splitlines()
             sources[key] = True
 
+    # A stopped game's container is gone before Lepton dumps its log: use the copy Stop took before.
+    if "main_log" not in dumps and "system_log" not in dumps:
+        snapshot = os.path.join(base, ".stop_logcat.log")
+        try:
+            taken = start - 5 <= os.path.getmtime(snapshot) <= end + 120
+        except OSError:
+            taken = False
+        if taken:
+            text = _read_text(snapshot, DUMP_TAIL_BYTES)
+            with open(os.path.join(folder, "logcat-main.log"), "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            dumps["main_log"] = text.splitlines()
+            sources["main_log"] = True
+
     # What the next start overwrites: Steam's menu over the game (dashboard.log), how FrameLoad
     # started it (.last_launch), and SteamVR's log of the game's OpenXR client.
     for name, key, kept in (("dashboard.log", "dashboard_log", "dashboard.log"),
