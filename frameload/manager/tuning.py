@@ -77,6 +77,20 @@ SETTINGS_SCHEMA: List[Dict[str, Any]] = [
         ],
     },
     {
+        "key": "gpu_driver", "type": "choice", "default": "default", "scope": "vr", "needs_framebridge": False,
+        "title": "Graphics driver workaround",
+        "description": "Changes how the headset's graphics driver (Mesa Turnip) draws, for games that freeze the "
+                       "picture with a GPU hang. Direct to memory skips the tile memory; it costs some speed.",
+        "choices": [
+            {"value": "default", "label": "None (default)"},
+            {"value": "sysmem", "label": "Direct to memory"},
+            {"value": "nocb", "label": "No concurrent binning"},
+            {"value": "nolrz", "label": "No depth pre-pass (LRZ)"},
+            {"value": "noubwc", "label": "No compressed images"},
+            {"value": "flushall", "label": "Flush after every pass (slow)"},
+        ],
+    },
+    {
         "key": "text_input", "type": "bool", "default": False, "scope": "vr", "needs_framebridge": False,
         "title": "Allow typing",
         "description": "Shows the app's Android window behind its VR view so Steam's keyboard can type into it.",
@@ -88,6 +102,10 @@ SETTINGS_SCHEMA: List[Dict[str, Any]] = [
     },
 ]
 SCHEMA_BY_KEY = {s["key"]: s for s in SETTINGS_SCHEMA}
+# gpu_driver choice -> Turnip's TU_DEBUG flags (src/freedreno/vulkan/tu_util.cc)
+TU_DEBUG_FLAGS: Dict[str, str] = {
+    "default": "", "sysmem": "sysmem", "nocb": "nocb", "nolrz": "nolrz", "noubwc": "noubwc", "flushall": "flushall",
+}
 DEFAULTS: Dict[str, Any] = {s["key"]: s["default"] for s in SETTINGS_SCHEMA}
 FRAMEBRIDGE_KEYS = ("controller_fix", "scale", "refresh_rate", "haptic_scale", "hide_space_warp", "stable_local")
 
@@ -330,15 +348,23 @@ class TuningManager:
     def launch_env(settings: Dict[str, Any], is_vr: bool) -> Dict[str, str]:
         """Environment for `lepton start` (values FramePort verified on the headset)."""
         env: Dict[str, str] = {}
+        props: List[str] = []
         if is_vr:
             if settings["foveation"] == "fixed":
                 env["FDM_DEBUG"] = "disable_offsets"
             elif settings["foveation"] == "off":
                 env["VK_INSTANCE_LAYERS"] = ""
+            flags = TU_DEBUG_FLAGS.get(settings.get("gpu_driver", "default"))
+            if flags:
+                # Mesa on Android reads TU_DEBUG from the property debug.mesa.tu.debug (util/os_misc.c);
+                # "startup" makes Turnip log the flags it took, so the session shows the workaround was active.
+                props.append(f"debug.mesa.tu.debug={flags},startup")
         elif settings["hide_navbar"]:
-            # qemu.hw.mainkeys is only read at boot and Lepton has no setting for extra properties; it copies
-            # LEPTON_GFXRECON_* values into the boot properties unescaped, so a second line adds one.
-            env["LEPTON_GFXRECON_FRAMELOAD"] = "0\nqemu.hw.mainkeys=1"
+            props.append("qemu.hw.mainkeys=1")
+        if props:
+            # These properties are only read at boot and Lepton has no setting for extra properties; it copies
+            # LEPTON_GFXRECON_* values into the boot properties unescaped, so each further line adds one.
+            env["LEPTON_GFXRECON_FRAMELOAD"] = "0\n" + "\n".join(props)
         return env
 
     @staticmethod

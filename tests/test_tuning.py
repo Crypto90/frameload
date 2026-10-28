@@ -94,6 +94,12 @@ class TestSettingsModel(unittest.TestCase):
         flat = TuningManager.launch_env(base, is_vr=False)
         self.assertEqual(flat, {"LEPTON_GFXRECON_FRAMELOAD": "0\nqemu.hw.mainkeys=1"})
         self.assertEqual(TuningManager.launch_env({**base, "hide_navbar": False}, False), {})
+        # Turnip's TU_DEBUG goes in as a boot property (Mesa reads debug.mesa.tu.debug on Android).
+        env = TuningManager.launch_env({**base, "foveation": "off", "gpu_driver": "sysmem"}, True)
+        self.assertEqual(env, {"VK_INSTANCE_LAYERS": "",
+                               "LEPTON_GFXRECON_FRAMELOAD": "0\ndebug.mesa.tu.debug=sysmem,startup"})
+        self.assertEqual(TuningManager.launch_env({**base, "gpu_driver": "sysmem"}, False),
+                         {"LEPTON_GFXRECON_FRAMELOAD": "0\nqemu.hw.mainkeys=1"})
 
     def test_framebridge_values_only_hold_non_defaults(self):
         base = DEFAULTS.copy()
