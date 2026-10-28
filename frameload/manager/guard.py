@@ -161,17 +161,60 @@ def memory_limit_bytes(total: int) -> int:
     return max(4 * 1024 ** 3, total - RESERVE_BYTES)
 
 
+def container_cgroup(container: str, cgroup_root: str = "/sys/fs/cgroup", proc: str = "/proc") -> Optional[str]:
+    """The cgroup v2 folder of a running container, from its main process; None when unknown."""
+    try:
+        out = subprocess.run(["podman", "inspect", "--format", "{{.State.Pid}}", container],
+                             capture_output=True, text=True, timeout=10)
+        pid = int(out.stdout.strip() or 0) if out.returncode == 0 else 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    try:
+        with open(os.path.join(proc, str(pid), "cgroup"), encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("0::"):
+                    path = os.path.join(cgroup_root, line[3:].strip().lstrip("/"))
+                    return path if os.path.isfile(os.path.join(path, "memory.max")) else None
+    except OSError:
+        return None
+    return None
+
+
+def write_memory_limit(cgroup: str, limit: int) -> str:
+    """Writes memory.max (and 1 GiB of swap) into a cgroup v2 folder; '' on success."""
+    try:
+        with open(os.path.join(cgroup, "memory.max"), "w", encoding="utf-8") as f:
+            f.write(str(limit))
+    except OSError as e:
+        return f"cannot write memory.max: {e.strerror or e}"
+    try:
+        with open(os.path.join(cgroup, "memory.swap.max"), "w", encoding="utf-8") as f:
+            f.write(str(1024 ** 3))
+    except OSError:
+        pass  # no swap controller: the memory limit alone still holds
+    return ""
+
+
 def apply_memory_limit(container: str, total: int) -> str:
-    """Limits a game container's memory; '' on success, else why it could not be done."""
+    """Limits a game container's memory; '' on success, else why it could not be done.
+
+    Podman 5.0 refuses `podman update` for a container without a health check ("healthcheck-timeout must
+    be at least 1 second"), so a failed update falls back to the container's own cgroup files."""
     limit = memory_limit_bytes(total)
     try:
         out = subprocess.run(["podman", "update", "--memory", str(limit), "--memory-swap", str(limit + 1024 ** 3),
                               container], capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as e:
         return str(e)
-    if out.returncode != 0:
-        return (out.stderr or out.stdout).strip().splitlines()[-1] if (out.stderr or out.stdout).strip() else "podman update failed"
-    return ""
+    if out.returncode == 0:
+        return ""
+    reason = (out.stderr or out.stdout).strip().splitlines()[-1] if (out.stderr or out.stdout).strip() else "podman update failed"
+    cgroup = container_cgroup(container)
+    if cgroup and not write_memory_limit(cgroup, limit):
+        return ""
+    return reason
 
 
 def memory_critical(mem: Optional[Dict[str, int]], psi: Optional[Dict[str, float]], history: Deque[float]) -> str:

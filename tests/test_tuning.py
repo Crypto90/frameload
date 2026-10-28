@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from axml_builder import manifest, write_apk  # noqa: E402
 
-from frameload.installer.lepton_quest import FLATSCREEN_MARKER, LeptonInstaller, find_obb_dir  # noqa: E402
+from frameload.installer.lepton_quest import FLATSCREEN_MARKER, LeptonInstaller, find_obb_dir, find_release_obb  # noqa: E402
 from frameload.manager.installed import InstalledManager  # noqa: E402
 from frameload.manager.tuning import (  # noqa: E402
     DEFAULTS, PRESETS, SETTINGS_SCHEMA, TuningManager, normalize_settings,
@@ -172,6 +172,35 @@ class TestInstallAndApply(TuningTestCase):
         self.assertEqual(res["obb_files"], 1)
         self.assertTrue(os.path.isfile(os.path.join(
             self.anchor_root, "com.studio.obb", "lepton-app", "obb", "main.7.com.studio.obb.obb")))
+
+    def test_mirror_release_obb_folder_is_found_beside_the_apk(self):
+        pkg = "com.studio.mirror"
+        root = os.path.join(self.tmp, "Mirror Game v5+1.0 -VRP")
+        release = os.path.join(root, "Mirror Game v5+1.0 -VRP")
+        os.makedirs(os.path.join(release, pkg, "files", "Game_Data"))
+        apk = os.path.join(release, f"{pkg}.apk")
+        with open(apk, "wb") as f:
+            f.write(b"apk")
+        # A package folder with no .obb in it (Rick and Morty keeps a files/ folder) is still the OBB folder.
+        self.assertEqual(find_release_obb(root, apk, pkg), os.path.join(release, pkg))
+        self.assertEqual(find_release_obb(root, None, pkg), os.path.join(release, pkg))
+        self.assertEqual(find_obb_dir(os.path.join(release, pkg), pkg), os.path.join(release, pkg))
+        res = self.install(pkg, obb_path=find_release_obb(root, apk, pkg))
+        self.assertTrue(os.path.isdir(os.path.join(self.anchor_root, pkg, "lepton-app", "obb", "files", "Game_Data")))
+        self.assertEqual(res["obb_files"], 1)
+
+    def test_loose_obb_beside_the_apk_and_no_obb(self):
+        pkg = "com.studio.loose"
+        release = os.path.join(self.tmp, "rel", "Loose v2+1 -JF")
+        os.makedirs(release)
+        apk = os.path.join(release, f"{pkg}.apk")
+        for name in (f"{pkg}.apk", f"main.2.{pkg}.obb"):
+            with open(os.path.join(release, name), "wb") as f:
+                f.write(b"x")
+        self.assertEqual(find_release_obb(os.path.join(self.tmp, "rel"), apk, pkg),
+                         os.path.join(release, f"main.2.{pkg}.obb"))
+        os.remove(os.path.join(release, f"main.2.{pkg}.obb"))
+        self.assertIsNone(find_release_obb(os.path.join(self.tmp, "rel"), apk, pkg))
 
     def test_saving_settings_updates_launcher_and_framebridge_conf(self):
         pkg = "com.studio.tuned"

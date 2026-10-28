@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.1] - 2026-10-28
+
+### Fixed
+- **Games from the catalog were installed without their data.** Mirror releases keep a game's OBB folder beside its APK (`<release>/<package>/`), but the installer only looked for `Android/obb` and `obb`, so only the APK was installed. Games that need their data then quit at start or ran without it: Red Matter, Red Matter 2, Marvel's Iron Man VR, SWORDS of GARGANTUA, Space Pirate Trainer DX, Vampire Survivors VR, Walkabout Mini Golf, Epic Roller Coasters ("RuntimeData is null"), Rick and Morty Virtual Rick-ality and others.
+  - New downloads install the whole folder, including OBB files with other names (`Audio_<lang>.obb`, `overflow1.<package>.obb`) and folders without OBB files (`files/`).
+  - Games already installed get their data on the first start after the update: the left-behind folder of the installed version is moved in from FrameLoad's download folder. Nothing has to be downloaded again.
+- **Extracted downloads were never deleted** and kept a second copy of every catalog game in `~/.local/share/frameload/data`. They are now removed once the game is installed (when "delete cache after install" is on, the default).
+- **The Freeze Guard's memory limit never applied** on SteamOS's podman ("healthcheck-timeout must be at least 1 second"). FrameLoad now writes the limit into the game container's own cgroup when `podman update` refuses.
+- A failed install after a mirror download no longer shows "Installed & Ready to Play" under the error.
+
+---
+
 ## [v1.4.0] - 2026-10-15
 
 ### Changed

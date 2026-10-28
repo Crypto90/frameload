@@ -12,7 +12,7 @@ import re
 import shlex
 import shutil
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ..config import ANCHOR_DIR
 from ..system.shortcuts import register_game_in_steam, shortcut_appid
@@ -117,8 +117,15 @@ def find_obb_dir(path: Optional[str], package_name: str) -> Optional[str]:
     """The folder whose contents belong in Android/obb/<package>/, for the layouts dumps come in."""
     if not path or not os.path.isdir(path):
         return None
+    # A folder named after the package is the whole Android/obb/<package> of a release, whatever it holds
+    # (Marvel's Iron Man has Audio_<lang>.obb, Rick and Morty a files/ folder with no .obb at all).
+    for own in (path, os.path.join(path, package_name)):
+        try:
+            if os.path.basename(os.path.normpath(own)) == package_name and os.path.isdir(own) and os.listdir(own):
+                return own
+        except OSError:
+            pass
     for candidate in (
-        os.path.join(path, package_name),
         os.path.join(path, "obb", package_name),
         os.path.join(path, "Android", "obb", package_name),
         path,
@@ -129,6 +136,45 @@ def find_obb_dir(path: Optional[str], package_name: str) -> Optional[str]:
                 return candidate
         except OSError:
             continue
+    return None
+
+
+def find_release_obb(root: Optional[str], apk_path: Optional[str], package_name: str) -> Optional[str]:
+    """The OBB folder (or loose main.<v>.<package>.obb) of an extracted release; None when it has none.
+
+    Mirror archives hold one folder named after the release, so the APK and its <package>/ folder sit one
+    level below the extraction root: <root>/<release>/<package>.apk and <root>/<release>/<package>/."""
+    folders: List[str] = []
+    if apk_path:
+        folders.append(os.path.dirname(os.path.abspath(apk_path)))
+    if root and os.path.isdir(root):
+        folders.append(root)
+        for dirpath, dirnames, _ in os.walk(root):
+            if dirpath[len(root):].count(os.sep) >= 3:
+                dirnames[:] = []
+                continue
+            dirnames.sort()
+            if package_name in dirnames:
+                folders.append(dirpath)
+    for folder in dict.fromkeys(folders):
+        # Not find_obb_dir(folder): the release folder itself also holds the APK, which is no OBB.
+        for candidate in (os.path.join(folder, "Android", "obb"), os.path.join(folder, "obb")):
+            found = find_obb_dir(candidate, package_name)
+            if found:
+                return found
+        own = os.path.join(folder, package_name)
+        try:
+            if os.path.isdir(own) and os.listdir(own):
+                return own
+        except OSError:
+            continue
+    for folder in dict.fromkeys(folders):
+        try:
+            loose = sorted(n for n in os.listdir(folder) if is_own_obb(n, package_name))
+        except OSError:
+            continue
+        if loose:
+            return os.path.join(folder, loose[0])
     return None
 
 
@@ -297,7 +343,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 7,
+            "layout_version": 8,
             "time": time.time(),
         }
         if origin is None:

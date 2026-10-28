@@ -34,6 +34,7 @@ def read_text(path):
 
 
 def write_text(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
 
@@ -528,6 +529,39 @@ class TestMigration(LibraryTestCase):
 
         self.running.clear()
         self.assertEqual(list(migrate.migrate_installs()), [running])
+
+
+    def test_obb_left_in_the_extracted_release_is_moved_in(self):
+        pkg = "com.studio.lostobb"
+        base = self.make_legacy(pkg)
+        shutil.rmtree(os.path.join(base, "lepton-app", "obb"))
+        code = InstalledManager.get_game(pkg)["version_code"]
+        data = os.path.join(self.tmp, "data")
+        release = os.path.join(data, f"Lost OBB v{code}+1.0 -VRP", f"Lost OBB v{code}+1.0 -VRP")
+        write_text(os.path.join(release, pkg, f"main.{code}.{pkg}.obb"), "obb")
+        write_text(os.path.join(release, pkg, "Audio_en.obb"), "audio")
+        write_text(os.path.join(release, f"{pkg}.apk"), "apk")
+        other = os.path.join(data, "Lost OBB v1+0.1 -VRP", "Lost OBB v1+0.1 -VRP", pkg, "main.1.x.obb")
+        write_text(other, "an older release")
+        with patch.object(migrate, "DATA_DIR", data):
+            report = migrate.migrate_installs()
+        self.assertTrue(any("left behind" in c for c in report[pkg]), report)
+        obb = os.path.join(base, "lepton-app", "obb")
+        self.assertEqual(sorted(os.listdir(obb)), ["Audio_en.obb", f"main.{code}.{pkg}.obb"])
+        self.assertFalse(os.path.exists(os.path.dirname(release)))
+        self.assertTrue(os.path.isfile(other))
+
+    def test_obb_already_in_place_is_left_alone(self):
+        pkg = "com.studio.hasobb"
+        base = self.make_legacy(pkg)
+        code = InstalledManager.get_game(pkg)["version_code"]
+        data = os.path.join(self.tmp, "data")
+        release = os.path.join(data, f"Has v{code}+1 -VRP", f"Has v{code}+1 -VRP", pkg, "main.9.x.obb")
+        write_text(release, "obb")
+        with patch.object(migrate, "DATA_DIR", data):
+            migrate.migrate_installs()
+        self.assertEqual(os.listdir(os.path.join(base, "lepton-app", "obb")), [f"main.3.{pkg}.obb"])
+        self.assertTrue(os.path.isfile(release))
 
 
 class TestDoctor(LibraryTestCase):

@@ -101,7 +101,7 @@ class TestLauncherRecord(unittest.TestCase):
         self.assertIn("printf '%s %s\\n' \"$started\" \"$ended\" >> \"$app_dir/.playtime\"", body)  # still two fields
         self.assertIn("export LEPTON_DUMP_LOGCAT=1", LAUNCH_SCRIPT_TEMPLATE)
         self.assertIn('fail "Lepton runtime not found on this system."', LAUNCH_SCRIPT_TEMPLATE)
-        self.assertEqual(migrate.LAYOUT_VERSION, 7)  # existing games get the new launcher (AGENTS.md 4a.15)
+        self.assertGreaterEqual(migrate.LAYOUT_VERSION, 7)  # existing games get the new launcher (AGENTS.md 4a.15)
 
 
 @unittest.skipIf(os.name == "nt" or not all(shutil.which(t) for t in ("bash", "flock", "setsid")),

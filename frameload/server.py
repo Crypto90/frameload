@@ -49,7 +49,7 @@ from .config import ANCHOR_DIR, Config, DATA_DIR
 from .installer.artwork import image_extension
 from .installer import hand_tracking, porting
 from .system import perf, power
-from .installer.lepton_quest import LeptonInstaller
+from .installer.lepton_quest import LeptonInstaller, find_release_obb
 from .installer.package_loader import PackageLoader
 from .manager import files as file_manager
 from .manager import github_reports, launchlog
@@ -1406,16 +1406,8 @@ def on_download_complete(task) -> None:
 
     task.status = "installing"
     task.status_detail = "Installing into Lepton container..."
-    # Find obb folder if present
-    obb_dir = None
-    if task.extracted_path and os.path.isdir(task.extracted_path):
-        cand1 = os.path.join(task.extracted_path, "Android/obb")
-        if os.path.isdir(cand1):
-            obb_dir = cand1
-        else:
-            cand2 = os.path.join(task.extracted_path, "obb")
-            if os.path.isdir(cand2):
-                obb_dir = cand2
+    # The release's OBB folder: mirror archives keep it beside the APK as <release>/<package>/.
+    obb_dir = find_release_obb(task.extracted_path, task.target_apk, task.game.package_name)
 
     # An app from an app source records where it came from, and must be the package the catalog listed.
     game = task.game

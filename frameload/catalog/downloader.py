@@ -398,8 +398,10 @@ class Downloader:
             try:
                 task.status = "installing"
                 task.status_detail = "Installing into Lepton container..."
-                self._on_complete_hook(task)
-                task.status_detail = "Installed & Ready to Play"
+                self._on_complete_hook(task)  # sets the final status and detail
+                # The install copied the APK and OBB files; the extracted release is a second copy of them.
+                if task.status == "completed" and self.config["download"].get("delete_cache_after_install", True):
+                    shutil.rmtree(extract_dest, ignore_errors=True)
             except Exception as e:
                 task.status = "error"
                 task.error_message = f"Install failed: {e}"

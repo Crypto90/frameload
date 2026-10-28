@@ -601,6 +601,43 @@ class TestFreezeGuard(Case):
         self.assertEqual(guard.memory_limit_bytes(5 * gib), 4 * gib)
 
 
+class TestMemoryLimit(Case):
+    def run_results(self, update_rc, pid="4242"):
+        def run(cmd, **kwargs):
+            if cmd[:2] == ["podman", "update"]:
+                return MagicMock(returncode=update_rc, stdout="",
+                                 stderr="Error: healthcheck-timeout must be at least 1 second\n")
+            return MagicMock(returncode=0, stdout=pid + "\n", stderr="")
+        return run
+
+    def make_cgroup(self):
+        cg = os.path.join(self.tmp, "cg", "user.slice", "libpod-abc.scope", "container")
+        os.makedirs(cg)
+        for name in ("memory.max", "memory.swap.max"):
+            with open(os.path.join(cg, name), "w") as f:
+                f.write("max\n")
+        os.makedirs(os.path.join(self.tmp, "proc", "4242"))
+        with open(os.path.join(self.tmp, "proc", "4242", "cgroup"), "w") as f:
+            f.write("0::/user.slice/libpod-abc.scope/container\n")
+        return cg
+
+    def test_podman_update_refusal_falls_back_to_the_cgroup(self):
+        cg = self.make_cgroup()
+        real = guard.container_cgroup
+        with patch.object(guard.subprocess, "run", side_effect=self.run_results(125)), \
+                patch.object(guard, "container_cgroup",
+                             side_effect=lambda c: real(c, os.path.join(self.tmp, "cg"), os.path.join(self.tmp, "proc"))):
+            self.assertEqual(guard.apply_memory_limit("lepton-steamlaunch-1", 16 * 1024 ** 3), "")
+        with open(os.path.join(cg, "memory.max")) as f:
+            self.assertEqual(int(f.read()), guard.memory_limit_bytes(16 * 1024 ** 3))
+        with open(os.path.join(cg, "memory.swap.max")) as f:
+            self.assertEqual(int(f.read()), 1024 ** 3)
+
+    def test_podman_error_is_reported_when_the_cgroup_is_unknown(self):
+        with patch.object(guard.subprocess, "run", side_effect=self.run_results(125, pid="0")):
+            self.assertIn("healthcheck-timeout", guard.apply_memory_limit("lepton-steamlaunch-1", 16 * 1024 ** 3))
+
+
 class TestHeadsetState(Case):
     def test_headset_state_comes_from_steamvrs_log(self):
         steam = os.path.join(self.tmp, "steam")

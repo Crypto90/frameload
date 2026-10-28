@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from ..config import DATA_DIR
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 7  # 7: launch.sh records how a session ended (.session_end) and keeps Lepton's log dump
+LAYOUT_VERSION = 8  # 8: OBB folders that installs up to v1.4.0 left in the extracted release are moved in
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (
@@ -35,6 +36,37 @@ def flatten_obb(app_dir: str, package: str) -> int:
     return moved
 
 
+def restore_release_obb(app_dir: str, package: str, version_code: str, data_dir: Optional[str] = None) -> int:
+    """Moves a game's OBB folder in from its extracted mirror release when lepton-app/obb/ is empty.
+
+    Up to v1.4.0 the install hook looked for Android/obb/ and obb/ only, while mirror releases keep the
+    folder as <release>/<package>/ beside the APK: the game was installed without its data, which stayed
+    behind in DATA_DIR/<release>/. Only a release of the installed version is used."""
+    from ..installer.lepton_quest import find_release_obb
+
+    obb_target = os.path.join(app_dir, "obb")
+    if not version_code or (os.path.isdir(obb_target) and os.listdir(obb_target)):
+        return 0
+    try:
+        data_dir = data_dir or DATA_DIR
+        releases = sorted(n for n in os.listdir(data_dir) if f" v{version_code}+" in n)
+    except OSError:
+        return 0
+    for name in releases:
+        release = os.path.join(data_dir, name)
+        found = find_release_obb(release, None, package) if os.path.isdir(release) else None
+        if not found:
+            continue
+        os.makedirs(obb_target, exist_ok=True)
+        items = [found] if os.path.isfile(found) else [os.path.join(found, n) for n in os.listdir(found)]
+        for src in items:
+            shutil.move(src, os.path.join(obb_target, os.path.basename(src)))
+        # What is left is the APK the game was installed from: a second copy of lepton-app/game.apk.
+        shutil.rmtree(release, ignore_errors=True)
+        return len(items)
+    return 0
+
+
 def migrate_game(game: Dict[str, Any]) -> List[str]:
     """Migrates one install. Returns what was changed."""
     from .tuning import TuningManager
@@ -46,6 +78,9 @@ def migrate_game(game: Dict[str, Any]) -> List[str]:
     moved = flatten_obb(os.path.join(base, "lepton-app"), package)
     if moved:
         changes.append(f"moved {moved} OBB file(s) to where Lepton reads them")
+    restored = restore_release_obb(os.path.join(base, "lepton-app"), package, str(game.get("version_code") or ""))
+    if restored:
+        changes.append(f"installed {restored} OBB item(s) the download had left behind")
 
     files_dir = os.path.join(base, "lepton-data/external/Android/data", package, "files")
     stale = [os.path.join(base, rel) for rel in STALE_FILES] + [os.path.join(files_dir, n) for n in STALE_DATA_FILES]
