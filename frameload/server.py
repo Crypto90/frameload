@@ -1503,6 +1503,10 @@ def run_server(host: str = "0.0.0.0", port: int = 5050) -> None:
                 print(f"[FrameLoad] Porting tools: {job['kind']} started in the background")
         except Exception as e:
             print(f"[FrameLoad] Porting maintenance skipped: {e}")
+        # Again later: games are not ported while one runs, and FramePort updates are checked on their own clock.
+        again = threading.Timer(1800.0, porting_maintenance)
+        again.daemon = True
+        again.start()
 
     # Give the dashboard and the network a moment after boot before downloading anything.
     timer = threading.Timer(30.0, porting_maintenance)

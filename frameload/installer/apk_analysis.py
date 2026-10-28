@@ -144,6 +144,35 @@ def _build_compat(a: ApkAnalysis, manifest: ManifestInfo, platform_sdk: bool) ->
     return {"level": level, "label": COMPAT_LABELS[level], "issues": issues}
 
 
+# The headset OVRPort's dispatcher (lib/<abi>/libopenxr_loader.so of a ported APK) names to the game.
+# FramePort's headset_model patch (1.4.0 and later) writes "Meta Quest 3" over OVRPort's "Oculus Quest2";
+# an APK ported before that, or with an OVRPort it cannot match, still says Quest 2. Games pick their
+# quality presets (render scale, textures) from this answer.
+HEADSET_NAMES = ((b"Meta Quest 3S\0", "quest3s"), (b"Meta Quest 3\0", "quest3"),
+                 (b"Quest Pro\0", "questpro"), (b"Oculus Quest2\0", "quest2"))
+DISPATCHER_LIB = "libopenxr_loader.so"
+
+
+def headset_identity(apk_path: str) -> str:
+    """quest3 / quest3s / questpro / quest2 as the ported game sees it; "" when the APK has no OVRPort
+    dispatcher (not ported, or a native OpenXR app that asks SteamVR itself), "unknown" when it has one
+    without a known name."""
+    try:
+        with zipfile.ZipFile(apk_path, "r") as zf:
+            names = set(zf.namelist())
+            lib = next((f"lib/{abi}/{DISPATCHER_LIB}" for abi in (ARM64, "armeabi-v7a")
+                        if f"lib/{abi}/{DISPATCHER_LIB}" in names), "")
+            if not lib or not any(f"lib/{ARM64}/{fb}" in names for fb in FRAMEBRIDGE_LIBS):
+                return ""
+            data = zf.read(lib)
+    except (OSError, zipfile.BadZipFile, KeyError):
+        return ""
+    for name, key in HEADSET_NAMES:
+        if name in data:
+            return key
+    return "unknown"
+
+
 def inspect_apk(apk_path: str) -> ApkAnalysis:
     """Reads an APK's manifest and native libraries and judges whether Lepton can run it."""
     if not os.path.isfile(apk_path):

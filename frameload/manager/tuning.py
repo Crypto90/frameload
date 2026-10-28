@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import ANCHOR_DIR, Config
 from ..installer import hand_tracking
+from ..system import steamvr_settings
 from ..installer.apk_analysis import inspect_apk
 from .installed import InstalledManager
 
@@ -44,9 +45,10 @@ SETTINGS_SCHEMA: List[Dict[str, Any]] = [
         "description": "Multiplies the eye-buffer width and height the game renders at. 1.5 is 2.25 times the pixels.",
     },
     {
-        "key": "refresh_rate", "type": "choice", "default": 0, "scope": "vr", "needs_framebridge": True,
+        "key": "refresh_rate", "type": "choice", "default": 0, "scope": "vr", "needs_framebridge": False,
         "title": "Refresh rate",
-        "description": "Display refresh rate while this game runs.",
+        "description": "Display refresh rate while this game runs, set in SteamVR before it starts. Game's choice "
+                       "is the rate the game asks for (many Quest 3 games want 90 Hz), from its second start on.",
         "choices": [{"value": r, "label": f"{r} Hz" if r else "Game's choice"} for r in REFRESH_RATES],
     },
     {
@@ -399,6 +401,12 @@ class TuningManager:
         return conf
 
     @staticmethod
+    def display_rate(settings: Dict[str, Any], dep: Dict[str, Any]) -> int:
+        """The panel rate launch.sh asks SteamVR for: the player's Refresh rate, else ("Game's choice") the rate the
+        game itself asked for in an earlier session (sessions.learn_refresh_rate), else 0 (SteamVR's own)."""
+        return int(settings.get("refresh_rate") or dep.get("game_refresh_rate") or 0)
+
+    @staticmethod
     def launch_env(settings: Dict[str, Any], is_vr: bool) -> Dict[str, str]:
         """Environment for `lepton start` (values FramePort verified on the headset)."""
         env: Dict[str, str] = {}
@@ -440,6 +448,8 @@ class TuningManager:
         effective = TuningManager.effective_settings(dep)
 
         LeptonInstaller.set_flatscreen(os.path.join(base, "lepton-app"), (not is_vr) or effective["text_input"])
+        if is_vr:
+            steamvr_settings.write_rate(base, TuningManager.display_rate(effective, dep))
         LeptonInstaller.write_launcher(
             anchor=anchor, base=base, package_name=package_name, title=dep.get("title", package_name),
             appid=dep.get("appid", 0), env=TuningManager.launch_env(effective, is_vr),

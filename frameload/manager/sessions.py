@@ -849,6 +849,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         if fix in ("foveation_off", "gpu_sysmem"):
             result["auto_fix"] = fix
 
+    asked_rate = learn_refresh_rate(pkg, dep, lines)
+
     lepton = LEPTON_VERSION_RE.search("\n".join(lines[:400]))
     gs = guard_state or {}
     record = {
@@ -863,7 +865,7 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         "stop": marker if result["outcome"] in ("guard_memory", "guard_frozen", "stopped_player", "stopped_frameload") else None,
         "sources": sources, "lepton": f"{lepton.group(1)} (rootfs {lepton.group(2)})" if lepton else "",
         "kind": "vr" if dep.get("is_vr", True) else "2d", "seen": quiet, "time": now,
-        "auto_fix": result.get("auto_fix", ""), "settings": ran_with,
+        "auto_fix": result.get("auto_fix", ""), "settings": ran_with, "asked_refresh_rate": asked_rate,
     }
     _write_json(_record_path(pkg), record)
     print(f"[FrameLoad] Session of {pkg}: {record['outcome']} ({record['headline']})")
@@ -907,6 +909,31 @@ def _session_settings(dep: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         return {}
     return {k: effective[k] for k in ("scale", "refresh_rate", "foveation", "gpu_driver") if k in effective}
+
+
+ASKED_RATE_RE = re.compile(r"FrameBridge: refresh rate: app asked for ([0-9.]+) Hz")
+
+
+def learn_refresh_rate(pkg: str, dep: Dict[str, Any], lines: List[str]) -> int:
+    """The display rate the game asked for (FrameBridge logs every xrRequestDisplayRefreshRateFB), snapped to the
+    panel's rates. The Frame's runtime refuses it while the panel runs another rate, so FrameLoad keeps it on the
+    game (game_refresh_rate) and launch.sh asks SteamVR for it before the next start: a Quest 3 game that wants
+    90 Hz gets 90 Hz from its second start on. 0 when the game asked for nothing."""
+    from ..system.steamvr_settings import snap_rate
+    from .tuning import TuningManager
+
+    asked = [float(m.group(1)) for m in map(ASKED_RATE_RE.search, lines) if m]
+    rate = snap_rate(max(asked)) if asked else 0
+    if not rate or rate == dep.get("game_refresh_rate") or dep.get("installed_by", "frameload") != "frameload":
+        return rate
+    try:
+        dep["game_refresh_rate"] = rate
+        TuningManager._write_dep(dep)
+        TuningManager.apply_tuning_to_game(pkg, dep=dep)
+        print(f"[FrameLoad] {pkg} asked for {rate} Hz: SteamVR gets that rate before its next start")
+    except Exception as e:
+        print(f"[FrameLoad] Could not keep the refresh rate {pkg} asked for: {e}")
+    return rate
 
 
 def _fix_after_gpu_hang(pkg: str, dep: Dict[str, Any]) -> str:

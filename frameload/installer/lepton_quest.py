@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from ..config import ANCHOR_DIR
 from ..system.shortcuts import register_game_in_steam, shortcut_appid
 from ..system.steamos import lepton_status
-from .apk_analysis import inspect_apk
+from .apk_analysis import headset_identity, inspect_apk
 from .artwork import ArtworkManager
 
 FLATSCREEN_MARKER = "lepton-show-flatscreen"
@@ -26,6 +26,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 # is drawing (see system/steam_ui.py); FRAMELOAD_KEEP_DASHBOARD=1 leaves the menu alone.
 DASHBOARD_LINE = ('[[ -n "${{FRAMELOAD_KEEP_DASHBOARD:-}}" ]] || PYTHONPATH={repo_q} python3 -m frameload.system.steam_ui '
                   '"$app_dir/launch.log" $$ >"$app_dir/dashboard.log" 2>&1 9>&- &')
+# The Frame's OpenXR runtime offers only the panel's current rate, so a game's own request for 90 or 120 Hz is
+# refused. SteamVR picks the rate from its per-game setting when the session starts: set it first (see
+# system/steamvr_settings.py; the rate is <app_dir>/.refresh_rate, written by tuning.py).
+REFRESH_RATE_LINE = ('timeout 10s env PYTHONPATH={repo_q} python3 -m frameload.system.steamvr_settings "$app_dir" '
+                     '"$SteamAppId" >"$app_dir/refresh-rate.log" 2>&1 9>&- || true\n')
 
 LAUNCH_SCRIPT_TEMPLATE = r"""#!/usr/bin/env bash
 # FrameLoad Steam Frame launcher for {title} ({pkg})
@@ -99,7 +104,7 @@ trap stop EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-started=$(date +%s)
+{refresh_rate}started=$(date +%s)
 echo "$started" > "$app_dir/.last_played" 2>/dev/null || true
 setsid "$lepton" start >"$app_dir/launch.log" 2>&1 &
 child=$!
@@ -222,6 +227,7 @@ class LeptonInstaller:
             lepton_q=shlex.quote(lepton_status()["path"] or "/usr/bin/lepton"),
             extra_env=extra,
             dashboard=DASHBOARD_LINE.format(repo_q=shlex.quote(REPO_ROOT)) if hide_dashboard else "",
+            refresh_rate=REFRESH_RATE_LINE.format(repo_q=shlex.quote(REPO_ROOT)) if hide_dashboard else "",
         )
         path = os.path.join(anchor, "launch.sh")
         tmp = path + ".tmp"
@@ -358,10 +364,15 @@ class LeptonInstaller:
             "compat": analysis.compat,
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
+            "headset": headset_identity(dest_apk),
             "installed_by": "frameload",
-            "layout_version": 12,
+            "layout_version": 13,
             "time": time.time(),
         }
+        # Learnt on this game, not on this APK: the rate it asks for, and which FramePort already re-ported it.
+        for key in ("game_refresh_rate", "identity_port_tried"):
+            if previous.get(key):
+                dep[key] = previous[key]
         if origin is None:
             origin = previous.get("origin")  # a port or a reinstall keeps where the app came from
         if isinstance(origin, dict) and origin.get("source"):

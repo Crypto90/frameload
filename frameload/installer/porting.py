@@ -377,6 +377,67 @@ def pending_games() -> List[Dict[str, Any]]:
     return found
 
 
+# FramePort 1.4.0 makes every game it ports report a Meta Quest 3 (its device.headset_model patch). Games
+# ported before still say "Oculus Quest2" and pick Quest 2 quality presets and refresh rates (Epic Roller
+# Coasters: HeadsetType Oculus_Quest_2 before, Meta_Quest_3 and a 90 Hz request after porting it again).
+QUEST3_SINCE = (1, 4, 0)
+
+
+def _version_tuple(version: str) -> Tuple[int, ...]:
+    return tuple(int(n) for n in re.findall(r"\d+", version.split("+")[0].split(".dev")[0])[:3])
+
+
+def headset_of(dep: Dict[str, Any]) -> str:
+    """The headset a game's APK reports (apk_analysis.headset_identity), read once and kept on the game."""
+    from .apk_analysis import headset_identity
+
+    if "headset" not in dep:
+        base = dep.get("base") or dep.get("anchor") or ""
+        dep["headset"] = headset_identity(os.path.join(base, "lepton-app", "game.apk"))
+        try:
+            _set_flags(dep["package"], headset=dep["headset"])
+        except (OSError, KeyError):
+            pass
+    return dep["headset"]
+
+
+def quest2_games(frameport_version: str) -> List[Dict[str, Any]]:
+    """Games FrameLoad ported that still report a Quest 2 and have not been ported again with this FramePort."""
+    from ..manager.installed import InstalledManager
+
+    if not frameport_version or _version_tuple(frameport_version) < QUEST3_SINCE:
+        return []
+    found = []
+    for game in InstalledManager.list_installed():
+        dep = InstalledManager.get_game(game["package"]) or {}
+        if dep.get("kind") != "quest" or dep.get("installed_by") != "frameload" or not dep.get("framebridge"):
+            continue
+        if dep.get("identity_port_tried") == frameport_version or headset_of(dep) != "quest2":
+            continue
+        found.append({"package": game["package"], "title": dep.get("title", game["package"])})
+    return found
+
+
+def port_as_quest3(log: Log, frameport_version: str) -> List[str]:
+    """Ports every game that still reports a Quest 2 again, one at a time and never while a game runs. Each
+    is tried once per FramePort version; a failure only goes to the log, the game keeps its working build."""
+    from ..manager.installed import InstalledManager
+
+    done = []
+    for game in quest2_games(frameport_version):
+        if any(g.get("is_running") for g in InstalledManager.list_installed()):
+            log("A game is running: the others are ported again later.")
+            break
+        _set_flags(game["package"], identity_port_tried=frameport_version)
+        log(f"Porting {game['title']} again so it sees a Meta Quest 3...")
+        try:
+            port_installed_game(game["package"], log)
+            done.append(game["package"])
+        except Exception as e:  # the old build still works: keep it
+            log(f"{game['title']}: {e}")
+    return done
+
+
 def port_and_record(package: str, log: Log) -> Dict[str, Any]:
     """Ports one installed game. A failure is remembered on the game, so automatic porting does not
     repeat a port that takes minutes and fails the same way until FramePort changes or the user asks."""
@@ -438,6 +499,12 @@ def ensure_ready() -> Optional[Dict[str, Any]]:
     return PortingJobs.start("setup", setup_and_port_pending, queue=True)
 
 
+def _installed() -> List[Dict[str, Any]]:
+    from ..manager.installed import InstalledManager
+
+    return InstalledManager.list_installed()
+
+
 def background_maintenance() -> Optional[Dict[str, Any]]:
     """Run shortly after FrameLoad starts: sets porting up the first time and keeps FramePort current,
     so nobody has to press a button. Only on a Steam Frame, and only when allowed in the settings."""
@@ -455,6 +522,10 @@ def background_maintenance() -> Optional[Dict[str, Any]]:
     if is_auto() and pending_games() and not PortingJobs.active():  # "blocked" games are not "needs_port"
         # Games already in the library (installed by an older version, or downloaded) are ported too.
         return PortingJobs.start("port", lambda log: {"ported": port_pending(log)}, queue=True)
+    version = current["version"]
+    if is_auto() and not PortingJobs.active() and quest2_games(version) \
+            and not any(g.get("is_running") for g in _installed()):
+        return PortingJobs.start("port", lambda log: {"ported": port_as_quest3(log, version)}, queue=True)
     if not current["managed"] or now - state.get("last_update_check", 0) < UPDATE_CHECK_SECONDS:
         return None
     _save_state(last_update_check=now)

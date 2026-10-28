@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from ..config import DATA_DIR
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 12  # 12: container_setup.log says what each permission command answered
+LAYOUT_VERSION = 13  # 13: launch.sh sets SteamVR's per-game refresh rate before Lepton starts
 # 11: launch.sh sets the permissions a release's install.txt asks for (container_setup.txt)
 # 10: install.txt data placed in another game of the same version code is moved to its own
 # 9: a left-behind release's install.txt is carried out; 8: its OBB folder is moved in
