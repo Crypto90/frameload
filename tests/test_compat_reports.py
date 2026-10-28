@@ -181,6 +181,19 @@ class TestCompatReports(unittest.TestCase):
             compat_reports._state["list"] = {}
             self.assertFalse(TuningManager.sync_recommended(PKG))
 
+    def test_the_installed_versions_own_status_wins_once_enough_headsets_played_it(self):
+        compat_reports._state.update(list={PKG: {"status": "working", "label": "Working", "status_by_version": {
+            "80": {"status": "broken", "reports": 3}, "79": {"status": "partial", "reports": 1}}}},
+            fetched=time.time())
+        games = [{"package": PKG, "version_code": "80"}, {"package": PKG, "version_code": 79},
+                 {"package": PKG, "version_code": "75"}]
+        compat_reports.annotate(games)
+        self.assertEqual((games[0]["community"]["status"], games[0]["community"]["label"],
+                          games[0]["community"]["version"]), ("broken", "Not working", "80"))
+        self.assertEqual(games[1]["community"]["status"], "working")  # one headset decides nothing
+        self.assertEqual(games[2]["community"]["status"], "working")  # an unreported version: the game's
+        self.assertEqual(self.sent, [])
+
 
 if __name__ == "__main__":
     unittest.main()

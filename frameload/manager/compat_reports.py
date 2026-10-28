@@ -284,12 +284,23 @@ def community() -> Dict[str, Any]:
     return _state["list"] or {}
 
 
+STATUS_LABELS = {"working": "Working", "partial": "Partial", "broken": "Not working", "untested": "Untested"}
+VERSION_MIN_HEADSETS = 3  # the site's STATUS_MIN_HEADSETS: from then on a version's own reports decide
+
+
 def annotate(games: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Adds `community` (status, label, note, best settings, link) to the games the list knows."""
+    """Adds `community` (status, label, note, best settings, link) to the games the list knows. When enough
+    headsets reported the installed version, its own status replaces the game's (an update can break a game)."""
     listed = community()
     for game in games:
         entry = listed.get(game.get("package"))
         if isinstance(entry, dict) and entry.get("status"):
-            game["community"] = {k: entry.get(k) for k in
-                                 ("status", "label", "note", "settings_text", "reports", "url")}
+            info = {k: entry.get(k) for k in ("status", "label", "note", "settings_text", "reports", "url")}
+            versions = entry.get("status_by_version")
+            own = versions.get(str(game.get("version_code") or "")) if isinstance(versions, dict) else None
+            if isinstance(own, dict) and own.get("status") in STATUS_LABELS \
+                    and int(own.get("reports") or 0) >= VERSION_MIN_HEADSETS:
+                info.update(status=own["status"], label=STATUS_LABELS[own["status"]], reports=int(own["reports"]),
+                            version=str(game.get("version_code")))
+            game["community"] = info
     return games

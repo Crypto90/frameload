@@ -55,7 +55,7 @@ page_start($game['title'], "{$game['title']} on the Steam Frame: " . STATUSES[$g
         <h3>Best settings</h3>
         <ul class="tags tags-block"><?php foreach ($settings as $s): ?><li class="tag"><?= h($s) ?></li><?php endforeach; ?></ul>
         <p class="muted"><?= $game['settings_source'] === 'reports'
-            ? 'Learnt from headsets\' reports: the settings that worked best for this game\'s newest version. FrameLoad applies them by itself, matched to the installed version.'
+            ? 'Learnt from headsets\' reports: the settings at least two headsets played well with, for this game\'s newest version. FrameLoad applies them by itself, matched to the installed version.'
             : 'From the team\'s test, until headsets report with these settings. FrameLoad applies them by itself.' ?></p>
         <p class="muted small">Set them in FrameLoad: the game's page, then Settings.</p>
       <?php endif; ?>
@@ -75,7 +75,15 @@ page_start($game['title'], "{$game['title']} on the Steam Frame: " . STATUSES[$g
             </div>
           <?php endforeach; ?>
         </div>
-        <p class="muted small"><?= $game['reports'] ?> headset<?= $game['reports'] === 1 ? '' : 's' ?> in the last 120 days<?= $game['fps'] ? ', about ' . $game['fps'] . ' fps' : '' ?>. With three or more, the reports decide the status.</p>
+        <p class="muted small"><?= $game['reports'] ?> headset<?= $game['reports'] === 1 ? '' : 's' ?> in the last 120 days<?= $game['fps'] ? ', about ' . $game['fps'] . ' fps' : '' ?>. With three or more, the reports decide the status, and with three or more on the newest version, that version's.</p>
+        <?php if (count($game['status_by_version']) > 1 || $game['status_version'] !== null): ?>
+        <h3>By version</h3>
+        <ul class="tags tags-block">
+          <?php foreach ($game['status_by_version'] as $version => $v): ?>
+            <li class="tag">Version <?= h((string)$version) ?>: <?= h(STATUSES[$v['status']]['label']) ?> · <?= (int)$v['reports'] ?> headset<?= $v['reports'] === 1 ? '' : 's' ?></li>
+          <?php endforeach; ?>
+        </ul>
+        <?php endif; ?>
       <?php else: ?>
         <p class="muted">No reports yet. Play it with <em>Share compatibility reports</em> turned on in FrameLoad, and your session counts here.</p>
       <?php endif; ?>

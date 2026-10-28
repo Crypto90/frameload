@@ -11,6 +11,8 @@ const KNOWN_OUTCOMES = [
 ];
 const REPORT_WINDOW = 120 * 86400; // reports older than this no longer count
 const MIN_PLAY_SECONDS = 120;      // a working session showed its picture at least this long
+const STATUS_MIN_HEADSETS = 3;     // headsets whose reports outvote the team's test, per game and per version
+const SETTINGS_MIN_HEADSETS = 2;   // headsets that played well with settings before the site recommends them
 
 /** One session: working, partial or broken. */
 function rate_report(string $outcome, int $duration, bool $drew, string $autoFix): string
@@ -58,24 +60,27 @@ function settings_score(string $outcome, string $rating, bool $drew): float
     return $rating === 'working' ? 1.0 : 0.5;
 }
 
-/** The best settings among those reported: [] when the unchanged settings do best, null without evidence. */
+/**
+ * The best settings among those reported: [] when the unchanged settings do best, null without evidence.
+ * Only settings that at least SETTINGS_MIN_HEADSETS headsets played well with count, so one odd report decides nothing.
+ */
 function best_settings(array $combos): ?array
 {
-    if (!$combos) {
-        return null;
-    }
     $default = implode('|', SETTING_DEFAULTS);
     $best = null;
     $bestScore = -1.0;
-    foreach ($combos as $combo => [$sum, $n]) {
+    foreach ($combos as $combo => [$sum, $n, $good]) {
+        if ($good < SETTINGS_MIN_HEADSETS) {
+            continue;
+        }
         // One pseudo-session that went badly: a single good report counts less than several.
         $score = $sum / ($n + 1);
         if ($score > $bestScore || ($score === $bestScore && $combo === $default)) {
             [$best, $bestScore] = [$combo, $score];
         }
     }
-    if ($bestScore < 0.5) {
-        return null;  // nothing has worked yet: no evidence for any settings
+    if ($best === null || $bestScore < 0.5) {
+        return null;  // nothing has worked for enough headsets yet: the team's test stands
     }
     if ($best === $default) {
         return [];
@@ -115,9 +120,11 @@ function derived_settings(PDO $pdo, ?array $packages = null): array
     foreach ($stmt as $row) {
         $combo = $row['foveation'] . '|' . ($row['gpu_driver'] ?: SETTING_DEFAULTS['gpu_driver']);
         $cell = &$combos[$row['package']][$row['version_code']][$combo];
-        $cell = $cell ?? [0.0, 0];
-        $cell[0] += settings_score($row['outcome'], $row['rating'], (bool)$row['drew']);
+        $cell = $cell ?? [0.0, 0, 0];
+        $score = settings_score($row['outcome'], $row['rating'], (bool)$row['drew']);
+        $cell[0] += $score;
         $cell[1]++;
+        $cell[2] += $score === 1.0 ? 1 : 0;
         unset($cell);
     }
     $out = [];
@@ -135,6 +142,36 @@ function derived_settings(PDO $pdo, ?array $packages = null): array
         uksort($byVersion, fn($a, $b) => (int)$b <=> (int)$a);  // newest version first
         $out[$package] = ['settings' => reset($byVersion), 'by_version' => $byVersion];
     }
+    return $out;
+}
+
+/** Votes per game and version code (newest first): each headset's latest report of that version counts once. */
+function version_votes(PDO $pdo, ?array $packages, int $since): array
+{
+    $where = '';
+    $args = [$since];
+    if ($packages !== null) {
+        $where = 'AND package IN (' . implode(',', array_fill(0, count($packages), '?')) . ')';
+        $args = array_merge($args, array_values($packages));
+    }
+    $stmt = $pdo->prepare(<<<SQL
+        SELECT r.package, r.version_code, r.rating FROM reports r JOIN (
+            SELECT MAX(id) AS id FROM reports WHERE created_at >= ? AND version_code != '' $where
+            GROUP BY package, version_code, install_hash
+        ) latest ON latest.id = r.id
+    SQL);
+    $stmt->execute($args);
+    $out = [];
+    foreach ($stmt as $row) {
+        $votes = &$out[$row['package']][(string)$row['version_code']];
+        $votes = $votes ?? ['working' => 0, 'partial' => 0, 'broken' => 0];
+        $votes[$row['rating']]++;
+        unset($votes);
+    }
+    foreach ($out as &$versions) {
+        uksort($versions, fn($a, $b) => (int)$b <=> (int)$a);
+    }
+    unset($versions);
     return $out;
 }
 
@@ -194,12 +231,28 @@ function games_with_status(?array $packages = null): array
             }
         }
     }
-    foreach ($games as &$game) {
+    $byVersion = version_votes($pdo, $packages, $since);
+    foreach ($games as $pkg => &$game) {
         $community = status_from_votes($game['votes']);
         $game['community'] = $community;
         $game['reports'] = array_sum($game['votes']);
-        // A maintainer's test stands until reports say otherwise; with reports, they decide.
-        $game['status'] = $game['reports'] >= 3 ? $community : ($game['curated'] ?: $community);
+        // Each version on its own: an update can break a game that worked, or fix one that did not.
+        $game['status_by_version'] = [];
+        foreach ($byVersion[$pkg] ?? [] as $version => $votes) {
+            $game['status_by_version'][(string)$version] = [
+                'status' => status_from_votes($votes), 'reports' => array_sum($votes), 'votes' => $votes,
+            ];
+        }
+        $newest = array_key_first($game['status_by_version']);
+        $game['status_version'] = null;
+        if ($newest !== null && $game['status_by_version'][$newest]['reports'] >= STATUS_MIN_HEADSETS) {
+            // Enough headsets on the newest version: they decide.
+            $game['status'] = $game['status_by_version'][$newest]['status'];
+            $game['status_version'] = (string)$newest;
+        } else {
+            // A maintainer's test stands until reports say otherwise; with reports, they decide.
+            $game['status'] = $game['reports'] >= STATUS_MIN_HEADSETS ? $community : ($game['curated'] ?: $community);
+        }
         $game['fps'] = $game['fps'] ? round(array_sum($game['fps']) / count($game['fps'])) : null;
         $game['updated'] = max((int)$game['tested_at'], (int)$game['last_report']) ?: null;
     }

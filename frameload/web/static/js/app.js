@@ -4822,7 +4822,8 @@ function renderCommunityNotice(el, community) {
     return;
   }
   const tips = (community.settings_text || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
-  const reports = community.reports ? ` · ${community.reports} report${community.reports === 1 ? "" : "s"}` : " · team test";
+  const reports = (community.version ? ` for version ${community.version}` : "")
+    + (community.reports ? ` · ${community.reports} report${community.reports === 1 ? "" : "s"}` : " · team test");
   el.className = `compat-notice community-${escapeHtml(community.status)}`;
   // Only the site's own address is linked, whatever the cached list says.
   const url = typeof community.url === "string" && community.url.startsWith("https://frameload.crypto90.de/") ? community.url : "";

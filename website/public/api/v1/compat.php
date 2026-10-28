@@ -18,6 +18,10 @@ foreach (games_with_status($packages) as $package => $game) {
         'label' => STATUSES[$game['status']]['label'],
         'note' => $game['note'],
         'settings' => (object)$game['settings'],
+        // Per version code, each headset's latest session of it counting once; status_version names the version
+        // the status is about when enough headsets played the newest one.
+        'status_by_version' => (object)$game['status_by_version'],
+        'status_version' => $game['status_version'],
         'settings_text' => settings_text($game['settings']),
         // Learnt from reports for each version code ("team" when the team's test still stands).
         'settings_by_version' => (object)array_map(fn($s) => (object)$s, $game['settings_by_version']),

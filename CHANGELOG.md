@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.1] - 2026-10-28
+
+### Added
+- **Working or not, per game version.** The compatibility list now keeps a status for each version of a game, each headset's latest session of that version counting once. Once three headsets have played the newest version, its own reports decide the game's status, so an update that breaks a game (or fixes one) shows up instead of hiding behind older versions' results. FrameLoad's library shows the installed version's own status once three headsets played it, and the game's page names the version ("Compatibility list: Not working for version 80").
+
+### Changed
+- **A learnt recommendation needs two headsets.** Settings replace the team's tested ones only after at least two headsets played well with them; one odd report decides nothing.
+
+---
+
 ## [v1.5.0] - 2026-10-28
 
 ### Added
