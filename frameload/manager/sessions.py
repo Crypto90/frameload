@@ -44,6 +44,7 @@ LOG_COPY_MAX = 4 << 20
 LOG_READ_MAX = 64 << 20       # a longer launch.log is read from its end
 DUMP_TAIL_BYTES = 1 << 20
 XRCLIENT_TAIL_BYTES = 256 << 10
+THREAD_LINES = 160
 START_LINES = 25              # lines of dashboard.log / the OpenXR client log in a copied report
 SHOW_LINES = 10
 COPY_MAX_CHARS = 60000        # what Copy Log puts on the clipboard (fits a GitHub issue)
@@ -1272,11 +1273,9 @@ def _start_section(pkg: str, dep: Dict[str, Any], record: Optional[Dict[str, Any
         out += ["Permissions set in the container (container_setup.log):"] + setup[-count:]
     threads = pick("threads.txt", "threads", "").splitlines()
     if threads:
-        # Where each thread of a game that was stopped waited (debuggerd -b, taken by Stop): the main and
-        # render threads first, the rest only in the full report.
-        main = [i for i, ln in enumerate(threads) if re.search(r'^"(main|GameThread|RHIThread|UnityMain|UnityGfx\w*|RenderThread)"', ln)]
-        shown = threads if full else [ln for i in main for ln in threads[i:i + 14]]
-        out += ["Threads when it was stopped (debuggerd):"] + shown
+        # Where each thread of a game that was stopped waited (launcher._keep_threads): the thread table first,
+        # the backtraces in the full report.
+        out += ["Threads when it was stopped:"] + (threads if full else threads[:THREAD_LINES])
     shows = [ln for ln in _read_text(os.path.join(base, "show.log")).splitlines() if ln.strip()]
     if start:  # only the presses during this session
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))

@@ -251,21 +251,35 @@ class GameLauncher:
 
     @staticmethod
     def _keep_threads(container: str, base: str, package: str) -> bool:
-        """Every thread's backtrace of the game (Android's debuggerd -b) before it is stopped: a game that loads
-        forever or freezes leaves no crash and often no error, and this shows where each thread waits."""
+        """Where every thread of the game waits, before it is stopped: a game that loads forever or freezes leaves
+        no crash and often no error. Three sources, as far as each works in Lepton's Android: debuggerd -b (needs
+        tombstoned, which Lepton may lack: its error is kept), the runtime's own trace after SIGQUIT (Java threads
+        with their native frames, from logcat) and, always, each thread's name, state and wait channel (/proc)."""
         if not base or not os.path.isdir(base) or not re.fullmatch(r"[A-Za-z0-9_.]+", package or ""):
             return False
+        script = (
+            f'pids=$(pidof {package}); [ -n "$pids" ] || {{ echo "no process {package}"; exit 0; }}\n'
+            'for p in $pids; do\n'
+            '  echo "=== threads of $p (name state wchan) ==="\n'
+            '  for t in /proc/$p/task/*; do\n'
+            '    echo "$(basename $t) $(cat $t/comm 2>/dev/null) $(cut -d" " -f3 $t/stat 2>/dev/null) $(cat $t/wchan 2>/dev/null)"\n'
+            '  done\n'
+            '  echo "=== debuggerd -b $p ==="\n'
+            '  debuggerd -b $p 2>&1 | head -c 1500000\n'
+            '  echo "=== SIGQUIT trace of $p ==="\n'
+            '  logcat -c 2>/dev/null; kill -3 $p; sleep 2\n'
+            '  logcat -d -v brief 2>/dev/null | grep -v " D \\| V " | tail -n 3000\n'
+            'done\n')
         try:
-            out = subprocess.run(["podman", "exec", container, "sh", "-c",
-                                  f"for p in $(pidof {package}); do debuggerd -b $p; done"],
-                                 capture_output=True, timeout=12)
+            out = subprocess.run(["podman", "exec", container, "sh", "-c", script], capture_output=True, timeout=20)
         except (OSError, subprocess.SubprocessError):
             return False
-        if not out.stdout.strip():
+        text = (getattr(out, "stdout", b"") or b"") + (getattr(out, "stderr", b"") or b"")
+        if not text.strip():
             return False
         try:
             with open(os.path.join(base, STOP_THREADS), "wb") as f:
-                f.write(out.stdout[:STOP_THREADS_MAX].replace(b"\r\n", b"\n"))
+                f.write(text[:STOP_THREADS_MAX].replace(b"\r\n", b"\n"))
             return True
         except OSError:
             return False
