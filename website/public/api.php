@@ -34,9 +34,12 @@ page_start('Reporting API', 'How FrameLoad reports game sessions to the compatib
   <pre><code>curl https://frameload.crypto90.de/api/v1/compat.php?packages=com.VerticalRobot.RedMatter2</code></pre>
 
   <h2>Report: <code>POST /api/v1/report.php</code></h2>
-  <p>JSON body, at most 8 KB. <code>install_id</code> is a random id the headset makes once; the site keeps only its HMAC. Required: <code>install_id</code>, <code>package</code>, <code>outcome</code> and <code>session_end</code> (Unix time, within the last 30 days). The same session (install, package, end) counts once.</p>
+  <p>JSON body, at most 8 KB plus an optional <code>icon</code>. <code>install_id</code> is a random id the headset makes once; the site keeps only its HMAC. Required: <code>install_id</code>, <code>package</code>, <code>outcome</code> and <code>session_end</code> (Unix time, within the last 30 days). The same session (install, package, end) counts once.</p>
   <pre><code><?= h($example) ?></code></pre>
   <p><code>outcome</code> is one of FrameLoad's session outcomes: <code><?= h(implode('</code>, <code>', KNOWN_OUTCOMES)) ?></code>.</p>
+
+  <h2>Icons: <code>POST /api/v1/icon.php</code></h2>
+  <p><code>{"package": "…", "icon": "&lt;base64&gt;"}</code>: a PNG, WebP or JPEG of at most 256 KB, roughly square, 48 to 1024 pixels. Only a game already on the list gets one, and only its first icon is kept; it is stored as a fresh 128 × 128 PNG. A report may carry the same <code>icon</code> field; FrameLoad sends the game's launcher icon that way while the list shows none (<code>icon</code> is <code>null</code> in <code>compat.php</code>).</p>
 
   <h2>How a session is rated</h2>
   <ul>

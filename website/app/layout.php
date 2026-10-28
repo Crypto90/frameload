@@ -22,7 +22,7 @@ function page_start(string $title, string $description, string $active = ''): vo
 <meta name="darkreader-lock">
 <script src="/assets/guard.js?v=2"></script>
 <link rel="icon" href="/assets/img/favicon.png">
-<link rel="stylesheet" href="/assets/site.css?v=3">
+<link rel="stylesheet" href="/assets/site.css?v=4">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -70,6 +70,20 @@ function status_pill(string $status): string
 {
     $label = STATUSES[$status]['label'] ?? $status;
     return '<span class="pill pill-' . h($status) . '"><i aria-hidden="true"></i>' . h($label) . '</span>';
+}
+
+/** The game's icon when the list has one, else its initials on a colour of its own. */
+function game_avatar(string $package, string $title, bool $large = false): string
+{
+    $class = 'avatar' . ($large ? ' avatar-large' : '');
+    $size = $large ? 72 : 44;
+    $icon = icon_url($package);
+    if ($icon) {
+        return '<img class="' . $class . ' avatar-icon" src="' . h($icon) . '" alt="" width="' . $size . '" height="' . $size
+            . '" loading="lazy" decoding="async">';
+    }
+    return '<span class="' . $class . '" style="--h: ' . game_hue($package) . '" aria-hidden="true">'
+        . h(game_initials($title)) . '</span>';
 }
 
 function game_initials(string $title): string

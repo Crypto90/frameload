@@ -5,10 +5,12 @@ Two separate switches under System:
   says which games are installed) at most every few hours and keeps a copy.
 * share: after each finished session the headset sends one anonymous report: the game, how long it ran,
   whether it showed its picture, how it ended and the settings it used, with a random id made once on this
-  headset. No name, account or log. Off until the player turns it on.
+  headset, plus the game's launcher icon while the list has none. No name, account or log. Off until the
+  player turns it on.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import threading
@@ -25,6 +27,7 @@ CACHE_FILE = os.path.join(DATA_DIR, "compat_list.json")
 REFRESH_SECONDS = 6 * 3600
 RETRY_SECONDS = 15 * 60
 TIMEOUT = 8
+ICON_MAX_BYTES = 256 * 1024  # what the site takes (website/app/icons.php)
 NORMAL_ENDS = ("quit", "stopped_player", "stopped_frameload", "closed_by_steam")
 FAILED_STARTS = ("start_failed", "closed_early")
 MIN_PLAY_SECONDS = 120
@@ -88,6 +91,29 @@ def _os_build() -> str:
     return ""
 
 
+def game_icon(dep: Dict[str, Any]) -> Optional[str]:
+    """The game's icon as base64, for a list that has none: its Steam icon when that is the APK's own
+    launcher icon or a downloaded one, never a placeholder FrameLoad drew from the title."""
+    from ..installer.artwork import read_state, steam_icon
+
+    art_dir = os.path.join(dep.get("anchor") or dep.get("base") or "", "artwork")
+    if read_state(art_dir).get("icon") not in ("composed", "downloaded"):
+        return None
+    path = steam_icon(art_dir)
+    try:
+        if not path or os.path.getsize(path) > ICON_MAX_BYTES:
+            return None
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii")
+    except OSError:
+        return None
+
+
+def _list_has_icon(package: str) -> bool:
+    entry = (_state["list"] or {}).get(package)
+    return isinstance(entry, dict) and bool(entry.get("icon"))
+
+
 def payload(record: Dict[str, Any], dep: Dict[str, Any]) -> Dict[str, Any]:
     from .tuning import TuningManager
 
@@ -96,7 +122,7 @@ def payload(record: Dict[str, Any], dep: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         effective = {}
     frames = record.get("frames") or {}
-    return {
+    body = {
         "install_id": _install_id(),
         "package": record.get("package") or dep.get("package"),
         "title": dep.get("title") or record.get("title") or "",
@@ -115,6 +141,13 @@ def payload(record: Dict[str, Any], dep: Dict[str, Any]) -> Dict[str, Any]:
         "os_build": _os_build(),
         "lepton": (record.get("lepton") or "")[:60],
     }
+    with _lock:
+        _load_cache()
+    if not _list_has_icon(body["package"]):
+        icon = game_icon(dep)
+        if icon:
+            body["icon"] = icon
+    return body
 
 
 def send(record: Dict[str, Any], dep: Dict[str, Any]) -> Optional[Dict[str, Any]]:

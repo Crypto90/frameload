@@ -91,6 +91,26 @@ class TestCompatReports(unittest.TestCase):
         self.assertEqual(len(body["install_id"]), 36)
         self.assertNotIn("home", json.dumps(body).lower())
 
+    def write_art(self, state):
+        art = os.path.join(self.tmp, "game", "artwork")
+        os.makedirs(art, exist_ok=True)
+        with open(os.path.join(art, "icon.png"), "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\nicon")
+        with open(os.path.join(art, "artwork.json"), "w") as f:
+            json.dump({"icon": state}, f)
+        return {"package": PKG, "title": "Red Matter 2", "anchor": os.path.join(self.tmp, "game")}
+
+    def test_the_icon_goes_along_only_while_the_list_has_none(self):
+        dep = self.write_art("composed")
+        with patch("frameload.manager.tuning.TuningManager.effective_settings", return_value={}):
+            body = compat_reports.payload(record(), dep)
+            self.assertEqual(body["icon"], "iVBORw0KGgppY29u")
+            compat_reports._state["list"] = {PKG: {"status": "working", "icon": "https://x/icon.php?package=" + PKG}}
+            self.assertNotIn("icon", compat_reports.payload(record(), dep))
+            compat_reports._state["list"] = {}
+            # A placeholder FrameLoad drew from the title is not the game's icon.
+            self.assertNotIn("icon", compat_reports.payload(record(), self.write_art("generated")))
+
     def test_library_gets_the_community_status_from_a_cached_list(self):
         games = [{"package": PKG}, {"package": "com.not.listed"}]
         compat_reports.annotate(games)  # first look: fetches in the background

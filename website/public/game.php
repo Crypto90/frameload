@@ -39,7 +39,7 @@ page_start($game['title'], "{$game['title']} on the Steam Frame: " . STATUSES[$g
 <section class="wrap game-page">
   <a class="back" href="/#compatibility">← Compatibility list</a>
   <div class="game-head">
-    <span class="avatar avatar-large" style="--h: <?= game_hue($game['package']) ?>" aria-hidden="true"><?= h(game_initials($game['title'])) ?></span>
+    <?= game_avatar($game['package'], $game['title'], true) ?>
     <div>
       <h1><?= h($game['title']) ?></h1>
       <p class="muted mono"><?= h($game['package']) ?><?= $game['engine'] ? ' · ' . h($game['engine']) : '' ?></p>

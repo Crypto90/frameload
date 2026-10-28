@@ -27,6 +27,7 @@ function config(): array
             'secret' => 'change-me',
             'reports_per_hour_per_ip' => 120,
             'reports_per_hour_per_install' => 60,
+            'icon_uploads_per_hour_per_ip' => 40,
         ], is_file($file) ? (require $file) : []);
     }
     return $config;
@@ -149,3 +150,4 @@ function relative_time(?int $time): string
 }
 
 require_once APP_DIR . '/status.php';
+require_once APP_DIR . '/icons.php';

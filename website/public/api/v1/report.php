@@ -1,7 +1,8 @@
 <?php
 // POST /api/v1/report.php: one finished game session from a headset whose player turned on
 // "Share compatibility reports" in FrameLoad. Nothing personal is sent; the random install id and
-// the sender's address are stored only as HMACs, the address only for rate limiting.
+// the sender's address are stored only as HMACs, the address only for rate limiting. An optional
+// `icon` (base64 image) becomes the game's icon when it has none.
 declare(strict_types=1);
 require __DIR__ . '/../../../app/bootstrap.php';
 
@@ -14,8 +15,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_out(['ok' => false, 'error' => 'POST a JSON report'], 405);
 }
-$raw = file_get_contents('php://input', false, null, 0, 8193);
-if ($raw === false || strlen($raw) > 8192) {
+// 8 KB of report, plus room for an icon (base64) when the game has none yet.
+$maxBody = 8192 + 4 * intdiv(ICON_MAX_BYTES + 2, 3);
+$raw = file_get_contents('php://input', false, null, 0, $maxBody + 1);
+if ($raw === false || strlen($raw) > $maxBody) {
     json_out(['ok' => false, 'error' => 'report too large'], 413);
 }
 $in = json_decode($raw, true);
@@ -91,7 +94,9 @@ $stmt->execute([
 ]);
 $pdo->prepare('UPDATE games SET updated_at = ? WHERE package = ?')->execute([time(), $package]);
 $pdo->commit();
+// The game's launcher icon, which FrameLoad sends only while the list shows none.
+$iconError = isset($in['icon']) ? accept_icon_upload($pdo, $package, $in['icon'], $ipHash) : 'no icon';
 
 $game = games_with_status([$package])[$package] ?? null;
 json_out(['ok' => true, 'rating' => $rating, 'status' => $game['status'] ?? 'untested',
-          'duplicate' => $stmt->rowCount() === 0]);
+          'duplicate' => $stmt->rowCount() === 0, 'icon' => $iconError === '' ? 'stored' : $iconError]);

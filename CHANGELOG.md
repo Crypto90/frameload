@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.5] - 2026-10-28
+
+### Added
+- **Game icons on the compatibility list.** frameload.crypto90.de shows each game's icon in the list and on its page. With **Share compatibility reports** on, a report carries the game's launcher icon while the list has none for it: the icon FrameLoad took from the APK or downloaded, never a placeholder it drew. The site keeps the first icon of a listed game, re-drawn as a plain 128 × 128 PNG.
+
+---
+
 ## [v1.4.4] - 2026-10-28
 
 ### Added

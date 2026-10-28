@@ -79,7 +79,7 @@ page_start('FrameLoad', 'Install and play Quest games and Android apps on the Va
       <a class="row game" href="/game.php?package=<?= h(rawurlencode($game['package'])) ?>"
          data-status="<?= h($game['status']) ?>" data-search="<?= h(strtolower($game['title'] . ' ' . $game['package'])) ?>">
         <span class="game-id">
-          <span class="avatar" style="--h: <?= game_hue($game['package']) ?>" aria-hidden="true"><?= h(game_initials($game['title'])) ?></span>
+          <?= game_avatar($game['package'], $game['title']) ?>
           <span><strong><?= h($game['title']) ?></strong><small><?= h($game['package']) ?></small></span>
         </span>
         <span><?= status_pill($game['status']) ?></span>
