@@ -124,6 +124,7 @@ def extract_archive(
         pct_regex = re.compile(r"(\d{1,3})%")
         proc = subprocess.Popen(
             cmd,
+            stdin=subprocess.DEVNULL,  # an encrypted archive without a password fails instead of waiting for one
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

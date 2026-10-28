@@ -47,7 +47,7 @@ from .catalog.downloader import DownloadConflict, Downloader
 from .catalog.vrp_mirror import VrpMirror
 from .config import ANCHOR_DIR, Config, DATA_DIR
 from .installer.artwork import image_extension
-from .installer import hand_tracking, porting
+from .installer import hand_tracking, porting, release_script
 from .system import perf, power
 from .installer.lepton_quest import LeptonInstaller, find_release_obb
 from .installer.package_loader import PackageLoader
@@ -1430,6 +1430,16 @@ def on_download_complete(task) -> None:
         )
         task.status = "completed"
         task.status_detail = "Installed & Ready to Play"
+        try:
+            # The release's install.txt (PortalVR: its game files in /sdcard/source).
+            package = installed.get("package") or game.package_name
+            dep = InstalledManager.get_game(package) or {}
+            base = dep.get("base") or installed.get("anchor")
+            script = release_script.run(task.extracted_path, package, base) if base else None
+            if script and script["failed"]:
+                task.status_detail = f"Installed, but {len(script['failed'])} step(s) of its install.txt failed"
+        except Exception as script_exc:
+            task.status_detail = f"Installed, but its install.txt could not be carried out: {script_exc}"
         try:
             if porting.auto_port(installed).get("started"):
                 task.status_detail = "Installed. Porting for the Steam Frame..."

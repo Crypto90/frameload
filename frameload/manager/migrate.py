@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from ..config import DATA_DIR
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 8  # 8: OBB folders that installs up to v1.4.0 left in the extracted release are moved in
+LAYOUT_VERSION = 9  # 9: a left-behind release's install.txt is carried out (8: its OBB folder is moved in)
 LEPTON_KINDS = ("quest", "flat")
 # Files FrameLoad wrote up to v1.3.1 that nothing on the headset reads.
 STALE_FILES = (
@@ -67,6 +67,38 @@ def restore_release_obb(app_dir: str, package: str, version_code: str, data_dir:
     return 0
 
 
+def _releases_of(version_code: str, data_dir: Optional[str] = None) -> List[str]:
+    """Extracted mirror releases of this version that an install left in DATA_DIR."""
+    data_dir = data_dir or DATA_DIR
+    try:
+        names = sorted(n for n in os.listdir(data_dir) if version_code and f" v{version_code}+" in n)
+    except OSError:
+        return []
+    return [os.path.join(data_dir, n) for n in names if os.path.isdir(os.path.join(data_dir, n))]
+
+
+def run_release_script(base: str, package: str, version_code: str, data_dir: Optional[str] = None) -> List[str]:
+    """Carries out the install.txt of a left-behind release once (installs up to v1.4.2 ignored it)."""
+    from ..installer import release_script
+    from ..installer.lepton_quest import find_release_obb
+
+    if os.path.isfile(os.path.join(base, release_script.RECORD_NAME)):
+        return []
+    for release in _releases_of(version_code, data_dir):
+        if not release_script.find_script(release):
+            continue
+        record = release_script.run(release, package, base)
+        if record is None:
+            continue
+        changes = [f"carried out the release's install.txt ({len(record['done'])} step(s))"]
+        if record["failed"]:
+            changes.append(f"{len(record['failed'])} install.txt step(s) failed: {'; '.join(record['failed'])}")
+        elif not find_release_obb(release, None, package):
+            shutil.rmtree(release, ignore_errors=True)  # nothing left in it that the game needs
+        return changes
+    return []
+
+
 def migrate_game(game: Dict[str, Any]) -> List[str]:
     """Migrates one install. Returns what was changed."""
     from .tuning import TuningManager
@@ -78,6 +110,7 @@ def migrate_game(game: Dict[str, Any]) -> List[str]:
     moved = flatten_obb(os.path.join(base, "lepton-app"), package)
     if moved:
         changes.append(f"moved {moved} OBB file(s) to where Lepton reads them")
+    changes += run_release_script(base, package, str(game.get("version_code") or ""))
     restored = restore_release_obb(os.path.join(base, "lepton-app"), package, str(game.get("version_code") or ""))
     if restored:
         changes.append(f"installed {restored} OBB item(s) the download had left behind")

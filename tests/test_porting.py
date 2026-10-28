@@ -551,6 +551,20 @@ class TestMigration(LibraryTestCase):
         self.assertFalse(os.path.exists(os.path.dirname(release)))
         self.assertTrue(os.path.isfile(other))
 
+    def test_a_left_behind_install_txt_is_carried_out_once(self):
+        pkg = "com.studio.script"
+        base = self.make_legacy(pkg)
+        code = InstalledManager.get_game(pkg)["version_code"]
+        data = os.path.join(self.tmp, "data")
+        release = os.path.join(data, f"Script v{code}+1 -JF", f"Script v{code}+1 -JF")
+        write_text(os.path.join(release, "install.txt"), "adb install -g x.apk\nadb push source/game /sdcard/source/\n")
+        write_text(os.path.join(release, "source", "game", "pak.vpk"), "data")
+        with patch.object(migrate, "DATA_DIR", data):
+            report = migrate.migrate_installs()
+        self.assertTrue(any("install.txt" in c for c in report[pkg]), report)
+        self.assertTrue(os.path.isfile(os.path.join(base, "lepton-data", "external", "source", "game", "pak.vpk")))
+        self.assertFalse(os.path.exists(os.path.dirname(release)))  # nothing left the game needs
+
     def test_obb_already_in_place_is_left_alone(self):
         pkg = "com.studio.hasobb"
         base = self.make_legacy(pkg)
