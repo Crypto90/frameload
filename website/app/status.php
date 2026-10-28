@@ -43,6 +43,101 @@ function status_from_votes(array $votes): string
     return 'partial';
 }
 
+// Settings FrameLoad reports and may recommend (frameload/manager/compat_reports.py RECOMMENDABLE), with the
+// value that means "unchanged". A report from before a key existed ran with that value.
+const SETTING_DEFAULTS = ['foveation' => 'gaze', 'gpu_driver' => 'default'];
+// How a session speaks for the settings it ran with: a hang, crash or freeze is against them.
+const AGAINST_SETTINGS = ['gpu_hang', 'crashed', 'guard_frozen', 'start_failed', 'closed_early', 'could_not_start'];
+
+/** How well one session went with its settings: 1 good, 0 bad, 0.5 in between. */
+function settings_score(string $outcome, string $rating, bool $drew): float
+{
+    if (!$drew || in_array($outcome, AGAINST_SETTINGS, true)) {
+        return 0.0;
+    }
+    return $rating === 'working' ? 1.0 : 0.5;
+}
+
+/** The best settings among those reported: [] when the unchanged settings do best, null without evidence. */
+function best_settings(array $combos): ?array
+{
+    if (!$combos) {
+        return null;
+    }
+    $default = implode('|', SETTING_DEFAULTS);
+    $best = null;
+    $bestScore = -1.0;
+    foreach ($combos as $combo => [$sum, $n]) {
+        // One pseudo-session that went badly: a single good report counts less than several.
+        $score = $sum / ($n + 1);
+        if ($score > $bestScore || ($score === $bestScore && $combo === $default)) {
+            [$best, $bestScore] = [$combo, $score];
+        }
+    }
+    if ($bestScore < 0.5) {
+        return null;  // nothing has worked yet: no evidence for any settings
+    }
+    if ($best === $default) {
+        return [];
+    }
+    $out = [];
+    foreach (array_combine(array_keys(SETTING_DEFAULTS), explode('|', $best)) as $key => $value) {
+        if ($value !== SETTING_DEFAULTS[$key]) {
+            $out[$key] = $value;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Recommended settings learnt from reports, per game: ['settings' => for the newest version with evidence,
+ * 'by_version' => [version_code => settings]]. Each headset's latest session per version and settings counts once.
+ */
+function derived_settings(PDO $pdo, ?array $packages = null): array
+{
+    $since = time() - REPORT_WINDOW;
+    $where = '';
+    $args = [$since];
+    if ($packages !== null) {
+        $where = 'AND package IN (' . implode(',', array_fill(0, count($packages), '?')) . ')';
+        $args = array_merge($args, array_values($packages));
+    }
+    $stmt = $pdo->prepare(<<<SQL
+        SELECT r.package, r.version_code, r.foveation, r.gpu_driver, r.outcome, r.rating, r.drew
+        FROM reports r JOIN (
+            SELECT MAX(id) AS id FROM reports
+            WHERE created_at >= ? AND foveation != '' $where
+            GROUP BY package, version_code, install_hash, foveation, gpu_driver
+        ) latest ON latest.id = r.id
+    SQL);
+    $stmt->execute($args);
+    $combos = [];
+    foreach ($stmt as $row) {
+        $combo = $row['foveation'] . '|' . ($row['gpu_driver'] ?: SETTING_DEFAULTS['gpu_driver']);
+        $cell = &$combos[$row['package']][$row['version_code']][$combo];
+        $cell = $cell ?? [0.0, 0];
+        $cell[0] += settings_score($row['outcome'], $row['rating'], (bool)$row['drew']);
+        $cell[1]++;
+        unset($cell);
+    }
+    $out = [];
+    foreach ($combos as $package => $versions) {
+        $byVersion = [];
+        foreach ($versions as $version => $versionCombos) {
+            $best = best_settings($versionCombos);
+            if ($best !== null) {
+                $byVersion[(string)$version] = $best;
+            }
+        }
+        if (!$byVersion) {
+            continue;
+        }
+        uksort($byVersion, fn($a, $b) => (int)$b <=> (int)$a);  // newest version first
+        $out[$package] = ['settings' => reset($byVersion), 'by_version' => $byVersion];
+    }
+    return $out;
+}
+
 /** Every listed game with its status; $packages limits the list. */
 function games_with_status(?array $packages = null): array
 {
@@ -81,6 +176,8 @@ function games_with_status(?array $packages = null): array
                 'curated' => $row['curated_status'],
                 'note' => $row['curated_note'],
                 'settings' => json_decode($row['curated_settings'] ?: '{}', true) ?: [],
+                'settings_by_version' => [],
+                'settings_source' => $row['curated_settings'] && $row['curated_settings'] !== '{}' ? 'team' : '',
                 'tested_version' => $row['curated_version'],
                 'tested_frameload' => $row['curated_frameload'],
                 'tested_at' => $row['curated_at'] ? (int)$row['curated_at'] : null,
@@ -107,6 +204,14 @@ function games_with_status(?array $packages = null): array
         $game['updated'] = max((int)$game['tested_at'], (int)$game['last_report']) ?: null;
     }
     unset($game);
+    // Settings learnt from reports replace the team's once headsets have reported with them.
+    foreach (derived_settings($pdo, $packages) as $pkg => $derived) {
+        if (isset($games[$pkg])) {
+            $games[$pkg]['settings'] = $derived['settings'];
+            $games[$pkg]['settings_by_version'] = $derived['by_version'];
+            $games[$pkg]['settings_source'] = 'reports';
+        }
+    }
     uasort($games, fn($a, $b) => strcasecmp($a['title'], $b['title']));
     return $games;
 }

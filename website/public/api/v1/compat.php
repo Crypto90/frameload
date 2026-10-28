@@ -19,6 +19,9 @@ foreach (games_with_status($packages) as $package => $game) {
         'note' => $game['note'],
         'settings' => (object)$game['settings'],
         'settings_text' => settings_text($game['settings']),
+        // Learnt from reports for each version code ("team" when the team's test still stands).
+        'settings_by_version' => (object)array_map(fn($s) => (object)$s, $game['settings_by_version']),
+        'settings_source' => $game['settings_source'],
         'reports' => $game['reports'],
         'votes' => $game['votes'],
         'fps' => $game['fps'],

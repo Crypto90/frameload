@@ -40,7 +40,7 @@ page_start('FrameLoad', 'Install and play Quest games and Android apps on the Va
   <article class="feature">
     <div class="feature-icon" aria-hidden="true">⚙</div>
     <h2>Tuned for the Frame</h2>
-    <p>Per-game resolution, refresh rate and foveation. Games that hang the graphics processor get fixed settings automatically.</p>
+    <p>Per-game resolution, refresh rate and foveation. Games that hang the graphics processor get fixed settings automatically, and the settings that worked for other players apply before a game's first start.</p>
   </article>
   <article class="feature">
     <div class="feature-icon" aria-hidden="true">✚</div>

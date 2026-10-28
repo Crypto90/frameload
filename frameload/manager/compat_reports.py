@@ -122,10 +122,12 @@ def _list_has_icon(package: str) -> bool:
 def payload(record: Dict[str, Any], dep: Dict[str, Any]) -> Dict[str, Any]:
     from .tuning import TuningManager
 
-    try:
-        effective = TuningManager.effective_settings(dep)
-    except Exception:
-        effective = {}
+    effective = record.get("settings")
+    if not isinstance(effective, dict):  # a record made before reports carried the session's own settings
+        try:
+            effective = TuningManager.effective_settings(dep)
+        except Exception:
+            effective = {}
     frames = record.get("frames") or {}
     body = {
         "install_id": _install_id(),
@@ -243,15 +245,21 @@ def _refresh_if_stale() -> None:
             threading.Thread(target=_fetch, daemon=True, name="compat-list").start()
 
 
-def recommended(package: str) -> Dict[str, Any]:
+def recommended(package: str, version_code: Any = None) -> Dict[str, Any]:
     """The settings the list recommends for a game (only RECOMMENDABLE keys with valid values), {} when none
-    or when the player turned recommendations off."""
+    or when the player turned recommendations off. The site learns them from reports per version code: the
+    installed version's own come first, else the game's (its newest version with evidence, or the team's test)."""
     if not package or not settings()["recommended"]:
         return {}
     with _lock:
         _load_cache()  # only the copy: fetching is the library's (community), never a launcher's
     entry = (_state["list"] or {}).get(package)
-    raw = entry.get("settings") if isinstance(entry, dict) else None
+    if not isinstance(entry, dict):
+        return {}
+    by_version = entry.get("settings_by_version")
+    raw = by_version.get(str(version_code)) if isinstance(by_version, dict) and version_code not in (None, "") else None
+    if not isinstance(raw, dict):
+        raw = entry.get("settings")
     if not isinstance(raw, dict):
         return {}
     from .tuning import coerce_setting

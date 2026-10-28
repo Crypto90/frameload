@@ -54,6 +54,9 @@ page_start($game['title'], "{$game['title']} on the Steam Frame: " . STATUSES[$g
       <?php if ($settings): ?>
         <h3>Best settings</h3>
         <ul class="tags tags-block"><?php foreach ($settings as $s): ?><li class="tag"><?= h($s) ?></li><?php endforeach; ?></ul>
+        <p class="muted"><?= $game['settings_source'] === 'reports'
+            ? 'Learnt from headsets\' reports: the settings that worked best for this game\'s newest version. FrameLoad applies them by itself, matched to the installed version.'
+            : 'From the team\'s test, until headsets report with these settings. FrameLoad applies them by itself.' ?></p>
         <p class="muted small">Set them in FrameLoad: the game's page, then Settings.</p>
       <?php endif; ?>
       <?php if ($game['tested_at']): ?>

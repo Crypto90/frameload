@@ -275,7 +275,7 @@ class TuningManager:
         from . import compat_reports
 
         try:
-            return compat_reports.recommended(dep.get("package", ""))
+            return compat_reports.recommended(dep.get("package", ""), dep.get("version_code"))
         except Exception as e:
             print(f"[FrameLoad] Could not read recommended settings: {e}")
             return {}

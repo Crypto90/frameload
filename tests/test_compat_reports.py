@@ -91,6 +91,11 @@ class TestCompatReports(unittest.TestCase):
         self.assertEqual(len(body["install_id"]), 36)
         self.assertNotIn("home", json.dumps(body).lower())
 
+        # A hang's report names the settings the session hung with, not the fix FrameLoad applied afterwards.
+        with patch("frameload.manager.tuning.TuningManager.effective_settings", return_value={"foveation": "off"}):
+            body = compat_reports.payload(record(outcome="gpu_hang", settings={"foveation": "gaze", "gpu_driver": "default"}), dep)
+        self.assertEqual(body["settings"], {"foveation": "gaze", "gpu_driver": "default"})
+
     def write_art(self, state):
         art = os.path.join(self.tmp, "game", "artwork")
         os.makedirs(art, exist_ok=True)
@@ -139,6 +144,14 @@ class TestCompatReports(unittest.TestCase):
         self.assertEqual(self.sent, [])  # reading a recommendation never fetches
         compat_reports.save_settings({"recommended": False})
         self.assertEqual(compat_reports.recommended(PKG), {})
+
+    def test_the_installed_versions_own_recommendation_comes_first(self):
+        compat_reports._state["list"] = {PKG: {"settings": {"foveation": "off"}, "settings_by_version": {
+            "75": {"foveation": "off", "gpu_driver": "sysmem"}, "80": {}}}}
+        self.assertEqual(compat_reports.recommended(PKG, 75), {"foveation": "off", "gpu_driver": "sysmem"})
+        self.assertEqual(compat_reports.recommended(PKG, "80"), {})  # reports say this version needs nothing
+        self.assertEqual(compat_reports.recommended(PKG, "90"), {"foveation": "off"})  # unknown version: the game's
+        self.assertEqual(compat_reports.recommended(PKG), {"foveation": "off"})
 
     def test_recommended_settings_sit_under_the_games_own(self):
         from frameload.manager.tuning import TuningManager

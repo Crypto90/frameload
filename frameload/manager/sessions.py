@@ -840,6 +840,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
                       launch_error=launch_error, interrupted=interrupted)
     if marker and float(marker.get("time", 0)) <= end + 10:
         clear_stop(pkg)  # used, or older than this session
+    # The settings this session ran with, before a hang's fix changes them: what its report is about.
+    ran_with = _session_settings(dep)
     if result["outcome"] == "gpu_hang":
         fix = _fix_after_gpu_hang(pkg, dep)
         if fix in GPU_HANG_ADVICE:
@@ -861,7 +863,7 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         "stop": marker if result["outcome"] in ("guard_memory", "guard_frozen", "stopped_player", "stopped_frameload") else None,
         "sources": sources, "lepton": f"{lepton.group(1)} (rootfs {lepton.group(2)})" if lepton else "",
         "kind": "vr" if dep.get("is_vr", True) else "2d", "seen": quiet, "time": now,
-        "auto_fix": result.get("auto_fix", ""),
+        "auto_fix": result.get("auto_fix", ""), "settings": ran_with,
     }
     _write_json(_record_path(pkg), record)
     print(f"[FrameLoad] Session of {pkg}: {record['outcome']} ({record['headline']})")
@@ -892,6 +894,19 @@ HANG_WITHOUT_FOVEATION_ADVICE = (
 
 GPU_HANG_ADVICE = {"foveation_off": FOVEATION_OFF_ADVICE, "gpu_sysmem": SYSMEM_ADVICE,
                    "tried": HANG_WITHOUT_FOVEATION_ADVICE}
+
+
+def _session_settings(dep: Dict[str, Any]) -> Dict[str, Any]:
+    """The settings a session ran with that its compatibility report carries."""
+    from .tuning import LEPTON_KINDS, TuningManager
+
+    if dep.get("kind", "quest") not in LEPTON_KINDS:
+        return {}
+    try:
+        effective = TuningManager.effective_settings(dep)
+    except Exception:
+        return {}
+    return {k: effective[k] for k in ("scale", "refresh_rate", "foveation", "gpu_driver") if k in effective}
 
 
 def _fix_after_gpu_hang(pkg: str, dep: Dict[str, Any]) -> str:
