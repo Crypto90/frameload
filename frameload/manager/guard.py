@@ -578,11 +578,22 @@ class FreezeGuard:
                 error = apply_memory_limit(f"{CONTAINER_PREFIX}{game['appid']}", mem["total"])
                 session["limit"] = "applied" if not error else error
             cls._frames(game, session, now)
-            if session.get("mirror_dead") and game.get("framebridge") and now - session.get("container_at", -1e9) >= 10:
+            # Lepton's copy of the log can die loudly ("Unexpected EOF") or silently: it ends after "Waiting for app"
+            # and no FrameBridge line ever reaches it (SWORDS of GARGANTUA drew at 72 fps unseen). A FrameBridge game
+            # with no frames in its log 20 s into the session is asked in its container too.
+            silent = not session.get("last_frame") and now - session["started"] > 20
+            if (session.get("mirror_dead") or silent) and game.get("framebridge") \
+                    and now - session.get("container_at", -1e9) >= 10:
                 session["container_at"] = now
                 last = container_pacing(game.get("appid"))
                 if last is not None:
-                    if session.get("container_pacing") is not None and last != session["container_pacing"]:
+                    m = FRAME_RE.search(last)
+                    if m and m.group(1):
+                        session["fps"] = float(m.group(1))
+                    if silent and not session.get("mirror_dead"):
+                        session["mirror_dead"] = True  # its frames reach only the container from now on
+                        session["last_frame"] = now
+                    elif session.get("container_pacing") is not None and last != session["container_pacing"]:
                         session["last_frame"] = now  # a new pacing line in the container: it still draws
                         session["frozen_reported"] = False
                     session["container_pacing"] = last

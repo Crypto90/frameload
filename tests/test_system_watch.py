@@ -391,6 +391,19 @@ class TestFreezeGuard(Case):
         self.assertEqual(self.ticks(1010, 1200), {})
         self.assertEqual(self.stopped, [])
 
+    def test_a_log_copy_that_never_shows_frames_is_read_in_the_container(self):
+        # Lepton's copy ended after "Waiting for app" without a word (SWORDS of GARGANTUA ran at 72 fps unseen).
+        seen = iter(range(1000))
+        patch.object(guard, "container_pacing",
+                     side_effect=lambda appid: f"I FrameBridge: pacing: 72.{next(seen) % 10} fps".encode()).start()
+        self.log("Waiting for app com.game.a to exit...\n")
+        self.ticks(1000, 1030)
+        state = next(g for g in FreezeGuard.status(now=1030.0)["games"] if g["package"] == "com.game.a")
+        self.assertEqual(state["state"], "drawing")
+        self.assertAlmostEqual(state["fps"], 72, delta=1)
+        self.assertEqual(self.ticks(1032, 1200), {})  # new pacing lines keep coming: never frozen
+        self.assertEqual(self.stopped, [])
+
     def test_a_dead_log_copy_and_unknown_gpu_time_only_report(self):
         patch.object(guard, "container_pacing", return_value=None).start()  # the container cannot be asked
         self.ticks(1000, 1008)

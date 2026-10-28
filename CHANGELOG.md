@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.4] - 2026-10-28
+
+### Fixed
+- **SWORDS of GARGANTUA no longer hangs on its loading screen.** It deadlocked in SteamVR: Unreal's render thread waited for a new frame without having begun the previous one, while holding a lock the game thread needed. Meta's runtime lets that through, SteamVR's waits for ever. FrameLoad now ports games with its own fix in FrameBridge (FramePort's adapter): when a game waits for a frame again without beginning the last one, it gives the game half a second, then begins and ends that frame itself. Games that never showed a picture are ported again with the fix by themselves. Tested on the headset: the fix stepped in once, then the game ran at a steady 72 fps.
+
+### Added
+- **FrameLoad's fixes follow every FramePort release by themselves.** The fixes are source patches in FrameLoad's repository (native/framebridge). GitHub builds them every day for FramePort's newest release with FramePort's own build script and publishes the result; FrameLoad looks up the build for the FramePort on your headset, checks it, and uses it only in place of that exact FramePort's own adapter. Until a FramePort release has a build (usually within a day), games port with FramePort's own adapter, exactly as before.
+- Self-test: whether FramePort ports with FrameLoad's fixes.
+- **A game whose log copy goes quiet still shows its frame rate.** Lepton's copy of a game's log sometimes ends silently right after the install. The Freeze Guard and the Now Playing screen now ask the game's container itself when a FrameBridge game has shown no frames 20 seconds into its session (SWORDS of GARGANTUA ran at a steady 72 fps while FrameLoad still said "Loading").
+
+---
+
 ## [v1.5.3] - 2026-10-28
 
 ### Added
