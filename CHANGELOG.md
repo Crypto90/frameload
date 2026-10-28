@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.6] - 2026-10-28
+
+### Fixed
+- **Headset screenshots show the present.** The headset view keeps its last two pictures, so a screenshot could show something already gone (a closed game's title screen); FrameLoad now takes the third. When SteamVR's headset view goes black while the headset is awake (it did while a game ran, until SteamVR reconnected it), FrameLoad restarts it once and takes the screenshot again. Tested in the headset: SWORDS of GARGANTUA's title screen while it ran at 72 fps. `?info=1` also names the state of the service behind the headset view.
+
+---
+
 ## [v1.5.5] - 2026-10-28
 
 ### Added
