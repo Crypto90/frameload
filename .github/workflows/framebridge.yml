@@ -1,9 +1,14 @@
 name: Build patched FrameBridge
 
-# FrameLoad's patches to FramePort's FrameBridge adapter (native/framebridge). A tag framebridge-<FramePort version>-p<n>
-# builds the adapter with them and publishes it as a release; FrameLoad (installer/framebridge_patch.py) downloads it
-# by that tag and checks it against the checksums it carries.
+# FrameLoad's patches to FramePort's FrameBridge adapter (native/framebridge), built for every FramePort release:
+# * daily (and by hand): FramePort's latest release, when no build of it with the current PATCH_REVISION exists;
+# * a pushed tag framebridge-<FramePort version>-p<revision>: that version.
+# Each build is a prerelease framebridge-<version>-p<revision> holding the adapters, SHA256SUMS and
+# ORIGINAL_SHA256SUMS. FrameLoad on the headset (installer/framebridge_patch.py) looks up the newest one for the
+# FramePort it runs. A failed scheduled run means the patches no longer apply: GitHub mails the repository owner.
 on:
+  schedule:
+    - cron: '17 5 * * *'
   push:
     tags:
       - 'framebridge-*'
@@ -22,24 +27,45 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache the NDK and shader tools
-        uses: actions/cache@v4
-        with:
-          path: /tmp/framebridge-cache
-          key: framebridge-${{ hashFiles('native/framebridge/FRAMEPORT_VERSION') }}
-
-      - name: Build
-        env:
-          FRAMEBRIDGE_CACHE: /tmp/framebridge-cache
-        run: native/framebridge/build.sh "$PWD/framebridge-out"
-
-      - name: Publish
-        if: startsWith(github.ref, 'refs/tags/framebridge-')
+      - name: Which FramePort
+        id: which
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" framebridge-out/* \
+          rev="$(cat native/framebridge/PATCH_REVISION)"
+          if [[ "$GITHUB_REF" == refs/tags/framebridge-* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            version="${tag#framebridge-}"; version="${version%-p*}"
+          else
+            version="$(curl -fsSL https://api.github.com/repos/spoopyghosty0/frameport/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("vV"))')"
+            tag="framebridge-${version}-p${rev}"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag exists already"; echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the NDK and shader tools
+        if: steps.which.outputs.skip != '1'
+        uses: actions/cache@v4
+        with:
+          path: /tmp/framebridge-cache
+          key: framebridge-ndk-r27c
+
+      - name: Build
+        if: steps.which.outputs.skip != '1'
+        env:
+          FRAMEBRIDGE_CACHE: /tmp/framebridge-cache
+        run: native/framebridge/build.sh "$PWD/framebridge-out" "${{ steps.which.outputs.version }}"
+
+      - name: Publish
+        if: steps.which.outputs.skip != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.which.outputs.tag }}"
+          gh release create "$tag" framebridge-out/* --target "$GITHUB_SHA" \
             --title "FrameBridge adapter for FrameLoad ($tag)" \
-            --notes "FramePort $(cat native/framebridge/FRAMEPORT_VERSION)'s FrameBridge adapter with FrameLoad's patches (native/framebridge). Not a FrameLoad release: FrameLoad downloads this by itself." \
+            --notes "FramePort ${{ steps.which.outputs.version }}'s FrameBridge adapter with FrameLoad's patches (native/framebridge at $GITHUB_SHA). Not a FrameLoad release: FrameLoad downloads it by itself." \
             --prerelease

@@ -374,7 +374,7 @@ class LeptonInstaller:
             "time": time.time(),
         }
         # Learnt on this game, not on this APK: the rate it asks for, and which FramePort already re-ported it.
-        for key in ("game_refresh_rate", "identity_ported_with"):
+        for key in ("game_refresh_rate", "identity_ported_with", "patch_ported_with"):
             if previous.get(key):
                 dep[key] = previous[key]
         if origin is None:

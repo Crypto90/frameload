@@ -101,6 +101,12 @@ _marker_lock = threading.Lock()  # stop markers: never held while evidence is co
 
 
 # --------------------------------------------------------------------------- storage
+def last_record(pkg: str) -> Optional[Dict[str, Any]]:
+    """The record of a game's last finished session, None when there is none."""
+    record = _read_json(_record_path(pkg))
+    return record if isinstance(record, dict) else None
+
+
 def _record_path(pkg: str) -> str:
     return os.path.join(SESSION_DIR, f"{pkg}.json")
 

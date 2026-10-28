@@ -152,6 +152,16 @@ def run_checks() -> Dict[str, Any]:
                             if quest2 else "")
                          if ported else "No ported games yet."))
     checks.append(_steamvr_settings())
+    if port.get("version"):
+        try:
+            from ..installer import framebridge_patch
+            build = framebridge_patch.find_build(port["version"])
+            checks.append(_check("FrameBridge fixes", OK if build else INFO,
+                                 f"FramePort {port['version']} ports with FrameLoad's fixes ({build['tag']})." if build else
+                                 f"No build of FrameLoad's fixes for FramePort {port['version']} yet (one is made within a "
+                                 "day of a FramePort release); games port with FramePort's own adapter meanwhile."))
+        except Exception as e:
+            checks.append(_check("FrameBridge fixes", WARN, str(e)))
     venv_ok = all(importlib.util.find_spec(m) for m in ("venv", "ensurepip"))
     checks.append(_check("Python", OK if venv_ok else WARN,
                          f"{platform.python_version()}" + ("" if venv_ok else "; venv/ensurepip missing, so FramePort cannot be installed automatically.")))

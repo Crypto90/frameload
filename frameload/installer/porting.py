@@ -273,6 +273,15 @@ def _stage(apk_path: str, package: str) -> str:
     return folder
 
 
+def _cli_version(cli: List[str]) -> str:
+    try:
+        ver = subprocess.run(cli + ["--version"], capture_output=True, text=True, timeout=60, env=_env())
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    match = re.search(r"FramePort\s+(\S+)", ver.stdout)
+    return match.group(1) if match else ""
+
+
 def port_apk(apk_path: str, package: str, log: Log) -> str:
     """Converts one Quest APK for the Steam Frame and returns the path of the signed result."""
     cli = find_cli()
@@ -280,6 +289,13 @@ def port_apk(apk_path: str, package: str, log: Log) -> str:
         raise PortingError("FramePort is not set up yet.")
     if not os.path.isfile(apk_path):
         raise PortingError(f"APK not found: {apk_path}")
+
+    if cli[0] == _venv_cli():  # FrameLoad's own FramePort: its adapter may get FrameLoad's patches
+        from . import framebridge_patch
+        try:
+            framebridge_patch.ensure(_cli_version(cli), VENV_DIR, log)
+        except OSError as e:
+            log(f"FrameBridge patch skipped: {e}")
 
     folder = _stage(apk_path, package)
     outdir = os.path.join(OUTPUT_DIR, package)
@@ -451,6 +467,51 @@ def port_as_quest3(log: Log, frameport_version: str) -> List[str]:
     return done
 
 
+def stuck_games(frameport_version: str) -> List[Dict[str, Any]]:
+    """Games FrameLoad ported whose last session never showed a picture and whose build lacks FrameLoad's FrameBridge
+    patch (framebridge_patch.py): ported again with it once per patched build (SWORDS of GARGANTUA)."""
+    from ..manager import sessions
+    from ..manager.installed import InstalledManager
+    from . import framebridge_patch
+
+    build = framebridge_patch.find_build(frameport_version) if frameport_version else None
+    if not build:
+        return []
+    found = []
+    for game in InstalledManager.list_installed():
+        dep = InstalledManager.get_game(game["package"]) or {}
+        if dep.get("kind") != "quest" or dep.get("installed_by") != "frameload" or not dep.get("framebridge") \
+                or dep.get("patch_ported_with") == build["tag"]:
+            continue
+        record = sessions.last_record(game["package"]) or {}
+        if not record or (record.get("frames") or {}).get("drew") or record.get("outcome") in ("start_failed", "interrupted"):
+            continue
+        base = dep.get("base") or dep.get("anchor") or ""
+        if framebridge_patch.has_patch(os.path.join(base, "lepton-app", "game.apk")):
+            continue
+        found.append({"package": game["package"], "title": dep.get("title", game["package"]), "tag": build["tag"]})
+    return found
+
+
+def port_with_patch(log: Log, frameport_version: str) -> List[str]:
+    """Ports the stuck games again with the patched adapter, one at a time and never while a game runs."""
+    from ..manager.installed import InstalledManager
+
+    done = []
+    for game in stuck_games(frameport_version):
+        if any(g.get("is_running") for g in InstalledManager.list_installed()):
+            log("A game is running: the others are ported again later.")
+            break
+        log(f"Porting {game['title']} again with FrameLoad's FrameBridge fixes (it never showed a picture)...")
+        try:
+            port_installed_game(game["package"], log)
+            done.append(game["package"])
+        except Exception as e:
+            log(f"{game['title']}: {e}")
+        _set_flags(game["package"], patch_ported_with=game["tag"])
+    return done
+
+
 def port_and_record(package: str, log: Log) -> Dict[str, Any]:
     """Ports one installed game. A failure is remembered on the game, so automatic porting does not
     repeat a port that takes minutes and fails the same way until FramePort changes or the user asks."""
@@ -539,6 +600,9 @@ def background_maintenance() -> Optional[Dict[str, Any]]:
     if is_auto() and not PortingJobs.active() and quest2_games(version) \
             and not any(g.get("is_running") for g in _installed()):
         return PortingJobs.start("port", lambda log: {"ported": port_as_quest3(log, version)}, queue=True)
+    if is_auto() and not PortingJobs.active() and stuck_games(version) \
+            and not any(g.get("is_running") for g in _installed()):
+        return PortingJobs.start("port", lambda log: {"ported": port_with_patch(log, version)}, queue=True)
     if not current["managed"] or now - state.get("last_update_check", 0) < UPDATE_CHECK_SECONDS:
         return None
     _save_state(last_update_check=now)
