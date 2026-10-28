@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session reports carry the graphics driver workaround, and the site shows it in each game's sessions. A report now names the settings the session ran with: before, a GPU hang's report carried the fix FrameLoad applied afterwards, as if those settings had hung.
 
 ### Changed
+- Now Playing no longer flashes Ended when the game blinks out of one poll; the GPU clock shows MHz.
 - **Each GPU hang takes the next step.** After a hang FrameLoad turns foveated rendering off; if the game hangs again with it off, it switches the graphics driver to Direct to memory. When both are already set, What happened says so and points to the other driver workarounds and to FramePort.
 
 ---
