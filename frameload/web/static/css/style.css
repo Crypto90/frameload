@@ -2071,6 +2071,13 @@ body.vr-grabbing * {
 
 .badge.compat-needs_port { background: var(--accent-amber); color: #1a1200; }
 .badge.compat-blocked { background: var(--accent-danger); color: var(--text-strong); }
+/* The compatibility list's status (manager/compat_reports.py) */
+.badge.community-working { background: rgb(var(--ok-rgb) / 0.9); color: #00140f; }
+.badge.community-partial { background: rgb(var(--warn-rgb) / 0.9); color: #1a1200; }
+.badge.community-broken { background: rgb(var(--danger-rgb) / 0.9); color: var(--text-strong); }
+.compat-notice.community-working { border-left-color: var(--accent-emerald); }
+.compat-notice.community-partial { border-left-color: var(--accent-amber); }
+.compat-notice.community-broken { border-left-color: var(--accent-danger); }
 
 /* 2D app cards: icons are shown whole, with a one-line summary */
 .game-card.app-card .card-poster img {

@@ -862,6 +862,9 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     }
     _write_json(_record_path(pkg), record)
     print(f"[FrameLoad] Session of {pkg}: {record['outcome']} ({record['headline']})")
+    if not quiet and not interrupted:
+        from . import compat_reports
+        compat_reports.report(record, dep)  # only when the player shares compatibility reports
     return record
 
 

@@ -52,7 +52,7 @@ from .system import perf, power
 from .installer.lepton_quest import LeptonInstaller, find_release_obb
 from .installer.package_loader import PackageLoader
 from .manager import files as file_manager
-from .manager import github_reports, launchlog
+from .manager import compat_reports, github_reports, launchlog
 from .manager import sessions
 from .manager.backup import SaveBackupManager
 from .manager.guard import FreezeGuard
@@ -371,6 +371,9 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json(file_manager.browse(params.get("path", [""])[0]))
             except PermissionError as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.FORBIDDEN)
+        elif path == "/api/compat":
+            # The compatibility list's switches (System > Compatibility List).
+            self.send_json(compat_reports.settings())
         elif path == "/api/reports/github":
             # Send to GitHub: the repository and whether a token is set; never the token itself.
             self.send_json(github_reports.settings())
@@ -409,7 +412,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": str(e)}, status=HTTPStatus.NOT_FOUND)
         elif path == "/api/installed":
             try:
-                installed = InstalledManager.list_installed()
+                installed = compat_reports.annotate(InstalledManager.list_installed())
                 self.send_json({"games": installed})
             except Exception as e:
                 print(f"[FrameLoad] Error listing installed games: {e}")
@@ -947,6 +950,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             cfg.save()
             refresh_keep_awake(self.downloader)
             self.send_json({"success": True, "while_busy": keep_awake_while_busy(), **power.KeepAwake.status()})
+        elif path == "/api/compat/settings":
+            self.send_json({"success": True, **compat_reports.save_settings(body)})
         elif path == "/api/reports/github/settings":
             # A paired PC may set the token too: pasting it there is easier than typing it in VR.
             try:

@@ -504,6 +504,28 @@
           <p class="tuning-micro-note" style="margin-top:6px;">Then nothing of FrameLoad stays in front of the game. Open FrameLoad again from your Steam library: downloads, installs and ports keep running, and Stop still works.</p>
         </div>
 
+        <!-- The compatibility list at frameload.crypto90.de (manager/compat_reports.py) -->
+        <div class="sys-card" id="compat-list-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan);">Compatibility List</h3>
+            <span id="compat-list-badge" class="badge">Off</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+            Which games work on the Steam Frame, from the FrameLoad team's tests and players' reports, at <strong>frameload.crypto90.de</strong>.
+          </p>
+          <div style="display:grid; gap:12px; margin-bottom:12px;">
+            <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; font-size:0.9rem;">
+              <input type="checkbox" id="compat-show-check" onchange="saveCompatList()" style="margin-top:4px;">
+              <span>Show each game's status in the library<br><span class="tuning-micro-note">FrameLoad fetches the whole public list, never which games you have.</span></span>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; font-size:0.9rem;">
+              <input type="checkbox" id="compat-share-check" onchange="saveCompatList()" style="margin-top:4px;">
+              <span>Share compatibility reports<br><span class="tuning-micro-note">After each session: the game, how long it ran, whether it showed its picture, how it ended and its settings, with a random id made on this headset. No name, account or log.</span></span>
+            </label>
+          </div>
+          <p id="compat-list-status" class="tuning-micro-note" aria-live="polite"></p>
+        </div>
+
         <!-- Send to GitHub (manager/github_reports.py) -->
         <div class="sys-card" id="github-reports-card">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:10px;">
@@ -872,6 +894,7 @@
       <!-- The same app in other sources (renderAlsoIn in app.js) -->
       <div id="modal-also-in" class="also-in" style="display:none;"></div>
       <div id="modal-compat" style="display:none; margin-bottom:16px;"></div>
+      <div id="modal-community" style="display:none; margin-bottom:16px;"></div>
       <div id="modal-media" class="modal-media" style="display:none;"></div>
       
       <div style="background:rgb(var(--fg-rgb) / 0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.84rem;">

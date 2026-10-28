@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.4] - 2026-10-28
+
+### Added
+- **Compatibility list.** FrameLoad's own website, **frameload.crypto90.de**, lists which games work on the Steam Frame: Working, Partial, Not working, with notes and the best settings, from the team's tests and players' reports. Its source is in `website/` (PHP and SQLite).
+  - The library shows each game's status on its card, and the game's page shows the notes and best settings. FrameLoad fetches the whole public list every few hours, never which games you have. Switch it off under **System → Compatibility List**.
+  - **Share compatibility reports** (off until you turn it on): after each session the headset sends the game, how long it ran, whether it showed its picture, how it ended and its settings, with a random id made once on the headset. No name, account or log.
+
+---
+
 ## [v1.4.3] - 2026-10-28
 
 ### Added

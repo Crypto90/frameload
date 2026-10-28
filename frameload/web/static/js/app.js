@@ -263,7 +263,7 @@ function setupTabs() {
       if (targetId === "catalog") loadCatalog();
       else if (targetId === "library") { loadInstalled(); loadSteamStatus(); }
       else if (targetId === "storage") loadStorageOverview();
-      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); loadStartingGames(); loadGithubReports(); }
+      else if (targetId === "system") { loadSystemTelemetry(); loadHandStatus(); loadPortingStatus(); loadAccess(); loadGuard(); loadKeepAwake(); loadStartingGames(); loadCompatList(); loadGithubReports(); }
       if (targetId === "system") startPerfLive(); else stopPerfLive();
 
       if (window.gamepadNav) window.gamepadNav.updateFocusables();
@@ -1303,6 +1303,7 @@ function libraryCardHtml(game) {
           ${game.is_running ? '<span class="badge installed">Running</span>' : ''}
           ${updateInfo ? '<span class="badge update" title="New update available on mirror">Update Available</span>' : ''}
           ${needsAttention ? `<span class="badge compat-${escapeHtml(level)}" title="${escapeHtml(game.compat.label)}">${level === "blocked" ? "Cannot run" : "Needs porting"}</span>` : ''}
+          ${!needsAttention && game.community && game.community.status !== "untested" ? `<span class="badge community-${escapeHtml(game.community.status)}" title="${escapeHtml(game.community.note || "Compatibility list")}">${escapeHtml(game.community.label)}</span>` : ''}
         </div>
       </div>
       <div class="card-body">
@@ -1910,6 +1911,7 @@ function openGameModal(id, mode = "catalog") {
   }
 
   renderCompatNotice(document.getElementById("modal-compat"), mode === "installed" ? game.compat : null);
+  renderCommunityNotice(document.getElementById("modal-community"), mode === "installed" ? game.community : null);
 
   const actionContainer = document.getElementById("modal-actions");
   if (mode === "catalog") {
@@ -4451,6 +4453,59 @@ function renderGithubReports(info) {
   if (repo && document.activeElement !== repo) repo.value = info.repo || "";
   const remove = document.getElementById("github-token-remove");
   if (remove) remove.style.display = info.configured ? "" : "none";
+}
+
+// --- Compatibility list (manager/compat_reports.py) ---
+function renderCompatList(info) {
+  const show = document.getElementById("compat-show-check");
+  const share = document.getElementById("compat-share-check");
+  const badge = document.getElementById("compat-list-badge");
+  const status = document.getElementById("compat-list-status");
+  if (show) show.checked = !!info.show;
+  if (share) share.checked = !!info.share;
+  if (badge) badge.textContent = info.share ? "Sharing" : info.show ? "Showing" : "Off";
+  if (status) {
+    const last = info.last_report;
+    status.textContent = last
+      ? (last.error ? `Last report (${last.package}) could not be sent: ${last.error}`
+                    : `Last report sent ${timeAgo(last.time)}: ${last.package} rated ${last.rating}.`)
+      : info.list_updated ? `List updated ${timeAgo(info.list_updated)}.` : "";
+  }
+}
+
+async function loadCompatList() {
+  try {
+    renderCompatList(await apiGet("/api/compat"));
+  } catch (e) {
+    /* next visit */
+  }
+}
+
+async function saveCompatList() {
+  const show = document.getElementById("compat-show-check");
+  const share = document.getElementById("compat-share-check");
+  try {
+    renderCompatList(await apiPost("/api/compat/settings", { show: !!(show && show.checked), share: !!(share && share.checked) }));
+  } catch (e) {
+    showToast(`Could not save: ${e.message}`, "error");
+  }
+}
+
+// What players report about a game (the community list), on its page.
+function renderCommunityNotice(el, community) {
+  if (!el) return;
+  if (!community || !community.status) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+  const tips = (community.settings_text || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
+  const reports = community.reports ? ` · ${community.reports} report${community.reports === 1 ? "" : "s"}` : " · team test";
+  el.className = `compat-notice community-${escapeHtml(community.status)}`;
+  el.innerHTML = `<div class="compat-title">Compatibility list: ${escapeHtml(community.label || community.status)}${escapeHtml(reports)}</div>
+    ${community.note ? `<p style="margin:6px 0 0;">${escapeHtml(community.note)}</p>` : ""}
+    ${tips ? `<ul>${tips}</ul>` : ""}`;
+  el.style.display = "block";
 }
 
 async function loadGithubReports() {
