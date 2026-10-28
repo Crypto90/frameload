@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.8] - 2026-10-28
+
+### Fixed
+- **What happened no longer blames foveation for every GPU hang.** When a VR game hangs the graphics processor although Foveated rendering is already off, the window now says so: Valve's foveation layer did not cause it, the hang most likely comes from one of the game's own shaders at that point, and only a fix for that game in FramePort helps (copy the log and report it there). Before, it gave the same general advice as any hang. Epic Roller Coasters hung this way when its main menu loaded, with foveation off.
+- **The compatibility list is honest about Epic Roller Coasters:** Partial instead of Working. Turning foveation off stopped its early crashes, but its picture can still freeze after the boot animation.
+- The website applies the maintainers' list again whenever it changes, not only when its database is created.
+
+---
+
 ## [v1.4.7] - 2026-10-28
 
 ### Added

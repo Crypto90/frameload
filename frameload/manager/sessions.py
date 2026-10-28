@@ -840,9 +840,13 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
                       launch_error=launch_error, interrupted=interrupted)
     if marker and float(marker.get("time", 0)) <= end + 10:
         clear_stop(pkg)  # used, or older than this session
-    if result["outcome"] == "gpu_hang" and _foveation_off_after_hang(pkg, dep):
-        result["advice"] = FOVEATION_OFF_ADVICE
-        result["auto_fix"] = "foveation_off"
+    if result["outcome"] == "gpu_hang":
+        fix = _foveation_off_after_hang(pkg, dep)
+        if fix == "foveation_off":
+            result["advice"] = FOVEATION_OFF_ADVICE
+            result["auto_fix"] = "foveation_off"
+        elif fix == "was_off":
+            result["advice"] = HANG_WITHOUT_FOVEATION_ADVICE
 
     lepton = LEPTON_VERSION_RE.search("\n".join(lines[:400]))
     gs = guard_state or {}
@@ -875,23 +879,34 @@ FOVEATION_OFF_ADVICE = (
     "you ask for help.")
 
 
-def _foveation_off_after_hang(pkg: str, dep: Dict[str, Any]) -> bool:
+# Foveation was already off: Valve's layer is not the cause (Epic Roller Coasters hung this way when its main
+# menu loaded). FramePort's playbook treats a hang at one point of a game as a shader bug, fixed per game in its catalog.
+HANG_WITHOUT_FOVEATION_ADVICE = (
+    "Foveated rendering was already off for this game, so Valve's foveation layer did not cause this hang. A hang "
+    "like this usually comes from one of the game's own shaders and happens at the same point each time; only a "
+    "fix for this game in FramePort helps. Copy the log and report it to FramePort "
+    "(github.com/spoopyghosty0/frameport/issues), saying where in the game it hung. Starting the game again may "
+    "get past that point, but it can hang again there.")
+
+
+def _foveation_off_after_hang(pkg: str, dep: Dict[str, Any]) -> str:
     """After a GPU hang, a VR game FrameLoad installed starts next time without Valve's Vulkan layers.
-    True when the setting was changed now; a game already set to Off, or whose launcher is FramePort's, is left."""
+    "foveation_off" when the setting was changed now, "was_off" when it already was (the layer is not the
+    cause), "" for a game this does not apply to (2D, or a launcher FramePort wrote)."""
     from .tuning import LEPTON_KINDS, TuningManager
 
     if not dep.get("is_vr", True) or dep.get("kind", "quest") not in LEPTON_KINDS \
             or dep.get("installed_by", "frameload") != "frameload":
-        return False
+        return ""
     try:
         if TuningManager.effective_settings(dep).get("foveation") == "off":
-            return False
+            return "was_off"
         TuningManager.save_game_tuning(pkg, {"foveation": "off"})
     except Exception as e:
         print(f"[FrameLoad] Could not turn off foveated rendering for {pkg}: {e}")
-        return False
+        return ""
     print(f"[FrameLoad] {pkg} hung the graphics processor: foveated rendering is now off for it")
-    return True
+    return "foveation_off"
 
 
 def record_interrupted(pkg: str, boot: int, now: Optional[float] = None, quiet: bool = False) -> Optional[Dict[str, Any]]:

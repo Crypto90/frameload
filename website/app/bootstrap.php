@@ -50,9 +50,14 @@ function db(): PDO
     ]);
     $pdo->exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 4000;');
     migrate($pdo);
-    if ($fresh) {
-        require_once APP_DIR . '/seed.php';
+    // The maintainers' list is applied on the first start and again whenever seed.php changes.
+    require_once APP_DIR . '/seed.php';
+    $hash = curated_hash();
+    $stored = $pdo->query("SELECT value FROM meta WHERE key = 'curated_hash'")->fetchColumn();
+    if ($fresh || $stored !== $hash) {
         seed_curated($pdo);
+        $pdo->prepare("INSERT INTO meta (key, value) VALUES ('curated_hash', ?)
+                       ON CONFLICT(key) DO UPDATE SET value = excluded.value")->execute([$hash]);
     }
     return $pdo;
 }
@@ -60,6 +65,7 @@ function db(): PDO
 function migrate(PDO $pdo): void
 {
     $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS games (
             package TEXT PRIMARY KEY,
             title TEXT NOT NULL,

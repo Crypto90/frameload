@@ -301,13 +301,16 @@ class TestRecords(SessionCase):
         self.assertEqual(record["auto_fix"], "foveation_off")
         self.assertIn("turned off Foveated rendering", record["advice"])
 
-        # Already off (or a launcher FramePort wrote): nothing to change, the usual advice.
+        # Already off: nothing to change, and the advice no longer points at foveation.
         self.session([START_PROC, PACING, hang], ago=5)
         with patch.object(TuningManager, "effective_settings", return_value={"foveation": "off"}), \
                 patch.object(TuningManager, "save_game_tuning") as save:
             record = sessions.finalize(PKG)
         save.assert_not_called()
         self.assertEqual(record["auto_fix"], "")
+        self.assertIn("already off", record["advice"])
+        self.assertIn("FramePort", record["advice"])
+        self.assertNotIn("turned off Foveated rendering", record["advice"])
         self.dep["installed_by"] = "frameport"
         self.assertFalse(sessions._foveation_off_after_hang(PKG, self.dep))
 

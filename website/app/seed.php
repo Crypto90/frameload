@@ -12,8 +12,8 @@ const CURATED = [
     ['com.VerticalRobot.RedMatter2', 'Red Matter 2', 'Unreal', 'working', '75',
      'With foveated rendering on, the graphics processor hung after about 40 s. With it off: a steady 72 fps. FrameLoad turns it off by itself after a hang.',
      ['foveation' => 'off', 'min_frameload' => '1.4.2']],
-    ['games.b4t.epicrollercoasters.oculus', 'Epic Roller Coasters', 'Unity', 'working', '6281',
-     'Crashed in the graphics driver after about 30 s with foveated rendering on; steady 72 fps with it off.',
+    ['games.b4t.epicrollercoasters.oculus', 'Epic Roller Coasters', 'Unity', 'partial', '6281',
+     'With foveated rendering on, it crashed in the graphics driver after about 30 s. With it off, it once ran at a steady 72 fps, but the graphics processor can still hang when the main menu loads: then the picture freezes after the boot animation. Report such a session to FramePort.',
      ['foveation' => 'off', 'min_frameload' => '1.4.2']],
     ['com.camouflaj.salmon', "Marvel's Iron Man VR", 'Unity', 'working', '443305',
      'Steady 72 fps. Needs its audio packs (Audio_<language>.obb), which FrameLoad installs since 1.4.1.',
@@ -44,6 +44,12 @@ const CURATED = [
      'Installs completely with FrameLoad 1.4.3, but its Source engine stops at start: it needs "all files access", which Lepton cannot grant.',
      ['min_frameload' => '1.4.3']],
 ];
+
+/** Changes whenever the list above does, so a site that is already running applies it again. */
+function curated_hash(): string
+{
+    return md5(serialize([CURATED, CURATED_TESTED_AT, CURATED_FRAMELOAD]));
+}
 
 function seed_curated(PDO $pdo): void
 {
