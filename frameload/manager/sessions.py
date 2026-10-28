@@ -763,7 +763,7 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(folder, exist_ok=True)
     sources = {"launch_log": False, "crash_log": False, "system_log": False, "main_log": False, "kernel": False,
-               "dashboard_log": False, "last_launch": False, "xrclient": False}
+               "dashboard_log": False, "last_launch": False, "xrclient": False, "container_setup": False}
 
     log = os.path.join(base, "launch.log")
     try:
@@ -810,7 +810,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     # What the next start overwrites: Steam's menu over the game (dashboard.log), how FrameLoad
     # started it (.last_launch), and SteamVR's log of the game's OpenXR client.
     for name, key, kept in (("dashboard.log", "dashboard_log", "dashboard.log"),
-                            (".last_launch", "last_launch", "last_launch.json")):
+                            (".last_launch", "last_launch", "last_launch.json"),
+                            ("container_setup.log", "container_setup", "container_setup.log")):
         path = os.path.join(base, name)
         try:
             if os.path.getmtime(path) < start - 5:
@@ -1185,6 +1186,9 @@ def _start_section(pkg: str, dep: Dict[str, Any], record: Optional[Dict[str, Any
     dash = pick("dashboard.log", "dashboard_log", os.path.join(base, "dashboard.log")).splitlines()
     if dash:
         out += ["Steam's menu at the start (dashboard.log):"] + dash[-count:]
+    setup = pick("container_setup.log", "container_setup", os.path.join(base, "container_setup.log")).splitlines()
+    if setup:
+        out += ["Permissions set in the container (container_setup.log):"] + setup[-count:]
     shows = [ln for ln in _read_text(os.path.join(base, "show.log")).splitlines() if ln.strip()]
     if start:  # only the presses during this session
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))

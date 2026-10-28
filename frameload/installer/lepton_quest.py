@@ -106,14 +106,18 @@ child=$!
 # Permissions a release's install.txt asks for (appops / pm grant): set in the game's container as soon
 # as Android has the app. FrameLoad wrote only checked lines here (installer/release_script.py).
 if [[ -s "$app_dir/container_setup.txt" ]]; then
-    ( for _ in $(seq 1 240); do
+    ( exec >"$app_dir/container_setup.log" 2>&1
+      for _ in $(seq 1 240); do
           podman exec "lepton-steamlaunch-$SteamAppId" pm path {pkg} >/dev/null 2>&1 && break
           sleep 0.5
       done
+      echo "$(date +%T) the app is installed"
       while read -r -a cmd; do
           [[ ${{#cmd[@]}} -gt 0 ]] || continue
-          podman exec "lepton-steamlaunch-$SteamAppId" "${{cmd[@]}}" >>"$app_dir/container_setup.log" 2>&1 || true
-      done < "$app_dir/container_setup.txt" ) 9>&- &
+          echo "$(date +%T) ${{cmd[*]}}"
+          podman exec "lepton-steamlaunch-$SteamAppId" "${{cmd[@]}}" || echo "exit status $?"
+      done < "$app_dir/container_setup.txt"
+      podman exec "lepton-steamlaunch-$SteamAppId" appops get {pkg} || true ) 9>&- &
 fi
 {dashboard}
 wait "$child"
@@ -355,7 +359,7 @@ class LeptonInstaller:
             "settings": settings,
             "framebridge_keys": previous.get("framebridge_keys", []),
             "installed_by": "frameload",
-            "layout_version": 11,
+            "layout_version": 12,
             "time": time.time(),
         }
         if origin is None:
