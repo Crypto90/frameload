@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.7] - 2026-10-28
+
+### Added
+- **Live View: watch and hear what the person in the headset sees**, on a paired PC or phone. System > Self-Test > **Live View** (or `http://<frame-ip>:5050/live`) plays the headset's picture with its sound in the browser, about a third of a second behind, in FrameLoad's look you picked (all six, Daylight light and dark). Play and pause, sound on and off, volume, a LIVE button that jumps back to now, 480p/720p/1080p and fullscreen (Space, M, F), the game being played in the header, and the delay, encoder and data in tiles below. The headset encodes it once for every viewer with its hardware video encoder (FramePort's fp_venc, which FrameLoad's FramePort install brings along; about 3 % of a core), else in software at low priority, and stops a few seconds after the last viewer leaves. Steam has no such view for the Frame.
+
+---
+
 ## [v1.5.6] - 2026-10-28
 
 ### Fixed
