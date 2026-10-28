@@ -285,8 +285,11 @@ class TuningManager:
     @staticmethod
     def inherited_settings(dep: Dict[str, Any]) -> Dict[str, Any]:
         """What a game gets without settings of its own: the defaults under System, then the list's recommendation."""
+        from . import quality
+
         merged = TuningManager.get_global_tuning()
         merged.update(TuningManager.recommended_settings(dep))
+        merged.update(quality.applied(dep))  # automatic quality: what the game managed last time
         return merged
 
     @staticmethod
@@ -340,6 +343,10 @@ class TuningManager:
         result.update({
             # The list's recommendation, and which of its values this game overrides with its own.
             "recommended": TuningManager.recommended_settings(dep),
+            # Automatic quality (quality.py): its values sit under the game's own; note says why.
+            "auto_quality": dep.get("auto_quality") if isinstance(dep.get("auto_quality"), dict) else None,
+            "game_refresh_rate": int(dep.get("game_refresh_rate") or 0),
+            "display_rate": TuningManager.display_rate(TuningManager.effective_settings(dep), dep),
             "own_keys": sorted(own),
             "package": package_name,
             "title": dep.get("title", package_name),
@@ -403,8 +410,14 @@ class TuningManager:
     @staticmethod
     def display_rate(settings: Dict[str, Any], dep: Dict[str, Any]) -> int:
         """The panel rate launch.sh asks SteamVR for: the player's Refresh rate, else ("Game's choice") the rate the
-        game itself asked for in an earlier session (sessions.learn_refresh_rate), else 0 (SteamVR's own)."""
-        return int(settings.get("refresh_rate") or dep.get("game_refresh_rate") or 0)
+        game itself asked for in an earlier session (sessions.learn_refresh_rate), lowered to automatic quality's
+        cap when it could not hold it, else 0 (SteamVR's own)."""
+        from . import quality
+
+        if settings.get("refresh_rate"):
+            return int(settings["refresh_rate"])
+        rate, cap = int(dep.get("game_refresh_rate") or 0), quality.rate_cap(dep)
+        return min(rate, cap) if rate and cap else rate
 
     @staticmethod
     def launch_env(settings: Dict[str, Any], is_vr: bool) -> Dict[str, str]:

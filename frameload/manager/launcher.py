@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from typing import Any, Dict, List
@@ -18,6 +19,8 @@ SHOW_LOG = "show.log"          # <base>/show.log: every press of Show, for the g
 SHOW_LOG_MAX = 32 * 1024
 STOP_LOGCAT = ".stop_logcat.log"  # <base>/.stop_logcat.log: Android's log, taken just before a stop
 STOP_LOGCAT_MAX = 4 * 1024 * 1024
+STOP_THREADS = ".stop_threads.txt"  # <base>/.stop_threads.txt: every thread's backtrace, taken just before a stop
+STOP_THREADS_MAX = 2 * 1024 * 1024
 
 
 class GameLauncher:
@@ -238,12 +241,34 @@ class GameLauncher:
             from . import sessions
             sessions.mark_stop(package_name, by)
         GameLauncher._keep_logcat(name, dep.get("base") or dep.get("anchor") or "")
+        GameLauncher._keep_threads(name, dep.get("base") or dep.get("anchor") or "", package_name)
         stopped = GameLauncher._stop_container(name)
         if not stopped and by:
             from . import sessions
             sessions.clear_stop(package_name)
         return {"success": stopped, "package": package_name, "stopped": stopped,
                 "error": "" if stopped else "The game's container could not be stopped."}
+
+    @staticmethod
+    def _keep_threads(container: str, base: str, package: str) -> bool:
+        """Every thread's backtrace of the game (Android's debuggerd -b) before it is stopped: a game that loads
+        forever or freezes leaves no crash and often no error, and this shows where each thread waits."""
+        if not base or not os.path.isdir(base) or not re.fullmatch(r"[A-Za-z0-9_.]+", package or ""):
+            return False
+        try:
+            out = subprocess.run(["podman", "exec", container, "sh", "-c",
+                                  f"for p in $(pidof {package}); do debuggerd -b $p; done"],
+                                 capture_output=True, timeout=12)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if not out.stdout.strip():
+            return False
+        try:
+            with open(os.path.join(base, STOP_THREADS), "wb") as f:
+                f.write(out.stdout[:STOP_THREADS_MAX].replace(b"\r\n", b"\n"))
+            return True
+        except OSError:
+            return False
 
     @staticmethod
     def _keep_logcat(container: str, base: str) -> bool:
@@ -279,5 +304,6 @@ class GameLauncher:
             name = f"{CONTAINER_PREFIX}{game.get('appid')}"
             if name in names:
                 GameLauncher._keep_logcat(name, game.get("base") or game.get("anchor") or "")
+                GameLauncher._keep_threads(name, game.get("base") or game.get("anchor") or "", game.get("package", ""))
         stopped = [name for name in names if GameLauncher._stop_container(name)]
         return {"success": len(stopped) == len(names), "stopped": len(stopped), "running": len(names)}

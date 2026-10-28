@@ -1634,6 +1634,30 @@ function openPlayOverlay(pkg = null, opts = {}) {
   clearInterval(play.timer);
   play.timer = setInterval(pollPlayOverlay, 2000);
   pollPlayOverlay();
+  loadPlayFacts(target);
+}
+
+// What the game runs with: the rate SteamVR gets, its resolution and the headset it is told it runs on.
+const HEADSET_NAMES = { quest3: "Meta Quest 3", quest3s: "Meta Quest 3S", questpro: "Quest Pro", quest2: "Quest 2" };
+async function loadPlayFacts(pkg) {
+  state.play.facts = null;
+  try {
+    const info = await apiGet(`/api/installed/tuning/${encodeURIComponent(pkg)}`);
+    if (state.play.pkg === pkg) state.play.facts = info;
+  } catch (e) {
+    /* the screen works without them */
+  }
+  if (state.play.pkg === pkg && playOverlayOpen()) renderPlayOverlay();
+}
+
+function playFactsText(game) {
+  const info = state.play.facts;
+  if (!info || game.is_vr === false) return "";
+  const parts = [];
+  if (info.display_rate) parts.push(`${info.display_rate} Hz`);
+  if (typeof info.scale === "number") parts.push(`${Number(info.scale.toFixed(2))}× resolution${info.auto_quality && info.auto_quality.scale && !(info.own_keys || []).includes("scale") ? " (automatic)" : ""}`);
+  if (HEADSET_NAMES[game.headset]) parts.push(`sees a ${HEADSET_NAMES[game.headset]}`);
+  return parts.join(" · ");
 }
 
 function closePlayOverlay(dismiss = false) {
@@ -1688,7 +1712,7 @@ async function pollPlayOverlay() {
   if (running) {
     play.seenRunning = true;
     if (play.phase === "launching") play.phase = "";
-  } else if (play.phase !== "error" && play.phase !== "ended") {
+  } else if (play.phase !== "error" && play.phase !== "ended" && !play.restarting) {
     const starting = play.phase === "launching" && Date.now() < (state.launchingUntil || 0);
     if (!starting && play.missing >= 2) {
       play.phase = "ended";
@@ -1770,6 +1794,11 @@ function renderPlayOverlay() {
   stop.style.display = over ? "none" : "";
   stop.disabled = !running && play.phase !== "launching";
   document.getElementById("play-back").textContent = over ? "Close" : "Back to Library";
+  document.getElementById("play-facts").textContent = playFactsText(game);
+  const restart = document.getElementById("play-restart");
+  restart.style.display = over || !running ? "none" : "";
+  restart.disabled = !!play.restarting;
+  document.getElementById("play-settings").style.display = state.play.facts && state.play.facts.configurable ? "" : "none";
   document.getElementById("play-stats").style.display = over ? "none" : "";
 
   const launch = play.launch || {};
@@ -1782,8 +1811,11 @@ function renderPlayOverlay() {
 
 function renderPlayStats(entry, perf, vr) {
   const sys = state.system || {};
+  const target = (state.play.facts || {}).display_rate || 0;
   if (entry && entry.fps) {
-    setPlayStat("fps", `${Math.round(entry.fps)}`, entry.state === "silent" ? "picture stopped" : "fps", entry.state === "silent" ? "warn" : "");
+    const behind = target && entry.fps < target * 0.9;
+    setPlayStat("fps", `${Math.round(entry.fps)}`, entry.state === "silent" ? "picture stopped" : target ? `fps of ${target}` : "fps",
+      entry.state === "silent" || behind ? "warn" : "");
   } else {
     setPlayStat("fps", "–", !vr ? "2D window" : entry && !entry.framebridge ? "not reported by this game" : "waiting for the first picture");
   }
@@ -1811,6 +1843,33 @@ function renderPlayStats(entry, perf, vr) {
   }
 }
 
+// Settings apply at a game's next start: Restart stops it, waits until it is gone and starts it again.
+async function playOverlayRestart() {
+  const play = state.play;
+  const pkg = play.pkg;
+  if (!pkg || play.restarting) return;
+  play.restarting = true;
+  renderPlayOverlay();
+  try {
+    await apiPost("/api/installed/stop", { package: pkg });
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const data = await apiGet("/api/installed");
+      const game = (data.games || []).find(g => g.package === pkg);
+      if (!game || !game.is_running) break;
+    }
+  } catch (e) {
+    showToast(e.message, "error");
+  } finally {
+    play.restarting = false;
+  }
+  launchGame(pkg);
+}
+
+function playOverlaySettings() {
+  if (state.play.pkg) openTuningModal(state.play.pkg);
+}
+
 function playOverlayResume() {
   if (state.play.pkg) showGame(state.play.pkg);
 }
@@ -1834,6 +1893,8 @@ window.openPlayOverlay = openPlayOverlay;
 window.closePlayOverlay = closePlayOverlay;
 window.playOverlayResume = playOverlayResume;
 window.playOverlayStop = playOverlayStop;
+window.playOverlayRestart = playOverlayRestart;
+window.playOverlaySettings = playOverlaySettings;
 
 async function uninstallGame(pkg, keepSaves = true) {
   const target = (state.installed || []).find(g => g.package === pkg);
@@ -3835,6 +3896,23 @@ function refreshTuningPresetChips() {
   });
 }
 
+// What automatic quality and the learnt refresh rate do for a game (quality.py, sessions.learn_refresh_rate).
+function autoQualitySummary(info) {
+  const parts = [];
+  const auto = info.auto_quality || {};
+  if (info.display_rate) {
+    parts.push(info.refresh_rate ? `Runs at ${info.display_rate} Hz (your setting).`
+      : auto.rate_cap && info.game_refresh_rate > info.display_rate
+        ? `Runs at ${info.display_rate} Hz: it asked for ${info.game_refresh_rate} Hz but could not keep up.`
+        : `Runs at ${info.display_rate} Hz, the rate the game asks for.`);
+  }
+  if (auto.note) {
+    const own = (info.own_keys || []).includes("scale");
+    parts.push(`Automatic quality: ${auto.note}${own ? " (your own resolution setting wins)" : ""}.`);
+  }
+  return parts.join(" ");
+}
+
 function visibleTuningSpecs(info, isGlobal) {
   return (state.tuningSchema || []).filter(spec => isGlobal || spec.scope === (info.is_vr ? "vr" : "flat"));
 }
@@ -3885,6 +3963,12 @@ async function openTuningModal(pkg) {
     if (rec.length) {
       html += `<p class="tuning-section-note">The compatibility list recommends for this game: ${escapeHtml(rec.join(", "))}. These apply unless you change them here.</p>`;
     }
+    const auto = autoQualitySummary(info);
+    if (auto) html += `<p class="tuning-section-note">${escapeHtml(auto)}</p>`;
+  } else {
+    html += `<h3 class="tuning-section-title">Automatic quality</h3>
+      <label class="tuning-toggle"><input type="checkbox" id="tuning-auto-quality"${info.auto_quality !== false ? " checked" : ""}>
+      <span>After each session, raise a game's resolution when it kept its frame rate with graphics power to spare, and lower it (or the refresh rate) when it could not. A game's own settings always win.</span></label>`;
   }
   if (leptonSpecs.length) {
     html += `<h3 class="tuning-section-title">${isGlobal || info.is_vr ? "Lepton" : "Window"}</h3>
@@ -3957,8 +4041,9 @@ async function saveGameTuningFromModal() {
 
   if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
   try {
+    const autoBox = document.getElementById("tuning-auto-quality");
     const res = isGlobal
-      ? await apiPost("/api/tuning/global", { settings })
+      ? await apiPost("/api/tuning/global", { settings, auto_quality: autoBox ? autoBox.checked : true })
       : await apiPost("/api/installed/tuning", { package: state.tuningTarget, settings });
     if (res.success) {
       showToast(isGlobal ? "Default settings saved." : "Settings saved. They apply the next time the game starts.", "success");
@@ -4506,6 +4591,7 @@ async function openLogModal(pkg, options = {}) {
     lines.style.display = log.exists ? "" : "none";
     lines.textContent = (log.truncated ? "(earlier lines not shown)\n" : "") + (log.lines || []).join("\n");
     state.logView = { pkg, source, text: log.copy_text || "", local: !!log.client_local };
+    setLogGameButtons(true);
     modal.classList.add("open");
     const content = modal.querySelector(".modal-content");
     if (content) content.scrollTop = 0;  // findings first; the scroll arrows go down the log
@@ -4514,6 +4600,63 @@ async function openLogModal(pkg, options = {}) {
     showToast(e.message, "error");
   }
 }
+
+// The launch log's Save and Send to GitHub belong to a game; FrameLoad's own log has Copy only.
+function setLogGameButtons(on) {
+  const save = document.getElementById("log-save");
+  if (save) save.style.display = on ? "" : "none";
+  const github = document.getElementById("log-github");
+  if (!github) return;
+  if (!on) {
+    github.dataset.wasShown = github.style.display === "none" ? "" : "1";
+    github.style.display = "none";
+  } else if (github.dataset.wasShown) {
+    github.style.display = "";
+    delete github.dataset.wasShown;
+  }
+}
+
+// System > FrameLoad Log: the server's own output, and why it last stopped or restarted (applog.py).
+async function openAppLog() {
+  const modal = document.getElementById("log-modal");
+  if (!modal) return;
+  let log;
+  try {
+    log = await apiGet("/api/system/log");
+  } catch (e) {
+    showToast(e.message, "error");
+    return;
+  }
+  const unit = log.unit || {};
+  const findings = [];
+  if (unit.ActiveState) {
+    const restarts = Number(unit.NRestarts || 0);
+    findings.push({ severity: unit.Result && unit.Result !== "success" ? "warn" : "ok",
+      title: `FrameLoad's service is ${unit.ActiveState}${unit.ExecMainStartTimestamp ? `, running since ${unit.ExecMainStartTimestamp}` : ""}`,
+      advice: `Last result: ${unit.Result || "unknown"}${restarts ? `; systemd restarted it ${restarts} time(s)` : ""}.` });
+  }
+  if ((log.oom || []).length) {
+    findings.push({ severity: "error", title: "The system ran out of memory and killed processes",
+      advice: log.oom.slice(-4).join("\n") });
+  }
+  if ((log.lifecycle || []).length) {
+    findings.push({ severity: "info", title: "Starts and stops of FrameLoad", advice: log.lifecycle.slice(-8).join("\n") });
+  }
+  document.getElementById("log-modal-title").textContent = "FrameLoad Log";
+  document.getElementById("log-findings").innerHTML = findings.map(f =>
+    `<div class="log-finding ${escapeHtml(f.severity)}"><strong>${escapeHtml(f.title)}</strong><span style="white-space:pre-line;">${escapeHtml(f.advice)}</span></div>`).join("");
+  const lines = document.getElementById("log-lines");
+  const text = (log.lines || []).join("\n");
+  lines.style.display = text ? "" : "none";
+  lines.textContent = text;
+  state.logView = { pkg: "", source: "app", text: findings.map(f => `${f.title}\n${f.advice}`).join("\n\n") + "\n\n" + text, local: false };
+  setLogGameButtons(false);
+  modal.classList.add("open");
+  const content = modal.querySelector(".modal-content");
+  if (content) content.scrollTop = 0;
+  if (window.gamepadNav) window.gamepadNav.updateFocusables();
+}
+window.openAppLog = openAppLog;
 
 function closeLogModal() {
   const modal = document.getElementById("log-modal");

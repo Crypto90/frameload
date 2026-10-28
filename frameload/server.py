@@ -213,6 +213,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.send_json(summary)
         elif path == "/api/system/perf":
             self.send_json(perf.snapshot())
+        elif path == "/api/system/log":
+            # System > FrameLoad Log: the server's own output and why it last stopped (redacted like a report).
+            from .system import applog
+            self.send_json(applog.read())
         elif path == "/api/power":
             info = power.KeepAwake.status()
             info["while_busy"] = keep_awake_while_busy()
@@ -481,7 +485,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 "schema": TuningManager.get_schema(),
             })
         elif path == "/api/tuning/global":
-            self.send_json(TuningManager.get_global_tuning())
+            from .manager import quality
+            self.send_json({**TuningManager.get_global_tuning(), "auto_quality": quality.enabled()})
         elif path.startswith("/api/installed/tuning/"):
             pkg = urllib.parse.unquote(path.replace("/api/installed/tuning/", "").strip())
             if not is_valid_package(pkg):
@@ -870,8 +875,11 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
         elif path == "/api/tuning/global":
             settings = body.get("settings", body)
             try:
+                from .manager import quality
+                if "auto_quality" in body:  # System > default settings > Automatic quality
+                    quality.set_enabled(bool(body["auto_quality"]))
                 updated = TuningManager.save_global_tuning(settings)
-                self.send_json({"success": True, "settings": updated})
+                self.send_json({"success": True, "settings": updated, "auto_quality": quality.enabled()})
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/tuning/batch-apply":

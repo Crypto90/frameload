@@ -293,6 +293,10 @@ class LeptonInstaller:
 
         # Lepton starts the single APK in the app folder; a second one makes its lookup ambiguous.
         dest_apk = os.path.join(app_dir, "game.apk")
+        # An update, port or reinstall replaces the APK of a game that may hold saves: keep a copy first.
+        if os.path.isfile(os.path.join(anchor, "deployment.json")) and os.path.isfile(dest_apk):
+            from ..manager.backup import SaveBackupManager
+            SaveBackupManager.backup_before_change(package_name, anchor)
         if os.path.abspath(apk_path) != os.path.abspath(dest_apk):
             tmp_apk = dest_apk + ".incoming"
             shutil.copy2(apk_path, tmp_apk)

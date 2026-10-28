@@ -157,6 +157,17 @@ def running_games(games: List[Dict[str, Any]], proc: str = "/proc") -> List[Dict
     return out
 
 
+GPU_HISTORY = 720  # GPU shares kept per session (one per tick)
+
+
+def share_percentile(values: List[float], q: float) -> Optional[float]:
+    """The q-th share of a session (0.8: 80 % of the samples were at or below it); None with too few samples."""
+    if len(values) < 6:
+        return None
+    ordered = sorted(values)
+    return round(ordered[min(len(ordered) - 1, int(q * len(ordered)))], 3)
+
+
 def memory_limit_bytes(total: int) -> int:
     return max(4 * 1024 ** 3, total - RESERVE_BYTES)
 
@@ -397,6 +408,10 @@ class FreezeGuard:
         samples = session["gpu_samples"]
         if ns is not None and samples and samples[-1][1] is not None and ns >= samples[-1][1] and now > samples[-1][0]:
             session["gpu"] = (ns - samples[-1][1]) / ((now - samples[-1][0]) * 1e9)
+            # The whole session's shares, for its quality judgement (quality.py): the last one alone says little.
+            history = session.setdefault("gpu_history", [])
+            history.append(session["gpu"])
+            del history[:-GPU_HISTORY]
         elif ns is None:
             session["gpu"] = None
         samples.append((now, ns))
@@ -504,7 +519,7 @@ class FreezeGuard:
         last = state.get("last_frame")
         guard_state = {"fps": state.get("fps"), "last_frame_age": int(now - last) if last else None,
                        "drew": bool(last or state.get("gpu_drawing")), "limit": state.get("limit", ""),
-                       "gpu": state.get("gpu")}
+                       "gpu": state.get("gpu"), "gpu_p80": share_percentile(state.get("gpu_history") or [], 0.8)}
         cls.run_async(records.finalize, pkg, guard_state)
 
     @classmethod

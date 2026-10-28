@@ -386,7 +386,10 @@
             Checks Lepton, podman, the launcher's tools, your Steam library and every installed game on this headset.
           </p>
           <div id="doctor-results"></div>
-          <button class="btn-secondary compact" onclick="runDoctor()">Run Self-Test</button>
+          <div style="display:flex; flex-wrap:wrap; gap:10px;">
+            <button class="btn-secondary compact" onclick="runDoctor()">Run Self-Test</button>
+            <button class="btn-secondary compact" onclick="openAppLog()" title="What FrameLoad printed, and why it last stopped or restarted">FrameLoad Log</button>
+          </div>
         </div>
 
         <div class="sys-card">
@@ -883,6 +886,7 @@
           <div id="play-kicker" class="play-kicker">Starting</div>
           <h2 id="play-title"></h2>
           <div id="play-status" class="play-status" role="status" aria-live="polite"></div>
+          <div id="play-facts" class="play-facts"></div>
         </div>
       </div>
       <div id="play-progress" class="play-progress" aria-hidden="true"><span></span></div>
@@ -890,6 +894,8 @@
       <div class="play-actions">
         <button id="play-resume" type="button" class="btn-primary" onclick="playOverlayResume()"></button>
         <button id="play-stop" type="button" class="btn-danger" onclick="playOverlayStop()"></button>
+        <button id="play-restart" type="button" class="btn-secondary" onclick="playOverlayRestart()">Restart</button>
+        <button id="play-settings" type="button" class="btn-secondary" onclick="playOverlaySettings()">Settings</button>
         <button id="play-back" type="button" class="btn-secondary" data-back onclick="closePlayOverlay(true)">Back to Library</button>
       </div>
       <p id="play-hint" class="play-hint"></p>
@@ -1228,7 +1234,7 @@
       <div class="session-actions">
         <button type="button" class="btn-secondary" onclick="copyLogReport(this)">Copy Log</button>
         <button type="button" id="log-github" class="btn-secondary github-send" style="display:none;" onclick="sendLogToGithub(this)">Send to GitHub</button>
-        <button type="button" class="btn-secondary" onclick="saveLogReport()">Save Log</button>
+        <button type="button" id="log-save" class="btn-secondary" onclick="saveLogReport()">Save Log</button>
         <button type="button" class="btn-primary" data-back onclick="closeLogModal()">Close</button>
       </div>
     </div>

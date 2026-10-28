@@ -763,7 +763,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(folder, exist_ok=True)
     sources = {"launch_log": False, "crash_log": False, "system_log": False, "main_log": False, "kernel": False,
-               "dashboard_log": False, "last_launch": False, "xrclient": False, "container_setup": False}
+               "dashboard_log": False, "last_launch": False, "xrclient": False, "container_setup": False,
+               "threads": False}
 
     log = os.path.join(base, "launch.log")
     try:
@@ -811,7 +812,8 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     # started it (.last_launch), and SteamVR's log of the game's OpenXR client.
     for name, key, kept in (("dashboard.log", "dashboard_log", "dashboard.log"),
                             (".last_launch", "last_launch", "last_launch.json"),
-                            ("container_setup.log", "container_setup", "container_setup.log")):
+                            ("container_setup.log", "container_setup", "container_setup.log"),
+                            (".stop_threads.txt", "threads", "threads.txt")):
         path = os.path.join(base, name)
         try:
             if os.path.getmtime(path) < start - 5:
@@ -850,7 +852,13 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
             result["auto_fix"] = fix
 
     # Lepton's copy of the log can stop early; Android's own log (its dump, or the copy Stop took) has the rest.
-    asked_rate = learn_refresh_rate(pkg, dep, lines + dumps.get("main_log", []) + dumps.get("system_log", []))
+    android = lines + dumps.get("main_log", []) + dumps.get("system_log", [])
+    asked_rate = learn_refresh_rate(pkg, dep, android)
+    from . import quality
+    # Pacing lines from one source only (both copies hold the same windows): the fuller one.
+    paced = max((lines, dumps.get("main_log", [])), key=lambda src: len(quality.pacing(src)))
+    quality_note = "" if quiet or interrupted else quality.adjust(
+        pkg, dep, paced, (guard_state or {}).get("gpu_p80"), result["outcome"], asked_rate)
 
     lepton = LEPTON_VERSION_RE.search("\n".join(lines[:400]))
     gs = guard_state or {}
@@ -867,6 +875,7 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         "sources": sources, "lepton": f"{lepton.group(1)} (rootfs {lepton.group(2)})" if lepton else "",
         "kind": "vr" if dep.get("is_vr", True) else "2d", "seen": quiet, "time": now,
         "auto_fix": result.get("auto_fix", ""), "settings": ran_with, "asked_refresh_rate": asked_rate,
+        "quality": quality_note,
     }
     _write_json(_record_path(pkg), record)
     print(f"[FrameLoad] Session of {pkg}: {record['outcome']} ({record['headline']})")
@@ -1261,6 +1270,13 @@ def _start_section(pkg: str, dep: Dict[str, Any], record: Optional[Dict[str, Any
     setup = pick("container_setup.log", "container_setup", os.path.join(base, "container_setup.log")).splitlines()
     if setup:
         out += ["Permissions set in the container (container_setup.log):"] + setup[-count:]
+    threads = pick("threads.txt", "threads", "").splitlines()
+    if threads:
+        # Where each thread of a game that was stopped waited (debuggerd -b, taken by Stop): the main and
+        # render threads first, the rest only in the full report.
+        main = [i for i, ln in enumerate(threads) if re.search(r'^"(main|GameThread|RHIThread|UnityMain|UnityGfx\w*|RenderThread)"', ln)]
+        shown = threads if full else [ln for i in main for ln in threads[i:i + 14]]
+        out += ["Threads when it was stopped (debuggerd):"] + shown
     shows = [ln for ln in _read_text(os.path.join(base, "show.log")).splitlines() if ln.strip()]
     if start:  # only the presses during this session
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))

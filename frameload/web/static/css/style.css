@@ -3489,6 +3489,8 @@ button.dropdown-item { width: 100%; border: 0; background: none; font: inherit; 
   overflow-wrap: anywhere;
 }
 .play-status { font-size: 1.05rem; color: var(--text); }
+.play-facts { margin-top: 4px; font-size: 0.88rem; color: var(--text-muted); }
+.play-facts:empty { display: none; }
 .play-status[data-tone="ok"] { color: var(--ok); }
 .play-status[data-tone="warn"] { color: var(--warn); }
 .play-status[data-tone="bad"] { color: var(--danger); }

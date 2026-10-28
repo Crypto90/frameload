@@ -50,6 +50,24 @@ def _steam_interface() -> Dict[str, str]:
     return _check("Steam's interface", OK, f"Answers on 127.0.0.1:8080; Steam's menu is {'open' if visible else 'closed'}.")
 
 
+def _steamvr_settings() -> Dict[str, str]:
+    """launch.sh sets each game's refresh rate through SteamVR's IVRSettings (steamvr_settings.py)."""
+    from . import steamvr_settings
+
+    lib = next((p for p in steamvr_settings.OPENVR_LIBS if os.path.isfile(p)), "")
+    if not lib:
+        return _check("SteamVR refresh rate", WARN, "SteamVR's libopenvr_api.so was not found: games stay at the "
+                                                    "panel's current rate.")
+    try:
+        vr = steamvr_settings.SteamVRSettings.open()
+    except OSError as e:
+        return _check("SteamVR refresh rate", WARN, f"SteamVR's settings could not be opened: {e}")
+    if vr is None:
+        return _check("SteamVR refresh rate", INFO, "SteamVR is not running; checked again with the next self-test.")
+    vr.close()
+    return _check("SteamVR refresh rate", OK, "SteamVR's per-game settings answer: each game gets its refresh rate.")
+
+
 def run_checks() -> Dict[str, Any]:
     checks: List[Dict[str, str]] = []
     osr = get_os_release()
@@ -117,6 +135,23 @@ def run_checks() -> Dict[str, Any]:
                              else "Not set up. Needed only for Quest games that are not ported yet."))
     except Exception as e:
         checks.append(_check("Quest porting (FramePort)", WARN, str(e)))
+        port = {"version": ""}
+
+    # Ported games are told they run on a Meta Quest 3 (FramePort 1.4.0's headset_model; porting.port_as_quest3).
+    ported = [g for g in lepton_games if g.get("framebridge") and g.get("headset")]
+    quest2 = [g["title"] for g in ported if g.get("headset") == "quest2"]
+    try:
+        from ..installer.porting import QUEST3_SINCE, _version_tuple
+        new_enough = bool(port.get("version")) and _version_tuple(port["version"]) >= QUEST3_SINCE
+    except Exception:
+        new_enough = False
+    checks.append(_check("Headset identity", OK if ported and not quest2 else (WARN if quest2 else INFO),
+                         f"{len(ported) - len(quest2)} of {len(ported)} ported games see a Meta Quest 3."
+                         + (f" Still Quest 2: {', '.join(quest2)}." + ("" if new_enough else
+                            " FramePort is older than 1.4.0, so they stay that way until it updates.")
+                            if quest2 else "")
+                         if ported else "No ported games yet."))
+    checks.append(_steamvr_settings())
     venv_ok = all(importlib.util.find_spec(m) for m in ("venv", "ensurepip"))
     checks.append(_check("Python", OK if venv_ok else WARN,
                          f"{platform.python_version()}" + ("" if venv_ok else "; venv/ensurepip missing, so FramePort cannot be installed automatically.")))
