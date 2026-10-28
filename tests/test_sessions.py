@@ -289,7 +289,7 @@ class TestRecords(SessionCase):
         self.assertIn("libgallium_dri.so", sessions.report_text(PKG))
         self.assertIsNone(sessions.finalize(PKG))  # recorded once
 
-    def test_a_gpu_hang_turns_foveated_rendering_off_once(self):
+    def test_each_gpu_hang_takes_the_next_graphics_step(self):
         from frameload.manager.tuning import TuningManager
         hang = lc(40, 1234, "E", "MESA", "error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)")
         self.session([START_PROC, PACING, hang])
@@ -301,18 +301,28 @@ class TestRecords(SessionCase):
         self.assertEqual(record["auto_fix"], "foveation_off")
         self.assertIn("turned off Foveated rendering", record["advice"])
 
-        # Already off: nothing to change, and the advice no longer points at foveation.
+        # Hung again with foveation off: the driver draws straight to memory next time.
         self.session([START_PROC, PACING, hang], ago=5)
-        with patch.object(TuningManager, "effective_settings", return_value={"foveation": "off"}), \
+        with patch.object(TuningManager, "effective_settings",
+                          return_value={"foveation": "off", "gpu_driver": "default"}), \
+                patch.object(TuningManager, "save_game_tuning") as save:
+            record = sessions.finalize(PKG)
+        save.assert_called_once_with(PKG, {"gpu_driver": "sysmem"})
+        self.assertEqual(record["auto_fix"], "gpu_sysmem")
+        self.assertIn("Direct to memory", record["advice"])
+
+        # Both already set: nothing to change, and the advice no longer promises a cure from them.
+        self.session([START_PROC, PACING, hang], ago=3)
+        with patch.object(TuningManager, "effective_settings",
+                          return_value={"foveation": "off", "gpu_driver": "sysmem"}), \
                 patch.object(TuningManager, "save_game_tuning") as save:
             record = sessions.finalize(PKG)
         save.assert_not_called()
         self.assertEqual(record["auto_fix"], "")
         self.assertIn("already off", record["advice"])
         self.assertIn("FramePort", record["advice"])
-        self.assertNotIn("turned off Foveated rendering", record["advice"])
         self.dep["installed_by"] = "frameport"
-        self.assertFalse(sessions._foveation_off_after_hang(PKG, self.dep))
+        self.assertEqual(sessions._fix_after_gpu_hang(PKG, self.dep), "")
 
     def test_a_stopped_games_log_comes_from_the_copy_stop_took(self):
         start, end = self.session([START_PROC])

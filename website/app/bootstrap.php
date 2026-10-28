@@ -95,6 +95,7 @@ function migrate(PDO $pdo): void
             scale REAL,
             refresh_rate INTEGER,
             foveation TEXT NOT NULL DEFAULT '',
+            gpu_driver TEXT NOT NULL DEFAULT '',
             framebridge INTEGER NOT NULL DEFAULT 0,
             frameload_version TEXT NOT NULL DEFAULT '',
             os_build TEXT NOT NULL DEFAULT '',
@@ -105,7 +106,19 @@ function migrate(PDO $pdo): void
         CREATE INDEX IF NOT EXISTS reports_package ON reports (package, created_at);
         CREATE INDEX IF NOT EXISTS reports_ip ON reports (ip_hash, created_at);
     SQL);
+    // Columns added after the first release of the site.
+    $columns = array_column($pdo->query('PRAGMA table_info(reports)')->fetchAll(), 'name');
+    if (!in_array('gpu_driver', $columns, true)) {
+        $pdo->exec("ALTER TABLE reports ADD COLUMN gpu_driver TEXT NOT NULL DEFAULT ''");
+    }
 }
+
+// FrameLoad's "Graphics driver workaround" choices (manager/tuning.py TU_DEBUG_FLAGS).
+const GPU_DRIVER_LABELS = [
+    'sysmem' => 'Driver: direct to memory', 'nocb' => 'Driver: no concurrent binning',
+    'nolrz' => 'Driver: no depth pre-pass', 'noubwc' => 'Driver: no compressed images',
+    'flushall' => 'Driver: flush after every pass',
+];
 
 function h(?string $text): string
 {

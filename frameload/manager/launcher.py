@@ -49,6 +49,13 @@ class GameLauncher:
         dep = InstalledManager.get_game(package_name)
         if not dep:
             raise FileNotFoundError(f"Game {package_name} is not installed.")
+        try:
+            # The compatibility list's recommended settings (a game's known fix) reach its launcher before it starts.
+            from .tuning import TuningManager
+            if TuningManager.sync_recommended(package_name):
+                dep = InstalledManager.get_game(package_name) or dep
+        except Exception as e:
+            print(f"[FrameLoad] Could not apply recommended settings to {package_name}: {e}")
 
         appid = dep.get("appid")
         anchor = dep.get("anchor", os.path.join(ANCHOR_DIR, package_name))

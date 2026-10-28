@@ -1918,6 +1918,18 @@ body.vr-grabbing * {
   gap: 8px;
 }
 
+.tuning-rec-tag {
+  font-size: 0.72rem;
+  margin-right: auto;
+  margin-left: 8px;
+  background: rgb(var(--ok-rgb) / 0.15);
+  color: var(--accent-emerald);
+}
+.tuning-rec-tag.own {
+  background: rgb(var(--warn-rgb) / 0.15);
+  color: var(--accent-amber);
+}
+
 .tuning-card-val {
   font-size: 0.85rem;
   font-weight: 700;

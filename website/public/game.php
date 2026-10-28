@@ -14,7 +14,7 @@ if (!$game) {
 }
 
 $recent = db()->prepare(<<<SQL
-    SELECT version_code, version_name, outcome, rating, duration, drew, fps, auto_fix, scale, refresh_rate, foveation,
+    SELECT version_code, version_name, outcome, rating, duration, drew, fps, auto_fix, scale, refresh_rate, foveation, gpu_driver,
            frameload_version, created_at
     FROM reports WHERE package = ? ORDER BY id DESC LIMIT 25
 SQL);
@@ -87,12 +87,13 @@ page_start($game['title'], "{$game['title']} on the Steam Frame: " . STATUSES[$g
       <?php foreach ($recent as $r): ?>
         <div class="srow" role="row">
           <span role="cell"><?= status_pill($r['rating']) ?></span>
-          <span role="cell"><?= h(OUTCOME_TEXT[$r['outcome']] ?? $r['outcome']) ?><?= $r['auto_fix'] === 'foveation_off' ? ' · foveation turned off' : '' ?></span>
+          <span role="cell"><?= h(OUTCOME_TEXT[$r['outcome']] ?? $r['outcome']) ?><?= ['foveation_off' => ' · foveation turned off', 'gpu_sysmem' => ' · driver workaround turned on'][$r['auto_fix']] ?? '' ?></span>
           <span role="cell"><?= h(minutes((int)$r['duration'])) ?><?= $r['fps'] ? ' · ' . round((float)$r['fps']) . ' fps' : '' ?></span>
           <span role="cell" class="muted"><?= h(implode(', ', array_filter([
               $r['scale'] && (float)$r['scale'] !== 1.0 ? $r['scale'] . 'x' : '',
               $r['refresh_rate'] ? $r['refresh_rate'] . ' Hz' : '',
               $r['foveation'] && $r['foveation'] !== 'gaze' ? 'foveation ' . $r['foveation'] : '',
+              GPU_DRIVER_LABELS[$r['gpu_driver']] ?? '',
           ])) ?: 'defaults') ?></span>
           <span role="cell" class="muted"><?= h($r['frameload_version']) ?></span>
           <span role="cell" class="muted"><?= h(relative_time((int)$r['created_at'])) ?></span>

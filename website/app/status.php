@@ -117,6 +117,9 @@ function settings_text(array $settings): array
     if (isset($settings['foveation']) && $settings['foveation'] === 'off') {
         $out[] = 'Foveated rendering: Off';
     }
+    if (isset($settings['gpu_driver'], GPU_DRIVER_LABELS[$settings['gpu_driver']])) {
+        $out[] = 'Graphics ' . lcfirst(GPU_DRIVER_LABELS[$settings['gpu_driver']]);
+    }
     if (!empty($settings['scale']) && (float)$settings['scale'] !== 1.0) {
         $out[] = 'Resolution ' . rtrim(rtrim(number_format((float)$settings['scale'], 2), '0'), '.') . 'x';
     }

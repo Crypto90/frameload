@@ -126,6 +126,48 @@ class TestCompatReports(unittest.TestCase):
         compat_reports.save_settings({"show": False})
         self.assertEqual(compat_reports.annotate([{"package": PKG}]), [{"package": PKG}])
 
+    def test_recommended_settings_come_from_the_cached_list_only(self):
+        compat_reports._state["list"] = {PKG: {"status": "working", "settings": {
+            "foveation": "off", "gpu_driver": "sysmem", "min_frameload": "1.4.2",
+            "scale": 1.5, "hide_space_warp": "yes"}},
+            "com.bad.values": {"settings": {"foveation": "sideways", "gpu_driver": "rm -rf"}}}
+        # Only settings that make a game run, with valid values; never taste such as the resolution.
+        self.assertEqual(compat_reports.recommended(PKG),
+                         {"foveation": "off", "gpu_driver": "sysmem", "hide_space_warp": True})
+        self.assertEqual(compat_reports.recommended("com.bad.values"), {})
+        self.assertEqual(compat_reports.recommended("com.not.listed"), {})
+        self.assertEqual(self.sent, [])  # reading a recommendation never fetches
+        compat_reports.save_settings({"recommended": False})
+        self.assertEqual(compat_reports.recommended(PKG), {})
+
+    def test_recommended_settings_sit_under_the_games_own(self):
+        from frameload.manager.tuning import TuningManager
+        compat_reports._state["list"] = {PKG: {"settings": {"foveation": "off", "gpu_driver": "sysmem"}}}
+        with patch.object(TuningManager, "get_global_tuning", return_value={"foveation": "gaze", "gpu_driver": "default",
+                                                                             "scale": 1.0}):
+            dep = {"package": PKG, "settings": {}}
+            self.assertEqual(TuningManager.effective_settings(dep),
+                             {"foveation": "off", "gpu_driver": "sysmem", "scale": 1.0})
+            dep["settings"] = {"foveation": "gaze"}  # the player chose otherwise: that wins
+            self.assertEqual(TuningManager.effective_settings(dep)["foveation"], "gaze")
+            self.assertEqual(TuningManager.effective_settings(dep)["gpu_driver"], "sysmem")
+
+    def test_a_changed_recommendation_rewrites_the_launcher_once(self):
+        from frameload.manager.installed import InstalledManager
+        from frameload.manager.tuning import TuningManager
+        dep = {"package": PKG, "kind": "quest", "settings": {}}
+        compat_reports._state["list"] = {PKG: {"settings": {"gpu_driver": "sysmem"}}}
+        with patch.object(InstalledManager, "get_game", return_value=dep), \
+                patch.object(TuningManager, "_write_dep"), \
+                patch.object(TuningManager, "apply_tuning_to_game") as apply:
+            self.assertTrue(TuningManager.sync_recommended(PKG))
+            self.assertFalse(TuningManager.sync_recommended(PKG))  # unchanged: the launcher stays
+            self.assertEqual(apply.call_count, 1)
+            self.assertEqual(dep["recommended_applied"], {"gpu_driver": "sysmem"})
+            dep["installed_by"] = "frameport"  # FramePort's launchers are left as they are
+            compat_reports._state["list"] = {}
+            self.assertFalse(TuningManager.sync_recommended(PKG))
+
 
 if __name__ == "__main__":
     unittest.main()

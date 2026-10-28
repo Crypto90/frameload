@@ -163,6 +163,9 @@ def _coerce(key: str, value: Any) -> Any:
     return value
 
 
+coerce_setting = _coerce
+
+
 def normalize_settings(raw: Any, keep_defaults: bool = False) -> Dict[str, Any]:
     """Keeps the valid settings of a stored or submitted dict; default values only on request."""
     if not isinstance(raw, dict) or LEGACY_KEYS & raw.keys():
@@ -267,11 +270,58 @@ class TuningManager:
         return True
 
     @staticmethod
+    def recommended_settings(dep: Dict[str, Any]) -> Dict[str, Any]:
+        """What the compatibility list recommends for this game ({} when nothing, or recommendations are off)."""
+        from . import compat_reports
+
+        try:
+            return compat_reports.recommended(dep.get("package", ""))
+        except Exception as e:
+            print(f"[FrameLoad] Could not read recommended settings: {e}")
+            return {}
+
+    @staticmethod
+    def inherited_settings(dep: Dict[str, Any]) -> Dict[str, Any]:
+        """What a game gets without settings of its own: the defaults under System, then the list's recommendation."""
+        merged = TuningManager.get_global_tuning()
+        merged.update(TuningManager.recommended_settings(dep))
+        return merged
+
+    @staticmethod
     def effective_settings(dep: Dict[str, Any]) -> Dict[str, Any]:
         # A game's own value wins over the global default even when it equals the built-in default.
-        merged = TuningManager.get_global_tuning()
+        merged = TuningManager.inherited_settings(dep)
         merged.update(normalize_settings(dep.get("settings", {}), keep_defaults=True))
         return merged
+
+    @staticmethod
+    def sync_recommended(package_name: str) -> bool:
+        """Rewrites a game's launcher when the list's recommendation for it changed since it was last written.
+        True when it did. Only games FrameLoad installed (FramePort's launchers are left as they are)."""
+        dep = InstalledManager.get_game(package_name)
+        if not dep or dep.get("kind", "quest") not in LEPTON_KINDS \
+                or dep.get("installed_by", "frameload") != "frameload":
+            return False
+        current = TuningManager.recommended_settings(dep)
+        if current == dep.get("recommended_applied", {}):
+            return False
+        dep["recommended_applied"] = current
+        TuningManager._write_dep(dep)
+        TuningManager.apply_tuning_to_game(package_name, dep=dep)
+        print(f"[FrameLoad] Recommended settings for {package_name}: {current or 'none'}")
+        return True
+
+    @staticmethod
+    def restore_recommended(package_name: str) -> Dict[str, Any]:
+        """Drops the game's own settings: it gets the defaults under System plus the list's recommendation."""
+        dep = TuningManager._dep(package_name)
+        if dep.get("kind", "quest") not in LEPTON_KINDS:
+            raise ValueError("Settings apply to Android apps running in Lepton only.")
+        dep["settings"] = {}
+        dep["recommended_applied"] = TuningManager.recommended_settings(dep)
+        TuningManager._write_dep(dep)
+        TuningManager.apply_tuning_to_game(package_name, dep=dep)
+        return TuningManager.get_game_tuning(package_name)
 
     @staticmethod
     def get_game_tuning(package_name: str) -> Dict[str, Any]:
@@ -284,7 +334,11 @@ class TuningManager:
                 pass
         result = TuningManager.effective_settings(dep)
         requirement = dep.get("hand_tracking", "none")
+        own = normalize_settings(dep.get("settings", {}), keep_defaults=True)
         result.update({
+            # The list's recommendation, and which of its values this game overrides with its own.
+            "recommended": TuningManager.recommended_settings(dep),
+            "own_keys": sorted(own),
             "package": package_name,
             "title": dep.get("title", package_name),
             "kind": dep.get("kind", "quest"),
@@ -311,7 +365,7 @@ class TuningManager:
         if not isinstance(settings, dict):
             raise ValueError("settings must be an object")
 
-        inherited = TuningManager.get_global_tuning()
+        inherited = TuningManager.inherited_settings(dep)
         current = normalize_settings(dep.get("settings", {}), keep_defaults=True)
         for key, value in settings.items():
             if key not in SCHEMA_BY_KEY:

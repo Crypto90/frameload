@@ -3739,6 +3739,46 @@ function formatTuningValue(spec, value) {
   return choice ? choice.label : String(value);
 }
 
+// "Recommended" on a setting the compatibility list sets for this game; "Your own" when the game overrides it.
+function tuningRecommendTag(spec) {
+  const info = state.tuningInfo || {};
+  const rec = info.recommended || {};
+  if (state.tuningTarget === "__global__" || !(spec.key in rec)) return "";
+  const own = (info.own_keys || []).includes(spec.key) && String(info[spec.key]) !== String(rec[spec.key]);
+  const choice = (spec.choices || []).find(c => String(c.value) === String(rec[spec.key]));
+  const what = spec.type === "bool" ? (rec[spec.key] ? "On" : "Off") : choice ? choice.label : String(rec[spec.key]);
+  return own
+    ? `<span class="badge tuning-rec-tag own" title="The compatibility list recommends: ${escapeHtml(what)}">Your own</span>`
+    : `<span class="badge tuning-rec-tag" title="From the compatibility list">Recommended</span>`;
+}
+
+function recommendedSummary(info) {
+  const rec = info.recommended || {};
+  return Object.keys(rec).map(key => {
+    const spec = (state.tuningSchema || []).find(s => s.key === key);
+    if (!spec) return null;
+    const choice = (spec.choices || []).find(c => String(c.value) === String(rec[key]));
+    const what = spec.type === "bool" ? (rec[key] ? "On" : "Off") : choice ? choice.label : String(rec[key]);
+    return `${spec.title}: ${what}`;
+  }).filter(Boolean);
+}
+
+async function restoreRecommendedTuning() {
+  const pkg = state.tuningTarget;
+  if (!pkg || pkg === "__global__") return;
+  const ok = await confirmDialog("Restore recommended settings?",
+    "This game drops its own settings and uses the defaults under System plus what the compatibility list recommends for it.",
+    { yes: "Restore" });
+  if (!ok) return;
+  try {
+    await apiPost("/api/installed/tuning/restore", { package: pkg });
+    showToast("Recommended settings restored", "success");
+    await openTuningModal(pkg);
+  } catch (e) {
+    showToast(`Could not restore: ${e.message}`, "error");
+  }
+}
+
 function renderTuningControl(spec, value, inactive) {
   const id = tuningInputId(spec.key);
   let control = "";
@@ -3755,6 +3795,7 @@ function renderTuningControl(spec, value, inactive) {
     <div class="tuning-card${inactive ? " inactive" : ""}" data-key="${spec.key}">
       <div class="tuning-card-header">
         <span class="tuning-card-title">${escapeHtml(spec.title)}</span>
+        ${tuningRecommendTag(spec)}
         ${spec.type === "range" ? `<span id="${id}-val" class="tuning-card-val">${escapeHtml(formatTuningValue(spec, value))}</span>` : ""}
       </div>
       ${control}
@@ -3828,6 +3869,8 @@ async function openTuningModal(pkg) {
     return;
   }
   document.getElementById("btn-save-tuning").style.display = "";
+  const restore = document.getElementById("btn-restore-tuning");
+  if (restore) restore.style.display = isGlobal ? "none" : "";
 
   const specs = visibleTuningSpecs(info, isGlobal);
   const bridgeSpecs = specs.filter(s => s.needs_framebridge);
@@ -3838,6 +3881,10 @@ async function openTuningModal(pkg) {
   let html = "";
   if (!isGlobal) {
     html += `<div id="tuning-compat"></div>`;
+    const rec = recommendedSummary(info);
+    if (rec.length) {
+      html += `<p class="tuning-section-note">The compatibility list recommends for this game: ${escapeHtml(rec.join(", "))}. These apply unless you change them here.</p>`;
+    }
   }
   if (leptonSpecs.length) {
     html += `<h3 class="tuning-section-title">${isGlobal || info.is_vr ? "Lepton" : "Window"}</h3>
@@ -4722,9 +4769,11 @@ function renderGithubReports(info) {
 function renderCompatList(info) {
   const show = document.getElementById("compat-show-check");
   const share = document.getElementById("compat-share-check");
+  const recommended = document.getElementById("compat-recommended-check");
   const badge = document.getElementById("compat-list-badge");
   const status = document.getElementById("compat-list-status");
   if (show) show.checked = !!info.show;
+  if (recommended) recommended.checked = info.recommended !== false;
   if (share) share.checked = !!info.share;
   if (badge) badge.textContent = info.share ? "Sharing" : info.show ? "Showing" : "Off";
   if (status) {
@@ -4747,8 +4796,12 @@ async function loadCompatList() {
 async function saveCompatList() {
   const show = document.getElementById("compat-show-check");
   const share = document.getElementById("compat-share-check");
+  const recommended = document.getElementById("compat-recommended-check");
   try {
-    renderCompatList(await apiPost("/api/compat/settings", { show: !!(show && show.checked), share: !!(share && share.checked) }));
+    renderCompatList(await apiPost("/api/compat/settings", {
+      show: !!(show && show.checked), share: !!(share && share.checked),
+      recommended: !!(recommended && recommended.checked),
+    }));
   } catch (e) {
     showToast(`Could not save: ${e.message}`, "error");
   }

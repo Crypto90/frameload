@@ -853,6 +853,12 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
                 self.send_json({"success": True, "package": pkg, "settings": updated})
             except Exception as e:
                 self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        elif path == "/api/installed/tuning/restore":
+            # Restore recommended settings: the game drops its own, keeping System's defaults and the list's advice.
+            try:
+                self.send_json({"success": True, "settings": TuningManager.restore_recommended(body.get("package", ""))})
+            except Exception as e:
+                self.send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         elif path == "/api/installed/tuning/preset":
             pkg = body.get("package", "")
             preset = body.get("preset", "default")

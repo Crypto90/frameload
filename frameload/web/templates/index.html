@@ -521,6 +521,10 @@
               <span>Show each game's status in the library<br><span class="tuning-micro-note">FrameLoad fetches the whole public list, never which games you have.</span></span>
             </label>
             <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; font-size:0.9rem;">
+              <input type="checkbox" id="compat-recommended-check" onchange="saveCompatList()" style="margin-top:4px;">
+              <span>Use recommended settings<br><span class="tuning-micro-note">Settings the list knows a game needs (for example a graphics driver workaround against a GPU hang) apply from its install on. Your own settings for a game always win.</span></span>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; font-size:0.9rem;">
               <input type="checkbox" id="compat-share-check" onchange="saveCompatList()" style="margin-top:4px;">
               <span>Share compatibility reports<br><span class="tuning-micro-note">After each session: the game, how long it ran, whether it showed its picture, how it ended and its settings, with a random id made on this headset. No name, account or log.</span></span>
             </label>
@@ -1172,7 +1176,8 @@
       <div id="tuning-presets" class="tuning-presets-strip"></div>
       <div id="tuning-body"></div>
 
-      <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border-subtle); padding-top:16px; margin-top:16px;">
+      <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:10px; border-top:1px solid var(--border-subtle); padding-top:16px; margin-top:16px;">
+        <button type="button" id="btn-restore-tuning" class="btn-secondary" style="margin-right:auto;" onclick="restoreRecommendedTuning()">Restore recommended settings</button>
         <button type="button" class="btn-secondary" onclick="closeTuningModal()">Cancel</button>
         <button type="button" id="btn-save-tuning" class="btn-primary" onclick="saveGameTuningFromModal()">Save</button>
       </div>

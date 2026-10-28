@@ -16,7 +16,7 @@ $example = json_encode([
     'drew' => true,
     'fps' => 72.2,
     'auto_fix' => '',
-    'settings' => ['scale' => 1.0, 'refresh_rate' => 0, 'foveation' => 'off'],
+    'settings' => ['scale' => 1.0, 'refresh_rate' => 0, 'foveation' => 'off', 'gpu_driver' => 'sysmem'],
     'framebridge' => true,
     'frameload_version' => '1.4.4',
     'os_build' => '20261007.6125817',
@@ -30,7 +30,7 @@ page_start('Reporting API', 'How FrameLoad reports game sessions to the compatib
   <p class="lead">The compatibility list is built from session reports. FrameLoad sends one after each game session when the player has turned on <strong>Share compatibility reports</strong>. Reading the list is open to everyone.</p>
 
   <h2>Read: <code>GET /api/v1/compat.php</code></h2>
-  <p>Every listed game, or only some with <code>?packages=com.a.game,com.b.game</code> (up to 500). Each entry has <code>status</code> (<code>working</code>, <code>partial</code>, <code>broken</code>, <code>untested</code>), the team's <code>note</code> and best <code>settings</code>, and the <code>votes</code> of headsets.</p>
+  <p>Every listed game, or only some with <code>?packages=com.a.game,com.b.game</code> (up to 500). Each entry has <code>status</code> (<code>working</code>, <code>partial</code>, <code>broken</code>, <code>untested</code>), the team's <code>note</code> and recommended <code>settings</code> (FrameLoad applies <code>foveation</code>, <code>gpu_driver</code>, <code>hide_space_warp</code> and <code>stable_local</code> under the player's own), and the <code>votes</code> of headsets.</p>
   <pre><code>curl https://frameload.crypto90.de/api/v1/compat.php?packages=com.VerticalRobot.RedMatter2</code></pre>
 
   <h2>Report: <code>POST /api/v1/report.php</code></h2>

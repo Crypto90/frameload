@@ -71,6 +71,7 @@ $scale = isset($settings['scale']) && is_numeric($settings['scale']) ? max(0.5, 
 $refresh = isset($settings['refresh_rate']) && in_array((int)$settings['refresh_rate'], [0, 72, 80, 90, 96, 108, 120, 144], true)
     ? (int)$settings['refresh_rate'] : null;
 $foveation = in_array($settings['foveation'] ?? '', ['gaze', 'fixed', 'off'], true) ? $settings['foveation'] : '';
+$gpuDriver = isset(GPU_DRIVER_LABELS[$settings['gpu_driver'] ?? '']) ? $settings['gpu_driver'] : '';
 $title = mb_substr(trim(strip_tags((string)($in['title'] ?? ''))), 0, 120) ?: $package;
 $engine = field($in, 'engine', '/^[A-Za-z0-9 ]{0,20}$/');
 $rating = rate_report($outcome, $duration, $drew, $autoFix);
@@ -81,14 +82,14 @@ $pdo->prepare('INSERT OR IGNORE INTO games (package, title, engine, updated_at) 
     ->execute([$package, $title, $engine, time()]);
 $stmt = $pdo->prepare(<<<SQL
     INSERT OR IGNORE INTO reports (package, version_code, version_name, install_hash, ip_hash, session_end, outcome,
-        rating, duration, drew, fps, auto_fix, scale, refresh_rate, foveation, framebridge, frameload_version,
-        os_build, lepton, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        rating, duration, drew, fps, auto_fix, scale, refresh_rate, foveation, gpu_driver, framebridge,
+        frameload_version, os_build, lepton, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 SQL);
 $stmt->execute([
     $package, field($in, 'version_code', '/^\d{1,20}$/'), mb_substr(field($in, 'version_name', '/^[\w.+\- ]{0,40}$/u'), 0, 40),
     $installHash, $ipHash, $sessionEnd, $outcome, $rating, $duration, $drew ? 1 : 0, $fps, $autoFix,
-    $scale, $refresh, $foveation, !empty($in['framebridge']) ? 1 : 0,
+    $scale, $refresh, $foveation, $gpuDriver, !empty($in['framebridge']) ? 1 : 0,
     field($in, 'frameload_version', '/^\d+\.\d+\.\d+$/'), field($in, 'os_build', '/^[\w.\- ]{0,40}$/'),
     field($in, 'lepton', '/^[\w.() \-]{0,60}$/'), time(),
 ]);

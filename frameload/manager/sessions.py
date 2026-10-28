@@ -841,12 +841,11 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
     if marker and float(marker.get("time", 0)) <= end + 10:
         clear_stop(pkg)  # used, or older than this session
     if result["outcome"] == "gpu_hang":
-        fix = _foveation_off_after_hang(pkg, dep)
-        if fix == "foveation_off":
-            result["advice"] = FOVEATION_OFF_ADVICE
-            result["auto_fix"] = "foveation_off"
-        elif fix == "was_off":
-            result["advice"] = HANG_WITHOUT_FOVEATION_ADVICE
+        fix = _fix_after_gpu_hang(pkg, dep)
+        if fix in GPU_HANG_ADVICE:
+            result["advice"] = GPU_HANG_ADVICE[fix]
+        if fix in ("foveation_off", "gpu_sysmem"):
+            result["auto_fix"] = fix
 
     lepton = LEPTON_VERSION_RE.search("\n".join(lines[:400]))
     gs = guard_state or {}
@@ -874,39 +873,51 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
 
 FOVEATION_OFF_ADVICE = (
     "FrameLoad turned off Foveated rendering for this game (its settings, Foveated rendering: Off). Valve's "
-    "foveation layer makes the graphics processor hang in some games (Red Matter 2 and Epic Roller Coasters ran "
-    "without hangs once it was off). Start the game again. If it still hangs, copy the log and include it when "
-    "you ask for help.")
+    "foveation layer makes the graphics processor hang in some games (Red Matter 2 ran without hangs once it was "
+    "off). Start the game again. If it hangs again, FrameLoad also changes how the graphics driver draws it.")
 
+SYSMEM_ADVICE = (
+    "Foveated rendering was already off, so FrameLoad now has the graphics driver draw this game straight to memory "
+    "instead of in tiles (its settings, Graphics driver workaround: Direct to memory). That ended Epic Roller "
+    "Coasters' hang when its main menu loaded; it can cost a little speed. Start the game again. If it still hangs, "
+    "copy the log and report it to FramePort (github.com/spoopyghosty0/frameport/issues).")
 
-# Foveation was already off: Valve's layer is not the cause (Epic Roller Coasters hung this way when its main
-# menu loaded). FramePort's playbook treats a hang at one point of a game as a shader bug, fixed per game in its catalog.
+# Both steps were already taken: what is left is another driver workaround or a fix for the game in FramePort.
 HANG_WITHOUT_FOVEATION_ADVICE = (
-    "Foveated rendering was already off for this game, so Valve's foveation layer did not cause this hang. A hang "
-    "like this usually comes from one of the game's own shaders and happens at the same point each time; only a "
-    "fix for this game in FramePort helps. Copy the log and report it to FramePort "
-    "(github.com/spoopyghosty0/frameport/issues), saying where in the game it hung. Starting the game again may "
-    "get past that point, but it can hang again there.")
+    "Foveated rendering was already off and the graphics driver already used a workaround for this game, so the "
+    "hang most likely comes from one of the game's own shaders and happens at the same point each time. Try another "
+    "Graphics driver workaround in the game's settings (No concurrent binning, No depth pre-pass). If none helps, "
+    "copy the log and report it to FramePort (github.com/spoopyghosty0/frameport/issues), saying where in the game "
+    "it hung: only a fix for this game there helps.")
+
+GPU_HANG_ADVICE = {"foveation_off": FOVEATION_OFF_ADVICE, "gpu_sysmem": SYSMEM_ADVICE,
+                   "tried": HANG_WITHOUT_FOVEATION_ADVICE}
 
 
-def _foveation_off_after_hang(pkg: str, dep: Dict[str, Any]) -> str:
-    """After a GPU hang, a VR game FrameLoad installed starts next time without Valve's Vulkan layers.
-    "foveation_off" when the setting was changed now, "was_off" when it already was (the layer is not the
-    cause), "" for a game this does not apply to (2D, or a launcher FramePort wrote)."""
+def _fix_after_gpu_hang(pkg: str, dep: Dict[str, Any]) -> str:
+    """After a GPU hang a VR game FrameLoad installed gets the next step, one per hang: Valve's Vulkan layers off
+    ("foveation_off"), then Turnip drawing straight to memory ("gpu_sysmem", TU_DEBUG=sysmem: Epic Roller Coasters
+    hung in its tile rendering with foveation off). "tried" when both are set (or the player chose another driver
+    workaround), "" for a game this does not apply to (2D, or a launcher FramePort wrote)."""
     from .tuning import LEPTON_KINDS, TuningManager
 
     if not dep.get("is_vr", True) or dep.get("kind", "quest") not in LEPTON_KINDS \
             or dep.get("installed_by", "frameload") != "frameload":
         return ""
     try:
-        if TuningManager.effective_settings(dep).get("foveation") == "off":
-            return "was_off"
-        TuningManager.save_game_tuning(pkg, {"foveation": "off"})
+        current = TuningManager.effective_settings(dep)
+        if current.get("foveation") != "off":
+            change, fix = {"foveation": "off"}, "foveation_off"
+        elif current.get("gpu_driver", "default") == "default":
+            change, fix = {"gpu_driver": "sysmem"}, "gpu_sysmem"
+        else:
+            return "tried"
+        TuningManager.save_game_tuning(pkg, change)
     except Exception as e:
-        print(f"[FrameLoad] Could not turn off foveated rendering for {pkg}: {e}")
+        print(f"[FrameLoad] Could not change the graphics settings of {pkg} after a GPU hang: {e}")
         return ""
-    print(f"[FrameLoad] {pkg} hung the graphics processor: foveated rendering is now off for it")
-    return "foveation_off"
+    print(f"[FrameLoad] {pkg} hung the graphics processor: {fix} for its next start")
+    return fix
 
 
 def record_interrupted(pkg: str, boot: int, now: Optional[float] = None, quiet: bool = False) -> Optional[Dict[str, Any]]:

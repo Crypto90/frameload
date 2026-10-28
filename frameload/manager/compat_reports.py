@@ -3,6 +3,8 @@
 Two separate switches under System:
 * show: the library shows each game's community status. FrameLoad fetches the whole public list (it never
   says which games are installed) at most every few hours and keeps a copy.
+* recommended: the settings the list recommends for a game (foveation, graphics driver workaround and the like)
+  apply to it under the player's own, from its install on, so a game known to hang starts with its fix.
 * share: after each finished session the headset sends one anonymous report: the game, how long it ran,
   whether it showed its picture, how it ended and the settings it used, with a random id made once on this
   headset, plus the game's launcher icon while the list has none. No name, account or log. Off until the
@@ -31,6 +33,8 @@ ICON_MAX_BYTES = 256 * 1024  # what the site takes (website/app/icons.php)
 NORMAL_ENDS = ("quit", "stopped_player", "stopped_frameload", "closed_by_steam")
 FAILED_STARTS = ("start_failed", "closed_early")
 MIN_PLAY_SECONDS = 120
+# The settings the list may recommend: ones that make a game run, never taste (resolution, refresh rate).
+RECOMMENDABLE = ("foveation", "gpu_driver", "hide_space_warp", "stable_local")
 
 _lock = threading.Lock()
 _state: Dict[str, Any] = {"list": None, "fetched": 0.0, "tried": 0.0, "fetching": False, "last_report": None}
@@ -43,6 +47,7 @@ def _urlopen(request: urllib.request.Request, timeout: float):
 def settings() -> Dict[str, Any]:
     cfg = Config.get().raw.get("compat", {})
     return {"show": bool(cfg.get("show", True)), "share": bool(cfg.get("share", False)),
+            "recommended": bool(cfg.get("recommended", True)),
             "server": SERVER, "last_report": _state["last_report"],
             "list_updated": int(_state["fetched"]) or None}
 
@@ -50,7 +55,7 @@ def settings() -> Dict[str, Any]:
 def save_settings(body: Dict[str, Any]) -> Dict[str, Any]:
     cfg = Config.get()
     compat = dict(cfg.raw.get("compat", {}))
-    for key in ("show", "share"):
+    for key in ("show", "share", "recommended"):
         if key in body:
             compat[key] = bool(body[key])
     cfg["compat"] = compat
@@ -135,7 +140,7 @@ def payload(record: Dict[str, Any], dep: Dict[str, Any]) -> Dict[str, Any]:
         "drew": bool(frames.get("drew")),
         "fps": frames.get("fps"),
         "auto_fix": record.get("auto_fix") or "",
-        "settings": {k: effective[k] for k in ("scale", "refresh_rate", "foveation") if k in effective},
+        "settings": {k: effective[k] for k in ("scale", "refresh_rate", "foveation", "gpu_driver") if k in effective},
         "framebridge": bool(dep.get("framebridge")),
         "frameload_version": __version__,
         "os_build": _os_build(),
@@ -205,14 +210,30 @@ def _fetch() -> None:
         os.replace(tmp, CACHE_FILE)
     except Exception as e:
         print(f"[FrameLoad] Could not fetch the compatibility list: {e}")
+        return
     finally:
         _state["fetching"] = False
+    _sync_installed()
 
 
-def community() -> Dict[str, Any]:
-    """The cached list; a stale one is refreshed in the background, never while a page waits."""
-    if not settings()["show"]:
-        return {}
+def _sync_installed() -> None:
+    """Writes changed recommendations into the launchers of installed games, so a start from Steam has them too."""
+    from .installed import InstalledManager
+    from .tuning import TuningManager
+
+    try:
+        games = InstalledManager.list_installed()
+    except Exception as e:
+        print(f"[FrameLoad] Could not list games for recommended settings: {e}")
+        return
+    for game in games:
+        try:
+            TuningManager.sync_recommended(game.get("package", ""))
+        except Exception as e:
+            print(f"[FrameLoad] Could not apply recommended settings to {game.get('package')}: {e}")
+
+
+def _refresh_if_stale() -> None:
     with _lock:
         _load_cache()
         now = time.time()
@@ -220,7 +241,39 @@ def community() -> Dict[str, Any]:
         if stale and not _state["fetching"]:
             _state["fetching"], _state["tried"] = True, now
             threading.Thread(target=_fetch, daemon=True, name="compat-list").start()
-        return _state["list"] or {}
+
+
+def recommended(package: str) -> Dict[str, Any]:
+    """The settings the list recommends for a game (only RECOMMENDABLE keys with valid values), {} when none
+    or when the player turned recommendations off."""
+    if not package or not settings()["recommended"]:
+        return {}
+    with _lock:
+        _load_cache()  # only the copy: fetching is the library's (community), never a launcher's
+    entry = (_state["list"] or {}).get(package)
+    raw = entry.get("settings") if isinstance(entry, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    from .tuning import coerce_setting
+
+    out: Dict[str, Any] = {}
+    for key in RECOMMENDABLE:
+        if key in raw:
+            try:
+                out[key] = coerce_setting(key, raw[key])
+            except (KeyError, TypeError, ValueError):
+                pass  # a value this version does not know
+    return out
+
+
+def community() -> Dict[str, Any]:
+    """The cached list; a stale one is refreshed in the background, never while a page waits."""
+    current = settings()
+    if current["show"] or current["recommended"]:
+        _refresh_if_stale()
+    if not current["show"]:
+        return {}
+    return _state["list"] or {}
 
 
 def annotate(games: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
