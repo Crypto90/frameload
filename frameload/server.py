@@ -227,6 +227,14 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             if not shot:
                 self.send_json({"error": "No screenshot yet: add ?take=1"}, status=HTTPStatus.NOT_FOUND)
                 return
+            if params.get("info", [""])[0] in ("1", "true"):
+                # For a reader that cannot look at the picture: a black one usually means the headset sleeps.
+                from .manager.guard import hmd_state
+                state = hmd_state() or ""
+                self.send_json({"name": os.path.basename(shot), "size": os.path.getsize(shot),
+                                "time": os.path.getmtime(shot), "headset_state": state,
+                                "asleep": "standby" in state.lower(), "url": "/api/system/screenshot"})
+                return
             self.serve_file(shot, "image/jpeg" if shot.endswith(".jpg") else "image/png")
         elif path == "/api/system/log":
             # System > FrameLoad Log: the server's own output and why it last stopped (redacted like a report).

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.5] - 2026-10-28
+
+### Added
+- **Headset screenshots.** System > Self-Test > **Headset Screenshot** takes a picture of what the headset shows right now, and `/api/system/screenshot?take=1` does the same for tools (a paired browser or an agent checking a game). FrameLoad reads one frame of SteamVR's own headset view (the "SteamVR" webcam the Frame keeps at /dev/video99) and keeps the last 20. The picture is black while the headset sleeps; `?info=1` says whether it does. The self-test shows whether the headset view is there.
+
+---
+
 ## [v1.5.4] - 2026-10-28
 
 ### Fixed
