@@ -42,7 +42,7 @@ body {
   font: 16px/1.6 var(--font);
   -webkit-font-smoothing: antialiased;
 }
-img { max-width: 100%; display: block; }
+img { max-width: 100%; height: auto; display: block; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
@@ -115,7 +115,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .stats dd.ok { color: var(--ok); }
 
 /* Features */
-.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 8px; }
+.features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 8px; }
 .feature, .card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -194,13 +194,15 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 /* Install and share */
 .install { padding-top: 88px; }
 .install-card {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; padding: 32px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 32px; align-items: center; padding: 32px;
   border-radius: 24px; border: 1px solid var(--line);
   background: linear-gradient(135deg, rgba(0, 242, 254, 0.08), rgba(157, 78, 221, 0.10)), var(--surface);
 }
 .install-shot { border-radius: 14px; border: 1px solid var(--line-strong); box-shadow: var(--shadow); }
-.code { display: flex; gap: 10px; align-items: center; padding: 10px 10px 10px 16px; margin: 12px 0 14px; border-radius: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line-strong); }
-.code code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: #bdf8ff; padding: 4px 0; }
+.code { display: flex; gap: 12px; align-items: flex-start; padding: 12px 12px 12px 16px; margin: 12px 0 14px; border-radius: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line-strong); }
+/* The command wraps inside the box (copying keeps it one line); a long URL never widens the card. */
+.code code { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; color: #bdf8ff; padding: 6px 0; }
+.code .btn { flex: none; }
 .share { padding: 72px 0 24px; max-width: 760px; }
 
 /* Game page and docs */
@@ -212,7 +214,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .game-head p { margin: 4px 0 0; }
 .game-status { margin-left: auto; }
 .game-status .pill { font-size: 1rem; padding: 8px 16px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
 .card h2 { font-size: 1.2rem; }
 .breakdown { display: grid; gap: 10px; margin-bottom: 14px; }
 .bar-row { display: grid; grid-template-columns: 100px 1fr 32px; gap: 12px; align-items: center; font-size: 0.92rem; }
@@ -237,7 +239,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .footer-links a { color: var(--muted); }
 
 @media (max-width: 900px) {
-  .features, .grid-2, .install-card { grid-template-columns: 1fr; }
+  .features, .grid-2, .install-card { grid-template-columns: minmax(0, 1fr); }
   .row { grid-template-columns: 1fr auto; grid-template-areas: "id status" "notes notes" "reports reports"; gap: 8px 12px; }
   .row-head { display: none; }
   .row > :nth-child(1) { grid-area: id; }
