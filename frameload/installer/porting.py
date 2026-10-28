@@ -424,7 +424,7 @@ def quest2_games(frameport_version: str) -> List[Dict[str, Any]]:
         dep = InstalledManager.get_game(game["package"]) or {}
         if dep.get("kind") != "quest" or dep.get("installed_by") != "frameload" or not dep.get("framebridge"):
             continue
-        if dep.get("identity_port_tried") == frameport_version or headset_of(dep) != "quest2":
+        if dep.get("identity_ported_with") == frameport_version or headset_of(dep) != "quest2":
             continue
         found.append({"package": game["package"], "title": dep.get("title", game["package"])})
     return found
@@ -440,13 +440,14 @@ def port_as_quest3(log: Log, frameport_version: str) -> List[str]:
         if any(g.get("is_running") for g in InstalledManager.list_installed()):
             log("A game is running: the others are ported again later.")
             break
-        _set_flags(game["package"], identity_port_tried=frameport_version)
         log(f"Porting {game['title']} again so it sees a Meta Quest 3...")
         try:
             port_installed_game(game["package"], log)
             done.append(game["package"])
         except Exception as e:  # the old build still works: keep it
             log(f"{game['title']}: {e}")
+        # Recorded once the attempt is over: a port cut off by a restart is tried again.
+        _set_flags(game["package"], identity_ported_with=frameport_version)
     return done
 
 

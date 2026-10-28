@@ -69,7 +69,7 @@ class TestHeadsetIdentity(unittest.TestCase):
                 patch("frameload.manager.installed.InstalledManager.get_game", side_effect=lambda p: deps.get(p)):
             self.assertEqual([g["package"] for g in porting.quest2_games("1.4.0")], [PKG])
             self.assertEqual(porting.quest2_games("1.3.0"), [])  # no headset_model patch yet
-            deps[PKG]["identity_port_tried"] = "1.4.0"
+            deps[PKG]["identity_ported_with"] = "1.4.0"
             self.assertEqual(porting.quest2_games("1.4.0"), [])
             self.assertEqual(len(porting.quest2_games("1.4.1.dev714")), 1)  # a newer FramePort tries once more
             deps[PKG]["installed_by"] = "frameport"
