@@ -661,7 +661,7 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.serve_index()
         elif path == "/live":
             # Live view: what the headset shows, with its sound, for a paired device (system/livestream.py)
-            self.serve_file(os.path.join(WEB_DIR, "templates", "live.html"), "text/html; charset=utf-8")
+            self.serve_index("live.html")
         elif path.startswith("/static/"):
             rel = path.replace("/static/", "")
             clean_rel = os.path.normpath(rel).lstrip("/")
@@ -1328,10 +1328,10 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             self.close_connection = True  # part of the body may still be unread
             self.send_json({"error": str(e)}, status=HTTPStatus.INSUFFICIENT_STORAGE)
 
-    def serve_index(self) -> None:
-        """The dashboard, already in the saved look, so it does not flash the default one first."""
+    def serve_index(self, template: str = "index.html") -> None:
+        """The dashboard (or the Live View), already in the saved look, so it does not flash the default one first."""
         skin, daylight = appearance()
-        with open(os.path.join(WEB_DIR, "templates", "index.html"), "r", encoding="utf-8") as f:
+        with open(os.path.join(WEB_DIR, "templates", template), "r", encoding="utf-8") as f:
             page = f.read()
         page = page.replace('data-skin="a" data-mode="light"', f'data-skin="{skin}" data-mode="{daylight}"', 1)
         page = page.replace('href="/static/css/skins/a.css"', f'href="/static/css/skins/{skin}.css"', 1)

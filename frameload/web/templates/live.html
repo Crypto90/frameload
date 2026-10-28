@@ -1,74 +1,179 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-skin="a" data-mode="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FrameLoad Live View</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/fonts/fonts.css">
+  <!-- The server writes the saved look into data-skin and this link (serve_index); ?skin=x previews another one. -->
+  <link id="skin-css" rel="stylesheet" href="/static/css/skins/a.css">
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search), root = document.documentElement;
+      var skin = q.get("skin"), mode = q.get("mode");
+      if (skin && /^[a-f]$/.test(skin)) {
+        root.setAttribute("data-skin", skin);
+        document.getElementById("skin-css").setAttribute("href", "/static/css/skins/" + skin + ".css");
+      }
+      if (mode === "light" || mode === "dark") root.setAttribute("data-mode", mode);
+    })();
+  </script>
   <link rel="icon" type="image/png" href="/static/assets/icon.png">
   <style>
-    body { background: var(--bg); color: var(--text); margin: 0; }
-    .live-wrap { max-width: 1280px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 100vh; box-sizing: border-box; }
-    .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; }
-    .live-head h1 { font-size: 1.2rem; margin: 0; color: var(--text-strong); }
-    .live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim); margin-right: 8px; vertical-align: middle; }
-    .live-dot.on { background: var(--danger); box-shadow: 0 0 10px rgb(var(--danger-rgb) / 0.8); }
-    .live-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    .live-controls select, .live-controls button { min-height: 40px; }
-    .live-stage { position: relative; background: rgb(var(--shade-rgb)); border-radius: var(--radius-md); overflow: hidden; aspect-ratio: 16 / 9; }
-    .live-stage video { width: 100%; height: 100%; display: block; background: rgb(var(--shade-rgb)); }
-    .live-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--text-muted); pointer-events: none; }
-    .live-overlay:empty { display: none; }
-    #live-sound { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); }
-    .live-status { font-size: 0.85rem; color: var(--text-muted); }
-    .live-note { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
+    html, body { min-height: 100%; }
+    body { margin: 0; background: var(--bg); background-image: var(--bg-image, none); color: var(--text); font-family: var(--font-ui); }
+    .lv { max-width: 1400px; margin: 0 auto; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 18px; box-sizing: border-box; min-height: 100vh; }
+
+    /* Header */
+    .lv-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .lv-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .lv-brand img { width: 40px; height: 40px; border-radius: var(--radius-sm); }
+    .lv-brand h1 { margin: 0; font-family: var(--font-display); font-size: 1.35rem; color: var(--text-strong); letter-spacing: 0.01em; }
+    .lv-brand small { display: block; color: var(--text-muted); font-size: 0.8rem; font-family: var(--font-ui); }
+    .lv-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--radius-full); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.14em; background: rgb(var(--fg-rgb) / 0.06); color: var(--text-muted); border: 1px solid var(--line); }
+    .lv-badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+    .lv-badge.on { color: var(--danger); background: rgb(var(--danger-rgb) / 0.12); border-color: rgb(var(--danger-rgb) / 0.4); }
+    .lv-badge.on i { background: var(--danger); animation: lv-pulse 1.6s ease-in-out infinite; }
+    @keyframes lv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(var(--danger-rgb) / 0.6); } 50% { box-shadow: 0 0 0 6px rgb(var(--danger-rgb) / 0); } }
+    .lv-game { margin-left: auto; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border-radius: var(--radius-full); background: var(--surface); border: 1px solid var(--line); max-width: 100%; }
+    .lv-game img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: rgb(var(--fg-rgb) / 0.08); }
+    .lv-game span { font-size: 0.88rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lv-game em { font-style: normal; color: var(--text-muted); font-size: 0.75rem; display: block; }
+    .lv-game[hidden] { display: none; }
+
+    /* Stage */
+    .lv-stage { position: relative; border-radius: var(--radius-lg); overflow: hidden; background: rgb(var(--shade-rgb)); border: 1px solid var(--line);
+      box-shadow: var(--shadow-card), 0 0 40px rgb(var(--accent-rgb) / 0.12); aspect-ratio: 16 / 9; width: 100%; max-height: calc(100vh - 230px); margin: 0 auto; }
+    .lv-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: rgb(var(--shade-rgb)); }
+    .lv-stage:fullscreen { border-radius: 0; max-height: none; border: 0; }
+    .lv-veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px;
+      color: var(--text-muted); background: radial-gradient(ellipse at center, rgb(var(--bg-rgb) / 0.35), rgb(var(--bg-rgb) / 0.85)); }
+    .lv-veil[hidden] { display: none; }
+    .lv-spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid rgb(var(--fg-rgb) / 0.15); border-top-color: var(--accent); animation: lv-spin 0.9s linear infinite; }
+    @keyframes lv-spin { to { transform: rotate(360deg); } }
+    .lv-sound { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 10px; padding: 14px 24px; min-height: 52px;
+      border-radius: var(--radius-full); border: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--accent-ink); background: var(--accent); box-shadow: var(--glow), 0 10px 30px rgb(var(--shade-rgb) / 0.5); }
+    .lv-sound[hidden] { display: none; }
+
+    /* Control bar over the picture */
+    .lv-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 14px 16px; flex-wrap: wrap;
+      background: linear-gradient(to top, rgb(var(--shade-rgb) / 0.85), rgb(var(--shade-rgb) / 0)); transition: opacity 0.25s ease; color: var(--text-strong); }
+    .lv-stage.idle .lv-bar { opacity: 0; }
+    .lv-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgb(var(--fg-rgb) / 0.15); background: rgb(var(--bg-rgb) / 0.55); color: inherit; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    .lv-btn:hover, .lv-btn:focus-visible { border-color: var(--accent); box-shadow: var(--glow); outline: none; }
+    .lv-btn svg { width: 20px; height: 20px; }
+    .lv-volume { width: 120px; accent-color: var(--accent); height: 44px; cursor: pointer; }
+    .lv-live { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: var(--radius-full); cursor: pointer; font: inherit; font-size: 0.75rem;
+      font-weight: 800; letter-spacing: 0.12em; border: 1px solid rgb(var(--fg-rgb) / 0.2); background: rgb(var(--bg-rgb) / 0.55); color: inherit; }
+    .lv-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
+    .lv-live.at-edge i { background: var(--danger); }
+    .lv-spacer { flex: 1; }
+    .lv-select { height: 40px; border-radius: var(--radius-sm); border: 1px solid rgb(var(--fg-rgb) / 0.2); background: rgb(var(--bg-rgb) / 0.75); color: inherit; font: inherit; padding: 0 10px; }
+
+    /* Stats */
+    .lv-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+    .lv-stat { padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+    .lv-stat span { display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+    .lv-stat strong { display: block; font-size: 1.15rem; color: var(--text-strong); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lv-stat[data-tone="ok"] strong { color: var(--ok); }
+    .lv-stat[data-tone="warn"] strong { color: var(--warn); }
+    .lv-note { margin: 0; font-size: 0.85rem; color: var(--text-dim); text-align: center; }
+    @media (max-width: 900px) { .lv-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 560px) {
+      .lv { padding: 12px 12px 24px; }
+      .lv-game { margin-left: 0; }
+      .lv-volume { width: 80px; }
+      .lv-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
   </style>
 </head>
 <body>
-  <main class="live-wrap">
-    <div class="live-head">
-      <h1><span id="live-dot" class="live-dot"></span>FrameLoad Live View</h1>
-      <div class="live-controls">
-        <label for="live-quality" class="live-status">Quality</label>
-        <select id="live-quality" class="select-styled">
+  <main class="lv">
+    <header class="lv-head">
+      <a class="lv-brand" href="/" style="text-decoration:none;">
+        <img src="/static/assets/icon.png" alt="">
+        <div><h1>Live View</h1><small>FrameLoad · what the headset shows</small></div>
+      </a>
+      <span id="lv-badge" class="lv-badge"><i></i>OFFLINE</span>
+      <div id="lv-game" class="lv-game" hidden><img id="lv-game-icon" alt=""><div><em>Now playing</em><span id="lv-game-title"></span></div></div>
+    </header>
+
+    <section id="lv-stage" class="lv-stage">
+      <video id="lv-video" autoplay muted playsinline></video>
+      <div id="lv-veil" class="lv-veil"><div class="lv-spinner"></div><div id="lv-veil-text">Connecting to the headset…</div></div>
+      <button type="button" id="lv-sound" class="lv-sound" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+        Turn sound on
+      </button>
+      <div class="lv-bar">
+        <button type="button" class="lv-btn" id="lv-play" title="Pause (Space)" aria-label="Pause"></button>
+        <button type="button" class="lv-btn" id="lv-mute" title="Sound (M)" aria-label="Sound"></button>
+        <input type="range" id="lv-volume" class="lv-volume" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+        <button type="button" id="lv-live" class="lv-live" title="Jump to now"><i></i>LIVE</button>
+        <span class="lv-spacer"></span>
+        <select id="lv-quality" class="lv-select" aria-label="Quality">
           <option value="480p">480p</option>
           <option value="720p" selected>720p</option>
           <option value="1080p">1080p</option>
         </select>
-        <button type="button" id="live-toggle" class="btn-secondary">Pause</button>
-        <a class="btn-secondary" href="/" style="display:inline-flex; align-items:center; text-decoration:none;">Dashboard</a>
+        <button type="button" class="lv-btn" id="lv-full" title="Fullscreen (F)" aria-label="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
       </div>
-    </div>
-    <div class="live-stage">
-      <video id="live-video" autoplay muted playsinline controls></video>
-      <div id="live-overlay" class="live-overlay">Connecting to the headset…</div>
-      <button type="button" id="live-sound" class="btn-primary" style="display:none;">Sound On</button>
-    </div>
-    <div id="live-status" class="live-status"></div>
-    <p class="live-note">What the person in the headset sees and hears, a moment later. The picture is black while nobody wears the headset. The video's own controls set the volume and fullscreen.</p>
+    </section>
+
+    <section class="lv-stats">
+      <div class="lv-stat" id="st-delay"><span>Delay</span><strong>–</strong></div>
+      <div class="lv-stat" id="st-quality"><span>Quality</span><strong>–</strong></div>
+      <div class="lv-stat" id="st-encoder"><span>Encoder</span><strong>–</strong></div>
+      <div class="lv-stat" id="st-sound"><span>Sound</span><strong>–</strong></div>
+      <div class="lv-stat" id="st-viewers"><span>Watching</span><strong>–</strong></div>
+      <div class="lv-stat" id="st-data"><span>Data</span><strong>–</strong></div>
+    </section>
+    <p class="lv-note">What the person in the headset sees and hears. The picture is black while nobody wears the headset. Space pauses, M mutes, F goes fullscreen.</p>
   </main>
   <script>
   (() => {
-    const video = document.getElementById("live-video");
-    const overlay = document.getElementById("live-overlay");
-    const status = document.getElementById("live-status");
-    const dot = document.getElementById("live-dot");
-    const soundBtn = document.getElementById("live-sound");
-    const quality = document.getElementById("live-quality");
-    const toggle = document.getElementById("live-toggle");
+    const $ = id => document.getElementById(id);
+    const video = $("lv-video"), stage = $("lv-stage"), veil = $("lv-veil"), veilText = $("lv-veil-text");
+    const soundBtn = $("lv-sound"), playBtn = $("lv-play"), muteBtn = $("lv-mute"), volume = $("lv-volume");
+    const liveBtn = $("lv-live"), quality = $("lv-quality"), badge = $("lv-badge");
     const MS = window.ManagedMediaSource || window.MediaSource;
-    let session = 0, paused = false, wantSound = false, reader = null, retry = null;
-    try { quality.value = localStorage.getItem("frameload.liveQuality") || "720p"; } catch (e) { /* private window */ }
+    const ICON = {
+      pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      on: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>',
+      off: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>',
+    };
+    const store = {
+      get(k, d) { try { return localStorage.getItem("frameload.live." + k) ?? d; } catch (e) { return d; } },
+      set(k, v) { try { localStorage.setItem("frameload.live." + k, v); } catch (e) { /* private window */ } },
+    };
+    let session = 0, paused = false, reader = null, retry = null, bytes = 0;
+    let wantSound = store.get("sound", "0") === "1";
+    quality.value = store.get("quality", "720p");
+    volume.value = store.get("volume", "1");
+    video.volume = Number(volume.value);
 
-    function say(text) { overlay.textContent = text || ""; }
+    function veilOn(text, spin = true) { veilText.textContent = text; veil.querySelector(".lv-spinner").style.display = spin ? "" : "none"; veil.hidden = false; }
+    function setLive(on) { badge.classList.toggle("on", on); badge.lastChild.textContent = on ? "LIVE" : "OFFLINE"; }
+    function renderButtons() {
+      playBtn.innerHTML = paused ? ICON.play : ICON.pause;
+      playBtn.title = paused ? "Play (Space)" : "Pause (Space)";
+      const audible = !video.muted && video.volume > 0;
+      muteBtn.innerHTML = audible ? ICON.on : ICON.off;
+      soundBtn.hidden = audible || paused;
+    }
 
     async function connect() {
       const mine = ++session;
       clearTimeout(retry);
       if (reader) { try { reader.cancel(); } catch (e) { /* gone */ } reader = null; }
-      if (!MS) { say("This browser cannot play the live view (no Media Source support)."); return; }
-      say("Connecting to the headset…");
-      dot.classList.remove("on");
+      if (!MS) { veilOn("This browser cannot play the live view.", false); return; }
+      veilOn("Connecting to the headset…");
+      setLive(false);
       let resp;
       try {
         resp = await fetch(`/api/live/stream?quality=${encodeURIComponent(quality.value)}`, { cache: "no-store" });
@@ -85,9 +190,7 @@
       await new Promise(r => ms.addEventListener("sourceopen", r, { once: true }));
       if (mine !== session) return;
       let sb;
-      try {
-        sb = ms.addSourceBuffer(`video/mp4; codecs="${codecs}"`);
-      } catch (e) { return again(mine, `This browser cannot play ${codecs}.`); }
+      try { sb = ms.addSourceBuffer(`video/mp4; codecs="${codecs}"`); } catch (e) { return again(mine, `This browser cannot play ${codecs}.`); }
       sb.mode = "segments";
       const pending = [];
       const pump = () => {
@@ -98,15 +201,16 @@
       };
       sb.addEventListener("updateend", () => { trim(sb, 20); pump(); });
       reader = resp.body.getReader();
-      say("");
-      soundBtn.style.display = wantSound ? "none" : "";
       video.muted = !wantSound;
       video.play().catch(() => {});
-      dot.classList.add("on");
+      veil.hidden = true;
+      setLive(true);
+      renderButtons();
       try {
         for (;;) {
           const { done, value } = await reader.read();
           if (done || mine !== session) break;
+          bytes += value.byteLength;
           pending.push(value);
           pump();
         }
@@ -114,72 +218,113 @@
       if (mine === session && !paused) again(mine, "The stream ended. Reconnecting…");
     }
 
-    // Keep only the last seconds in the buffer and stay at the live edge.
     function trim(sb, keep) {
       if (sb.updating || !sb.buffered.length) return;
       const start = sb.buffered.start(0), end = sb.buffered.end(sb.buffered.length - 1);
       if (end - start > keep + 10) { try { sb.remove(start, end - keep); } catch (e) { /* busy */ } }
     }
-    setInterval(() => {
-      if (paused || !video.buffered.length) return;
-      const end = video.buffered.end(video.buffered.length - 1);
-      const behind = end - video.currentTime;
-      if (behind > 1.5) video.currentTime = end - 0.3;
-      if (video.paused && !paused) video.play().catch(() => {});
-    }, 1000);
-
     function again(mine, text) {
       if (mine !== session) return;
-      say(text);
-      dot.classList.remove("on");
+      veilOn(text);
+      setLive(false);
       retry = setTimeout(() => { if (mine === session && !paused) connect(); }, 3000);
     }
+    function delay() {
+      return video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : null;
+    }
 
-    async function refreshStatus() {
+    // Low delay: catch up smoothly (up to 8 % faster) from 0.3 s behind; jump only when 1.5 s behind.
+    setInterval(() => {
+      if (paused) return;
+      const behind = delay();
+      if (behind === null) return;
+      if (behind > 1.5) { video.currentTime = video.buffered.end(video.buffered.length - 1) - 0.15; video.playbackRate = 1; }
+      else video.playbackRate = behind > 0.3 ? 1 + Math.min(0.08, (behind - 0.3) * 0.2) : 1;
+      liveBtn.classList.toggle("at-edge", behind < 0.8);
+      if (video.paused) video.play().catch(() => {});
+    }, 250);
+
+    function setStat(id, value, tone = "") { const el = $(id); el.querySelector("strong").textContent = value; el.dataset.tone = tone; }
+    async function refresh() {
+      const behind = delay();
+      if (behind !== null && !paused) setStat("st-delay", `${behind.toFixed(1)} s`, behind < 1 ? "ok" : behind < 2 ? "" : "warn");
       try {
         const st = await fetch("/api/live/status", { cache: "no-store" }).then(r => r.json());
-        const parts = [];
-        if (st.running) {
-          parts.push(`${st.quality} · ${st.encoder === "hardware" ? "hardware encoder" : "software encoder"}`);
-          parts.push(st.sound ? "with sound" : "no sound");
-          parts.push(`${st.viewers} watching`);
-          parts.push(`${(st.bytes / 1048576).toFixed(1)} MB sent`);
-        }
-        if (st.error) parts.push(`last message: ${st.error}`);
-        status.textContent = parts.join(" · ");
-      } catch (e) { /* next time */ }
+        setStat("st-quality", st.running ? st.quality : "–");
+        setStat("st-encoder", st.encoder === "hardware" ? "Hardware" : st.encoder === "software" ? "Software" : "–", st.encoder === "hardware" ? "ok" : "");
+        setStat("st-sound", st.running ? (st.sound ? (video.muted ? "Muted here" : "On") : "None") : "–");
+        setStat("st-viewers", st.running ? String(st.viewers) : "–");
+        setStat("st-data", `${(bytes / 1048576).toFixed(1)} MB`);
+      } catch (e) { /* next round */ }
     }
-    setInterval(refreshStatus, 3000);
-    refreshStatus();
+    setInterval(refresh, 1000);
 
-    soundBtn.addEventListener("click", () => {
-      wantSound = true;
-      video.muted = false;
-      if (video.volume === 0) video.volume = 1;
-      soundBtn.style.display = "none";
-      video.play().catch(() => {});
-    });
-    video.addEventListener("volumechange", () => {
-      wantSound = !video.muted;
-      soundBtn.style.display = wantSound ? "none" : "";
-    });
-    quality.addEventListener("change", () => {
-      try { localStorage.setItem("frameload.liveQuality", quality.value); } catch (e) { /* private window */ }
-      connect();
-    });
-    toggle.addEventListener("click", () => {
+    // The game being played: its title and icon in the header.
+    async function nowPlaying() {
+      try {
+        const games = (await fetch("/api/installed", { cache: "no-store" }).then(r => r.json())).games || [];
+        const game = games.find(g => g.is_running);
+        $("lv-game").hidden = !game;
+        if (game) {
+          $("lv-game-title").textContent = game.title;
+          $("lv-game-icon").src = `/api/installed/artwork/${encodeURIComponent(game.package)}?slot=icon`;
+        }
+      } catch (e) { /* next round */ }
+    }
+    nowPlaying();
+    setInterval(nowPlaying, 10000);
+
+    function togglePause() {
       paused = !paused;
-      toggle.textContent = paused ? "Resume" : "Pause";
       if (paused) {
         session++;
         if (reader) { try { reader.cancel(); } catch (e) { /* gone */ } reader = null; }
         video.pause();
-        dot.classList.remove("on");
-        say("Paused. The headset stops streaming when nobody watches.");
+        setLive(false);
+        veilOn("Paused. The headset stops streaming when nobody watches.", false);
       } else {
         connect();
       }
+      renderButtons();
+    }
+    function setSound(on) {
+      wantSound = on;
+      store.set("sound", on ? "1" : "0");
+      video.muted = !on;
+      if (on && video.volume === 0) { video.volume = 1; volume.value = "1"; }
+      video.play().catch(() => {});
+      renderButtons();
+    }
+    function fullscreen() {
+      if (document.fullscreenElement) document.exitFullscreen(); else stage.requestFullscreen?.();
+    }
+
+    playBtn.addEventListener("click", togglePause);
+    muteBtn.addEventListener("click", () => setSound(video.muted || video.volume === 0));
+    soundBtn.addEventListener("click", () => setSound(true));
+    volume.addEventListener("input", () => {
+      video.volume = Number(volume.value);
+      store.set("volume", volume.value);
+      if (video.volume > 0 && video.muted) setSound(true); else renderButtons();
     });
+    liveBtn.addEventListener("click", () => { if (video.buffered.length) video.currentTime = video.buffered.end(video.buffered.length - 1) - 0.15; });
+    quality.addEventListener("change", () => { store.set("quality", quality.value); connect(); });
+    $("lv-full").addEventListener("click", fullscreen);
+    video.addEventListener("dblclick", fullscreen);
+    document.addEventListener("keydown", e => {
+      if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+      if (e.key === " ") { e.preventDefault(); togglePause(); }
+      else if (e.key === "m" || e.key === "M") setSound(video.muted);
+      else if (e.key === "f" || e.key === "F") fullscreen();
+    });
+    // The control bar fades while the mouse rests over the picture.
+    let idle = null;
+    stage.addEventListener("mousemove", () => {
+      stage.classList.remove("idle");
+      clearTimeout(idle);
+      idle = setTimeout(() => { if (!paused) stage.classList.add("idle"); }, 2500);
+    });
+    renderButtons();
     connect();
   })();
   </script>

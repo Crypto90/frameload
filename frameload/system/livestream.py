@@ -295,6 +295,8 @@ class LiveStream:
                 for part in line[len(INFO_PREFIX):].split():
                     key, _, value = part.partition("=")
                     cls.info[key] = value
+            elif line.startswith("fp_venc: stats"):
+                cls.info["stats"] = line[len("fp_venc: stats"):].strip()  # every 10 s: not a problem
             elif line:
                 cls.error = line[-300:]
                 print(f"[FrameLoad] Live view: {line[:300]}")
