@@ -27,6 +27,7 @@ DEVICE = "/dev/video99"
 SCREENSHOT_DIR = os.path.join(DATA_DIR, "screenshots")
 KEEP = 20
 READ_TIMEOUT = 4.0
+RESTART_WAIT = 4.0  # v4l2cam needs a moment to reach the compositor again
 # linux/videodev2.h (64-bit): struct v4l2_format is 208 bytes, its union at offset 8.
 VIDIOC_G_FMT = 0xC0D05604
 V4L2_BUF_TYPE_VIDEO_CAPTURE = 1
@@ -70,28 +71,39 @@ def png(width: int, height: int, rgb_rows) -> bytes:
             + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
-def _read_frame(path: str, scale: int) -> bytes:
+def _read_frame(path: str, scale: int) -> Tuple[bytes, bool]:
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
     try:
         width, height, bpl, pixfmt = _format(fd)
         if pixfmt not in (RGB24, BGR24):
             raise ScreenshotError(f"the headset view has an unexpected pixel format {pixfmt:#x}")
         size = bpl * height
-        data = b""
         deadline = time.monotonic() + READ_TIMEOUT
-        while len(data) < size:
-            left = deadline - time.monotonic()
-            if left <= 0 or not select.select([fd], [], [], left)[0]:
-                raise ScreenshotError("no picture from the headset view (is steamvr-v4l2cam.service running?)")
-            try:
-                chunk = os.read(fd, size - len(data))
-            except BlockingIOError:
-                continue
-            if not chunk:
-                raise ScreenshotError("the headset view ended")
-            data += chunk
+        for _ in range(SKIP_FRAMES + 1):  # the last of these frames is the picture
+            data = _read_one(fd, size, deadline)
     finally:
         os.close(fd)
+    return _to_png(data, width, height, bpl, pixfmt, scale)
+
+
+def _read_one(fd: int, size: int, deadline: float) -> bytes:
+    data = b""
+    while len(data) < size:
+        left = deadline - time.monotonic()
+        if left <= 0 or not select.select([fd], [], [], left)[0]:
+            raise ScreenshotError("no picture from the headset view (is steamvr-v4l2cam.service running?)")
+        try:
+            chunk = os.read(fd, size - len(data))
+        except BlockingIOError:
+            continue
+        if not chunk:
+            raise ScreenshotError("the headset view ended")
+        data += chunk
+    return data
+
+
+def _to_png(data: bytes, width: int, height: int, bpl: int, pixfmt: int, scale: int) -> Tuple[bytes, bool]:
+    black = max(data, default=0) <= BLACK_LEVEL
     rows = []
     step = max(1, scale)
     for y in range(0, height, step):
@@ -103,46 +115,81 @@ def _read_frame(path: str, scale: int) -> bytes:
             swapped[0::3], swapped[2::3] = row[2::3], row[0::3]
             row = bytes(swapped)
         rows.append(row)
-    return png((width + step - 1) // step, len(rows), rows)
+    return png((width + step - 1) // step, len(rows), rows), black
 
 
-def _ffmpeg(path: str, out: str, width: int) -> bool:
+SKIP_FRAMES = 2  # the loopback keeps its last two frames: the first reads can be from before (a closed game)
+BLACK_LEVEL = 12  # brightest value of a picture that counts as black (0-255)
+UNIT = "steamvr-v4l2cam.service"
+
+
+def _ffmpeg(path: str, out: str, width: int) -> Tuple[bool, bool]:
+    """(written, black) with the Frame's ffmpeg: the third frame, as a JPEG; blackframe says whether it is black."""
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        return False
+        return False, False
     try:
-        result = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "v4l2", "-i", path,
-                                 "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "3", out],
-                                capture_output=True, timeout=12)
+        result = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "info", "-y", "-f", "v4l2", "-i", path,
+                                 "-vf", f"select=gte(n\\,{SKIP_FRAMES}),blackframe=amount=99:threshold={BLACK_LEVEL},"
+                                        f"scale={width}:-2",
+                                 "-frames:v", "1", "-q:v", "3", out], capture_output=True, timeout=12)
+    except (OSError, subprocess.SubprocessError):
+        return False, False
+    written = result.returncode == 0 and os.path.isfile(out) and os.path.getsize(out) > 0
+    return written, b"pblack:" in (result.stderr or b"")
+
+
+def _capture(path: str, stamp: str, width: int) -> Dict[str, Any]:
+    out = os.path.join(SCREENSHOT_DIR, f"headset-{stamp}.jpg")
+    written, black = _ffmpeg(path, out, width)
+    if written:
+        return {"path": out, "method": "ffmpeg", "black": black}
+    out = os.path.join(SCREENSHOT_DIR, f"headset-{stamp}.png")
+    data, black = _read_frame(path, 1920 // width)
+    with open(out + ".tmp", "wb") as f:
+        f.write(data)
+    os.replace(out + ".tmp", out)
+    return {"path": out, "method": "v4l2", "black": black}
+
+
+def _restart_producer() -> bool:
+    """Restarts SteamVR's v4l2cam (systemd restarts it by itself whenever it stops). It can lose the compositor's
+    headset view when a game starts and then writes black frames until it reconnects."""
+    from .applog import _env
+
+    try:
+        return subprocess.run(["systemctl", "--user", "restart", UNIT], capture_output=True, timeout=20,
+                              env=_env()).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
-    return result.returncode == 0 and os.path.isfile(out) and os.path.getsize(out) > 0
 
 
-def take(width: int = 1920) -> Dict[str, Any]:
-    """Takes a screenshot of the headset view. Returns {path, name, size, time, method}."""
+def take(width: int = 1920, awake: Optional[bool] = None) -> Dict[str, Any]:
+    """Takes a screenshot of the headset view. Returns {path, name, size, time, method, black, restarted}. A black
+    picture while the headset is awake restarts SteamVR's v4l2cam once and is taken again."""
     path = device()
     if not path:
         raise ScreenshotError("The headset view (SteamVR's v4l2cam, /dev/video99) is not available on this system.")
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
     width = max(320, min(1920, int(width)))
-    out = os.path.join(SCREENSHOT_DIR, f"headset-{stamp}.jpg")
-    method = "ffmpeg"
-    if not _ffmpeg(path, out, width):
-        out = os.path.join(SCREENSHOT_DIR, f"headset-{stamp}.png")
-        method = "v4l2"
-        data = _read_frame(path, 1920 // width)
-        with open(out + ".tmp", "wb") as f:
-            f.write(data)
-        os.replace(out + ".tmp", out)
+    shot = _capture(path, time.strftime("%Y%m%d-%H%M%S"), width)
+    restarted = False
+    if shot["black"]:
+        if awake is None:
+            from ..manager.guard import hmd_state
+            awake = "standby" not in (hmd_state() or "").lower()
+        if awake and _restart_producer():
+            restarted = True
+            time.sleep(RESTART_WAIT)
+            os.remove(shot["path"])
+            shot = _capture(path, time.strftime("%Y%m%d-%H%M%S"), width)
     for old in sorted(glob.glob(os.path.join(SCREENSHOT_DIR, "headset-*")))[:-KEEP]:
         try:
             os.remove(old)
         except OSError:
             pass
-    return {"path": out, "name": os.path.basename(out), "size": os.path.getsize(out), "time": time.time(),
-            "method": method}
+    return {"path": shot["path"], "name": os.path.basename(shot["path"]), "size": os.path.getsize(shot["path"]),
+            "time": time.time(), "method": shot["method"], "black": shot["black"], "restarted": restarted}
 
 
 def producer() -> Dict[str, Any]:
@@ -150,7 +197,7 @@ def producer() -> Dict[str, Any]:
     the webcam can still answer with a black placeholder frame."""
     from .applog import _run
 
-    unit = "steamvr-v4l2cam.service"
+    unit = UNIT
     show = _run(["systemctl", "--user", "show", unit, "-p", "ActiveState,SubState,Result,NRestarts,ExecMainStartTimestamp,ExecStart"])
     state = dict(line.split("=", 1) for line in show.splitlines() if "=" in line)
     journal = _run(["journalctl", "--user", "-u", unit, "-n", "15", "--no-pager", "-o", "short-iso"]).splitlines()
