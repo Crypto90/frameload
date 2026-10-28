@@ -3509,7 +3509,24 @@ function onTuningInput(key) {
   const spec = (state.tuningSchema || []).find(s => s.key === key);
   const label = document.getElementById(`${tuningInputId(key)}-val`);
   if (spec && label) label.textContent = formatTuningValue(spec, readTuningValue(spec));
-  document.querySelectorAll(".tuning-preset-chip").forEach(chip => chip.classList.remove("active"));
+  refreshTuningPresetChips();
+}
+
+// A preset is lit whenever the form holds all of its values, so several can be (Sharper and 120 Hz).
+function tuningPresetActive(preset) {
+  return Object.entries(preset.settings).every(([key, value]) => {
+    const spec = (state.tuningSchema || []).find(s => s.key === key);
+    return spec && readTuningValue(spec) === value;
+  });
+}
+
+function refreshTuningPresetChips() {
+  document.querySelectorAll(".tuning-preset-chip").forEach(chip => {
+    const preset = (state.tuningPresets || {})[chip.dataset.preset];
+    const on = !!preset && tuningPresetActive(preset);
+    chip.classList.toggle("active", on);
+    chip.setAttribute("aria-pressed", on ? "true" : "false");
+  });
 }
 
 function visibleTuningSpecs(info, isGlobal) {
@@ -3581,7 +3598,8 @@ async function openTuningModal(pkg) {
     const show = bridgeSpecs.length > 0 && !bridgeInactive;
     presets.style.display = show ? "" : "none";
     presets.innerHTML = show ? Object.values(state.tuningPresets || {}).map(p =>
-      `<button type="button" class="tuning-preset-chip" title="${escapeHtml(p.description)}" onclick="selectTuningPreset('${p.id}')">${escapeHtml(p.name)}</button>`).join("") : "";
+      `<button type="button" class="tuning-preset-chip" data-preset="${escapeHtml(p.id)}" aria-pressed="false" title="${escapeHtml(p.description)}" onclick="selectTuningPreset('${p.id}')">${escapeHtml(p.name)}</button>`).join("") : "";
+    refreshTuningPresetChips();
   }
 
   modal.classList.add("open");
@@ -3598,18 +3616,20 @@ function openGlobalTuningModal() {
   openTuningModal("__global__");
 }
 
+// Sets only the preset's own values, so it adds to the others; pressing a lit preset turns it off
+// (its settings go back to the built-in defaults).
 function selectTuningPreset(presetId) {
   const preset = (state.tuningPresets || {})[presetId];
   if (!preset) return;
+  const off = presetId !== "default" && tuningPresetActive(preset);
   Object.entries(preset.settings).forEach(([key, value]) => {
     const spec = state.tuningSchema.find(s => s.key === key);
     const el = document.getElementById(tuningInputId(key));
     if (!spec || !el) return;
-    if (spec.type === "bool") el.checked = !!value; else el.value = value;
+    const next = off ? spec.default : value;
+    if (spec.type === "bool") el.checked = !!next; else el.value = next;
     onTuningInput(key);
   });
-  document.querySelectorAll(".tuning-preset-chip").forEach(chip =>
-    chip.classList.toggle("active", chip.getAttribute("onclick").includes(`'${presetId}'`)));
 }
 
 async function saveGameTuningFromModal() {

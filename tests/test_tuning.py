@@ -250,9 +250,15 @@ class TestInstallAndApply(TuningTestCase):
         self.assertEqual(self.conf(pkg), {"scale": "0.85", "refresh_rate": "72"})
         with self.assertRaises(ValueError):
             TuningManager.apply_preset(pkg, "steam_frame_turbo")
+        # Presets combine: Sharper keeps 120 Hz, and neither touches foveation.
+        TuningManager.save_game_tuning(pkg, {"foveation": "off"})
+        TuningManager.apply_preset(pkg, "smooth")
+        both = TuningManager.apply_preset(pkg, "sharp")
+        self.assertEqual((both["scale"], both["refresh_rate"], both["foveation"]), (1.3, 120, "off"))
         res = TuningManager.batch_apply("default", [pkg, "com.not.installed"])
         self.assertEqual((res["applied_count"], res["total"]), (1, 2))
         self.assertEqual(self.conf(pkg), {})
+        self.assertEqual(TuningManager.get_game_tuning(pkg)["foveation"], "off")
 
     def stored(self, package):
         return json.loads(self.read(package, "deployment.json"))["settings"]
@@ -286,9 +292,9 @@ class TestInstallAndApply(TuningTestCase):
         self.install(pkg, libs=["libframe_settings.so"])
         defaults = dict(DEFAULTS, refresh_rate=90)
         with patch.object(TuningManager, "get_global_tuning", side_effect=lambda: dict(defaults)):
-            TuningManager.apply_preset(pkg, "sharp")  # scale 1.3, game's refresh rate, follow gaze
-            self.assertEqual(self.stored(pkg), {"scale": 1.3, "refresh_rate": 0})
-            self.assertEqual(self.conf(pkg), {"scale": "1.30"})
+            TuningManager.apply_preset(pkg, "sharp")  # scale 1.3; the 90 Hz default stays
+            self.assertEqual(self.stored(pkg), {"scale": 1.3})
+            self.assertEqual(self.conf(pkg), {"scale": "1.30", "refresh_rate": "90"})
             TuningManager.apply_preset(pkg, "default")
             self.assertEqual(self.stored(pkg), {"refresh_rate": 0})
 

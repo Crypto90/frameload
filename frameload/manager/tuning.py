@@ -91,26 +91,28 @@ SCHEMA_BY_KEY = {s["key"]: s for s in SETTINGS_SCHEMA}
 DEFAULTS: Dict[str, Any] = {s["key"]: s["default"] for s in SETTINGS_SCHEMA}
 FRAMEBRIDGE_KEYS = ("controller_fix", "scale", "refresh_rate", "haptic_scale", "hide_space_warp", "stable_local")
 
+# Each preset sets only its own settings, so presets combine (Sharper and 120 Hz together); none touches
+# foveation, which FrameLoad turns off by itself for games that hang the graphics processor.
 PRESETS: Dict[str, Dict[str, Any]] = {
     "default": {
         "id": "default", "name": "Game defaults",
         "description": "The resolution and refresh rate the game picks itself.",
-        "settings": {"scale": 1.0, "refresh_rate": 0, "foveation": "gaze"},
+        "settings": {"scale": 1.0, "refresh_rate": 0},
     },
     "sharp": {
         "id": "sharp", "name": "Sharper",
-        "description": "1.3x resolution scale: about 70% more pixels, clearer text and distance.",
-        "settings": {"scale": 1.3, "refresh_rate": 0, "foveation": "gaze"},
+        "description": "1.3x resolution scale: about 70% more pixels, clearer text and distance. Combines with 120 Hz.",
+        "settings": {"scale": 1.3},
     },
     "smooth": {
         "id": "smooth", "name": "120 Hz",
-        "description": "120 Hz at the game's own resolution.",
-        "settings": {"scale": 1.0, "refresh_rate": 120, "foveation": "gaze"},
+        "description": "120 Hz display refresh. Combines with Sharper.",
+        "settings": {"refresh_rate": 120},
     },
     "battery": {
         "id": "battery", "name": "Battery saver",
         "description": "0.85x resolution scale at 72 Hz.",
-        "settings": {"scale": 0.85, "refresh_rate": 72, "foveation": "gaze"},
+        "settings": {"scale": 0.85, "refresh_rate": 72},
     },
 }
 
@@ -386,8 +388,8 @@ class TuningManager:
 
     @staticmethod
     def apply_preset(package_name: str, preset_name: str) -> Dict[str, Any]:
-        """Sets a preset's scale, refresh rate and foveation. Like any saved value, a preset value equal
-        to the default is not stored: the game keeps following the defaults for it."""
+        """Sets a preset's own settings and keeps the others, so presets combine. Like any saved value, a
+        preset value equal to the default is not stored: the game keeps following the defaults for it."""
         preset = PRESETS.get(preset_name)
         if not preset:
             raise ValueError(f"Unknown preset: {preset_name}")
