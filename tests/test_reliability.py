@@ -128,6 +128,44 @@ class TestSteamSession(TempCase):
         self.assertTrue(popen.call_args[0][0][-1].startswith("steam://rungameid/"))
 
 
+    def test_rungameid_names_the_shortcut_steam_has(self):
+        from frameload.system import shortcuts
+        anchor = os.path.dirname(self.script)
+        dep = {"package": "a.b", "title": "New Game", "appid": 123, "anchor": anchor}
+        self.patch(InstalledManager, "get_game", return_value=dep)
+        self.patch("frameload.system.steamos.is_steam_running", return_value=True)
+        popen = self.patch("subprocess.Popen")
+        self.patch(steam_session, "is_pending", return_value=False)
+
+        # The shortcut keeps the appid it got under an older title.
+        with patch.object(shortcuts, "steam_shortcut_appid", return_value=456):
+            res = GameLauncher.launch("a.b")
+        self.assertTrue(res["launched_via_steam"])
+        self.assertEqual(popen.call_args[0][0][-1], f"steam://rungameid/{(456 << 32) | 0x02000000}")
+
+        # Steam's list lost the shortcut: start directly and write it again.
+        popen.reset_mock()
+        with patch.object(shortcuts, "steam_shortcut_appid", return_value=0), \
+                patch.object(shortcuts, "register_game_in_steam", return_value={"success": True}) as register:
+            res = GameLauncher.launch("a.b")
+        self.assertFalse(res["launched_via_steam"])
+        self.assertTrue(res["shortcut_restored"])
+        self.assertEqual(popen.call_args[0][0], ["bash", self.script])
+        self.assertEqual(register.call_args[1]["launch_script_path"], self.script)
+
+    def test_shortcut_appid_is_read_from_the_users_list(self):
+        from frameload.system import shortcuts
+        steam = os.path.join(self.tmp, "steam")
+        vdf = os.path.join(steam, "userdata", "42", "config", "shortcuts.vdf")
+        os.makedirs(os.path.dirname(vdf))
+        with patch.object(shortcuts, "STEAM_DIR", steam):
+            self.assertIsNone(shortcuts.steam_shortcut_appid(self.script, user="42"))  # no list: cannot tell
+            shortcuts.upsert_shortcut(vdf, exe='"/other/launch.sh"', title="Other", start_dir="/other")
+            self.assertEqual(shortcuts.steam_shortcut_appid(self.script, user="42"), 0)
+            ident = shortcuts.upsert_shortcut(vdf, exe=f'"{self.script}"', title="Old Title", start_dir="/x")
+            self.assertEqual(shortcuts.steam_shortcut_appid(self.script, user="42"), int(ident) & 0xFFFFFFFF)
+
+
 class TestSteamDashboard(TempCase):
     """Steam's "Resume game" menu is hidden once the game draws, unless the player opened it."""
 

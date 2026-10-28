@@ -57,13 +57,20 @@ class GameLauncher:
 
         # Try Steam launch first if Steam is running
         launched_via_steam = False
-        gid = steam_gameid(appid) if appid else 0
 
         from ..system import steam_session
+        from ..system.shortcuts import steam_shortcut_appid
         from ..system.steamos import is_steam_running
         steam_running = is_steam_running()
+        # rungameid must name the shortcut Steam has: its stored appid can be older than deployment.json's
+        # (an earlier title), and the shortcut can be gone (Steam wrote its older list back on exit).
+        stored = steam_shortcut_appid(launch_script) if steam_running else None
+        restored = False
+        if stored == 0:
+            restored = GameLauncher._restore_shortcut(dep, anchor, launch_script)
+        gid = steam_gameid(stored or appid) if (stored or appid) else 0
         # Steam only knows shortcuts that existed when it started; a newer game is started directly.
-        in_library = not steam_session.is_pending(launch_script)
+        in_library = stored != 0 and not steam_session.is_pending(launch_script)
         if steam_running and gid and in_library:
             try:
                 subprocess.Popen(
@@ -94,8 +101,24 @@ class GameLauncher:
             "title": dep.get("title", package_name),
             "launched_via_steam": launched_via_steam,
             "in_steam_library": in_library,
+            "shortcut_restored": restored,
             "gameid": gid,
         }
+
+    @staticmethod
+    def _restore_shortcut(dep: Dict[str, Any], anchor: str, launch_script: str) -> bool:
+        """Writes a game's lost shortcut again; Steam shows it after its next start (Restart Steam)."""
+        from ..installer.artwork import steam_icon
+        from ..system.shortcuts import register_game_in_steam
+        art_dir = os.path.join(anchor, "artwork")
+        try:
+            return bool(register_game_in_steam(
+                title=dep.get("title", dep.get("package", "")), launch_script_path=launch_script, anchor_dir=anchor,
+                icon_path=steam_icon(art_dir), artwork_dir=art_dir, is_vr=bool(dep.get("is_vr", True))
+            ).get("success"))
+        except Exception as e:
+            print(f"[FrameLoad] Could not write the Steam shortcut of {dep.get('package')} again: {e}")
+            return False
 
     @staticmethod
     def _note_launch(base: str, via_steam: bool, pending: bool) -> None:

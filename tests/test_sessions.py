@@ -289,6 +289,28 @@ class TestRecords(SessionCase):
         self.assertIn("libgallium_dri.so", sessions.report_text(PKG))
         self.assertIsNone(sessions.finalize(PKG))  # recorded once
 
+    def test_a_gpu_hang_turns_foveated_rendering_off_once(self):
+        from frameload.manager.tuning import TuningManager
+        hang = lc(40, 1234, "E", "MESA", "error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)")
+        self.session([START_PROC, PACING, hang])
+        with patch.object(TuningManager, "effective_settings", return_value={"foveation": "gaze"}), \
+                patch.object(TuningManager, "save_game_tuning") as save:
+            record = sessions.finalize(PKG)
+        self.assertEqual(record["outcome"], "gpu_hang")
+        save.assert_called_once_with(PKG, {"foveation": "off"})
+        self.assertEqual(record["auto_fix"], "foveation_off")
+        self.assertIn("turned off Foveated rendering", record["advice"])
+
+        # Already off (or a launcher FramePort wrote): nothing to change, the usual advice.
+        self.session([START_PROC, PACING, hang], ago=5)
+        with patch.object(TuningManager, "effective_settings", return_value={"foveation": "off"}), \
+                patch.object(TuningManager, "save_game_tuning") as save:
+            record = sessions.finalize(PKG)
+        save.assert_not_called()
+        self.assertEqual(record["auto_fix"], "")
+        self.dep["installed_by"] = "frameport"
+        self.assertFalse(sessions._foveation_off_after_hang(PKG, self.dep))
+
     def test_uninstalling_forgets_the_mute_too(self):
         _, end = self.session([START_PROC, PACING, NATIVE_CRASH], crash=TOMBSTONE)
         sessions.finalize(PKG)

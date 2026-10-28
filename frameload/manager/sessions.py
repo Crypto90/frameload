@@ -825,6 +825,9 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
                       launch_error=launch_error, interrupted=interrupted)
     if marker and float(marker.get("time", 0)) <= end + 10:
         clear_stop(pkg)  # used, or older than this session
+    if result["outcome"] == "gpu_hang" and _foveation_off_after_hang(pkg, dep):
+        result["advice"] = FOVEATION_OFF_ADVICE
+        result["auto_fix"] = "foveation_off"
 
     lepton = LEPTON_VERSION_RE.search("\n".join(lines[:400]))
     gs = guard_state or {}
@@ -840,10 +843,37 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         "stop": marker if result["outcome"] in ("guard_memory", "guard_frozen", "stopped_player", "stopped_frameload") else None,
         "sources": sources, "lepton": f"{lepton.group(1)} (rootfs {lepton.group(2)})" if lepton else "",
         "kind": "vr" if dep.get("is_vr", True) else "2d", "seen": quiet, "time": now,
+        "auto_fix": result.get("auto_fix", ""),
     }
     _write_json(_record_path(pkg), record)
     print(f"[FrameLoad] Session of {pkg}: {record['outcome']} ({record['headline']})")
     return record
+
+
+FOVEATION_OFF_ADVICE = (
+    "FrameLoad turned off Foveated rendering for this game (its settings, Foveated rendering: Off). Valve's "
+    "foveation layer makes the graphics processor hang in some games (Red Matter 2 and Epic Roller Coasters ran "
+    "without hangs once it was off). Start the game again. If it still hangs, copy the log and include it when "
+    "you ask for help.")
+
+
+def _foveation_off_after_hang(pkg: str, dep: Dict[str, Any]) -> bool:
+    """After a GPU hang, a VR game FrameLoad installed starts next time without Valve's Vulkan layers.
+    True when the setting was changed now; a game already set to Off, or whose launcher is FramePort's, is left."""
+    from .tuning import LEPTON_KINDS, TuningManager
+
+    if not dep.get("is_vr", True) or dep.get("kind", "quest") not in LEPTON_KINDS \
+            or dep.get("installed_by", "frameload") != "frameload":
+        return False
+    try:
+        if TuningManager.effective_settings(dep).get("foveation") == "off":
+            return False
+        TuningManager.save_game_tuning(pkg, {"foveation": "off"})
+    except Exception as e:
+        print(f"[FrameLoad] Could not turn off foveated rendering for {pkg}: {e}")
+        return False
+    print(f"[FrameLoad] {pkg} hung the graphics processor: foveated rendering is now off for it")
+    return True
 
 
 def record_interrupted(pkg: str, boot: int, now: Optional[float] = None, quiet: bool = False) -> Optional[Dict[str, Any]]:

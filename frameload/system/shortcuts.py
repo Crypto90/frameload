@@ -154,6 +154,28 @@ def has_shortcut(vdf_path: str, exe: str) -> bool:
     return any(isinstance(v, dict) and v.get("Exe") == exe for v in (root.get("shortcuts") or {}).values())
 
 
+def steam_shortcut_appid(launch_script_path: str, user: Optional[str] = None) -> Optional[int]:
+    """The appid of the game's shortcut in the active Steam user's shortcuts.vdf: what steam://rungameid
+    must name. 0 when the list has no shortcut for it (a Steam that was running at install wrote its
+    older list back on exit), None when that cannot be told."""
+    user = user or get_active_steam_user()
+    if not user:
+        return None
+    try:
+        with open(os.path.join(STEAM_DIR, "userdata", user, "config/shortcuts.vdf"), "rb") as f:
+            root = vdf_decode(f.read())
+    except (OSError, ValueError, VdfError):
+        return None
+    exe = f'"{launch_script_path}"'
+    for entry in (root.get("shortcuts") or {}).values():
+        if isinstance(entry, dict) and entry.get("Exe") == exe:
+            try:
+                return int(entry.get("appid") or 0) & 0xFFFFFFFF or None
+            except (TypeError, ValueError):
+                return None
+    return 0
+
+
 def remove_shortcut_by_exe(vdf_path: str, exe: str) -> bool:
     """Removes a shortcut matching exe."""
     if not os.path.isfile(vdf_path):

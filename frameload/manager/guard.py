@@ -387,7 +387,11 @@ class FreezeGuard:
             pids = new
         fds = session.setdefault("fds", {})
         if now - session.get("fds_at", -1e9) >= (60 if any(fds.values()) else 10):
-            fds = {pid: perf.render_fds(pid, proc) for pid in pids}
+            new_fds = {pid: perf.render_fds(pid, proc) for pid in pids}
+            if new_fds != fds:
+                # A render device found later brings all its earlier GPU time: no share against the old sum.
+                session["gpu_samples"].clear()
+            fds = new_fds
             session["fds"], session["fds_at"] = fds, now
         ns = perf.gpu_time_ns(fds, proc) if pids else None
         samples = session["gpu_samples"]

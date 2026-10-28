@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.2] - 2026-10-28
+
+### Fixed
+- **Games that hang the graphics processor get foveated rendering turned off.** Valve's foveation layer makes the Steam Frame's graphics processor hang in some games: Red Matter 2 hung after about 40 seconds and Epic Roller Coasters crashed in the graphics driver after 30, and both ran at a steady 72 fps for minutes once Foveated rendering was Off. When a VR game's session ends with the graphics processor hung, FrameLoad now sets that game to Foveated rendering: Off and says so in the What happened window. Games already set to Off, and games FramePort installed, are left alone.
+- **Games whose Steam shortcut was lost or kept an older id did not start from Play.** FrameLoad asked Steam to start the id in its own records, which Steam ignored when its shortcut had an older id (the game was renamed), or when Steam had written its older list back on exit and dropped the shortcut (TriptoVR never started). Play now uses the id of the shortcut Steam actually has; a game whose shortcut is gone is started directly and its shortcut is written again (it is back in the library after Restart Steam).
+- **"The game asks for OpenXR 1.1" was reported for games that do not.** Unity asks for OpenXR 1.1 first and continues with 1.0; the loader's line about that was taken as the failure, so Epic Roller Coasters and Rick and Morty were reported as needing OpenXR 1.1 when their data was missing.
+- **New explanations in the What happened window:** "The game's data files are missing" (Unity's "RuntimeData is null" and missing OBB data), and "The app needs an Android service that Lepton does not have" (Vision Player Pro asks for NsdManager, which Lepton's Android lacks, and stops at start).
+- The GPU use of a game read up to 1,900 % for a moment when FrameLoad found another of its graphics devices; that reading could keep a frozen game from being stopped for one check.
+
+---
+
 ## [v1.4.1] - 2026-10-28
 
 ### Fixed

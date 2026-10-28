@@ -218,6 +218,27 @@ class TestGameGpuTime(Case):
         self.assertIsNone(perf.gpu_time_ns({321: ["3"]}, proc))  # nothing readable: no veto
         self.assertEqual(perf.app_pids(pkg, os.path.join(self.tmp, "nothing")), [])
 
+    def test_a_render_device_found_later_gives_no_share_spike(self):
+        # Red Matter on the headset: a second render device appeared with its earlier GPU time -> "1972 %".
+        fds = {"now": {1: ["7"]}}
+        totals = {("7",): 0, ("7", "9"): 0}
+        clock = {"t": 0.0}
+        session = {"gpu_samples": deque(maxlen=80)}
+        with patch.object(perf, "app_pids", return_value=[1]), \
+                patch.object(perf, "render_fds", side_effect=lambda pid, proc: fds["now"][pid]), \
+                patch.object(perf, "gpu_time_ns", side_effect=lambda f, proc: totals[tuple(f[1])]), \
+                patch.object(guard.os.path, "isdir", return_value=True):
+            for step in range(1, 15):
+                clock["t"] = step * 5.0
+                totals[("7",)] += int(2.5e9)  # 50 % of 5 s
+                totals[("7", "9")] = totals[("7",)] + int(90e9)  # fd 9 has been busy for a long time
+                if step == 13:
+                    fds["now"] = {1: ["7", "9"]}
+                FreezeGuard._gpu({"package": "com.x"}, session, clock["t"], "/proc")
+                if session.get("gpu") is not None:
+                    self.assertLessEqual(session["gpu"], 1.0, step)
+        self.assertAlmostEqual(session["gpu"], 0.5)
+
     def test_boot_time(self):
         self.write("proc/stat", "cpu  1 2 3 4\nbtime 1790000000\nprocesses 5\n")
         self.assertEqual(perf.boot_time(os.path.join(self.tmp, "proc")), 1790000000)
