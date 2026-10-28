@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.7] - 2026-10-28
+
+### Added
+- **Every look shows the compatibility list's verdict in the library.** Working, Partial or Not working from frameload.crypto90.de now appears on each game in all six looks, not only on its page: Big Picture puts a small pill on the poster, Spatial a coloured dot on the icon (and in what a screen reader says), Showcase a badge on the shelf tile and a line under the big title, Neon a badge on the card, Command Center a chip in the Status column, and Daylight a pill on the card in light and dark. A game that cannot run, needs porting or has an update keeps showing that first.
+
+### Fixed
+- The library badge added in v1.4.4 showed in none of the looks: each look draws its own cards.
+
+---
+
 ## [v1.4.6] - 2026-10-28
 
 ### Added
