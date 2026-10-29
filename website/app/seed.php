@@ -35,7 +35,7 @@ const CURATED = [
     ['com.picselica.OceanRiftFullQuest', 'Ocean Rift', 'Unity', 'partial', '73',
      'Steady 72 fps for minutes, but the graphics processor hung once with foveated rendering on.', []],
     ['co.yomune.gargantua', 'SWORDS of GARGANTUA', 'Unreal', 'partial', '40007',
-     "Runs with FrameLoad 1.5.4, whose FrameBridge fix ends the deadlock that kept it on its loading screen forever (SteamVR waits where Meta's runtime does not). With foveated rendering on, the graphics processor hung and took Steam down; with it off it reached its title screen and played at about 65 fps, until the headset ran short of memory after 5 minutes and Freeze Guard stopped it.",
+     "Runs with FrameLoad 1.5.4, whose FrameBridge fix ends the deadlock that kept it on its loading screen forever (SteamVR waits where Meta's runtime does not). With foveated rendering on, the graphics processor hung and took Steam down; with it off it plays at about 72 fps. But SteamVR's OpenGL bridge inside the game leaks about six GPU buffers a frame (about 25 MB a second), so after about 5 minutes the headset runs short of memory and Freeze Guard stops the game before the headset freezes.",
      ['foveation' => 'off', 'min_frameload' => '1.5.4']],
     ['app.visionplayer', 'Vision Player Pro', 'Native', 'broken', '8',
      "Stops at start: it needs Android's network service discovery (NsdManager), which Lepton does not provide.", []],

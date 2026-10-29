@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.9] - 2026-10-29
+
+### Added
+- **The Freeze Guard measures each game's memory**: what it holds in RAM, its GPU buffers and how many GPU buffers it has mapped, with the peak and how fast they grow (`/api/guard`, kept with every session). A game that runs the headset out of memory now shows why. SWORDS of GARGANTUA: SteamVR's OpenGL bridge inside the game maps about six new GPU buffers a frame, about 25 MB a second, until the headset runs short after about five minutes.
+- **Clear OpenGL errors**, a per-game setting for OpenGL ES games whose memory keeps growing because errors the game leaves behind make SteamVR take new memory every frame (FrameBridge clears them before each frame; FramePort's fix for Vader Immortal). It does not help Gargantua, whose leak has another trigger.
+- FrameLoad's "Share compatibility reports" links the website's privacy policy.
+
+### Fixed
+- **Unreal games' GPU share and memory are read.** Unreal renames its main thread, and with it the process, so FrameLoad never found SWORDS of GARGANTUA's process: its GPU time was never counted and the Freeze Guard judged it blind.
+
+---
+
 ## [v1.5.8] - 2026-10-29
 
 ### Added
