@@ -114,9 +114,10 @@
         <div class="card-body">
           <div class="card-title" title="${ctx.esc(game.title)}">${ctx.esc(game.title)}</div>
           <div class="card-meta"><span>${ctx.esc(where)} · ${ctx.esc(ctx.played(game))}</span></div>
-          <div class="card-actions">
+          <div class="card-actions${ctx.updateButton(game) ? " has-update" : ""}">
             ${ctx.primaryButton(game)}
             <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
+            ${ctx.updateButton(game)}
           </div>
         </div>
       </div>`;

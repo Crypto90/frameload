@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.6.0] - 2026-10-29
+
+### Changed
+- **An update no longer takes Play's place.** A game with an update keeps Play as its main button, with Update beside it (every look), so you can play the version you have first and update when it suits you. The game's page has its own **Update to <version>** button, and hovering Update names the new version and its size.
+- **The refresh rate under System is a floor for every game.** A game that asks for more (FrameBridge's "app asked for N Hz") gets more, and a rate set for one game wins over both. Automatic quality's 72 Hz step-back now also lowers a rate that came from the default or from the game's own request. With the default at 90 Hz, games measured on the headset run at 90 fps.
+
+### Fixed
+- **Apps that need a newer Android than Lepton's are judged correctly.** Lepton's Android is 11 (API 30), not 14: CineVoid (API 32) was shown as "Should run" and then failed to install with `INSTALL_FAILED_OLDER_SDK`. A VR app that declares more than API 30 now shows **Needs porting first** (porting lowers the declaration), and a 2D app shows **Cannot run** with the reason. Installed games are judged again after the update. Apps built for Android 13 or newer get a warning that they may stop at start even once installed.
+- The 2D app catalogs list only apps that install on Android 11.
+
+---
+
 ## [v1.5.9] - 2026-10-29
 
 ### Added

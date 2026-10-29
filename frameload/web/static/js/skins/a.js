@@ -106,8 +106,6 @@
       primary = `${g.is_vr ? ctx.showButton(g, "a-play", { short: true, icon: RUN_SVG })
         : `<button type="button" class="a-play" onclick="event.stopPropagation(); launchGame(${pkg})">${RUN_SVG}Resume</button>`}
         <button type="button" class="a-ghost" onclick="event.stopPropagation(); stopGame(${pkg})">Stop</button>`;
-    } else if (ctx.updateFor(g)) {
-      primary = `<button type="button" class="a-play a-blue" onclick="event.stopPropagation(); updateGame(${pkg})">Update</button>`;
     } else if (level === "needs_port" && g.kind === "quest") {
       primary = `<button type="button" class="a-play" onclick="event.stopPropagation(); ${g.port_failed ? "portGame" : "launchGame"}(${pkg})">${RUN_SVG}${g.port_failed ? "Port again" : "Port &amp; Play"}</button>`;
     } else if (level === "blocked") {
@@ -126,6 +124,7 @@
           ${time ? `<span class="a-lead-meta">${ctx.esc(time)}</span>` : ""}
           <div class="a-lead-row">
             ${primary}
+            ${ctx.updateButton(g, "a-ghost a-upd")}
             ${g.is_running ? "" : `<button type="button" class="a-ghost" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>`}
           </div>
         </div>

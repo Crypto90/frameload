@@ -231,7 +231,6 @@
   function actionFor(g, ctx) {
     const level = (g.compat && g.compat.level) || "";
     if (g.is_running) return { label: "Stop", call: "stopGame", icon: "stop" };
-    if (ctx.updateFor(g)) return { label: "Update", call: "updateGame", icon: "update" };
     if (level === "needs_port" && g.kind === "quest") {
       return g.port_failed ? { label: "Port again", call: "portGame", icon: "port" } : { label: "Port and play", call: "launchGame", icon: "port" };
     }
@@ -290,6 +289,7 @@
           <div class="f-acts">
             ${ctx.showButton(g, "f-btn", { short: true, icon: ctx.icon("play") })}
             <button type="button" class="f-btn${g.is_running && g.is_vr ? " f-ghost" : ""}" onclick="${act.call}(${pkg})">${ctx.icon(act.icon)}${act.label}</button>
+            ${ctx.updateButton(g, "f-btn f-ghost", `${ctx.icon("update")}Update`)}
             <button type="button" class="f-btn f-ghost" onclick="openGameModal(${pkg}, 'installed')">${ctx.icon("dots")}Details</button>
           </div>
         </div>

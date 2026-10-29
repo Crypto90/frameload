@@ -879,6 +879,8 @@ input:checked + .slider { background-color: #1a9fff; }
 .a-play.a-blue { background: #1a9fff; color: #04121f; }
 .a-ghost { padding: 0 16px; background: rgba(255, 255, 255, 0.14); color: #fff; }
 .a-ghost:hover { background: rgba(255, 255, 255, 0.26); }
+.a-ghost.a-upd { background: rgba(26, 159, 255, 0.28); }
+.a-ghost.a-upd:hover { background: rgba(26, 159, 255, 0.45); }
 
 /* Capsules (2:3 posters) */
 .a-cap {

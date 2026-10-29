@@ -1669,6 +1669,10 @@ input:checked + .slider:before {
   font-weight: 700;
 }
 
+/* Update sits under Play and Settings, so the card still leads with Play. */
+.card-actions.has-update { flex-wrap: wrap; }
+.card-actions.has-update .card-btn.update { flex-basis: 100%; }
+
 .card-btn.update:hover {
   box-shadow: 0 4px 16px rgb(var(--warn-rgb) / 0.45);
 }

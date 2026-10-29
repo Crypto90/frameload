@@ -151,7 +151,6 @@
       return `<button type="button" class="e-btn pri" data-e-key="det:pri" title="Close Steam's menu so ${esc(g.title)} is in front" aria-label="Show ${esc(g.title)}" onclick="showGame(${pkg})">${ic("play")}Show</button>`;
     }
     if (g.is_running) return `<button type="button" class="e-btn pri" data-e-key="det:pri" onclick="launchGame(${pkg})">${ic("play")}Resume</button>`;
-    if (view.ctx.updateFor(g)) return `<button type="button" class="e-btn pri" data-e-key="det:pri" onclick="updateGame(${pkg})">${ic("update")}Update</button>`;
     if (needsPort(g)) {
       return g.port_failed
         ? `<button type="button" class="e-btn pri warn" data-e-key="det:pri" onclick="portGame(${pkg})">${ic("port")}Port again</button>`
@@ -182,6 +181,7 @@
         <div class="e-sub"><i class="e-k">${isVr(g) ? "VR" : "2D"}</i><span>${esc(g.package)}</span></div>
         <div class="e-acts">
           ${primaryHtml(g)}
+          ${ctx.updateFor(g) && !g.is_running ? `<button type="button" class="e-btn" data-e-key="det:update" title="${esc(ctx.updateTitle(g))}" onclick="updateGame(${pkg})">${ic("update")}<span>Update</span></button>` : ""}
           ${g.is_running ? `<button type="button" class="e-btn stop" data-e-key="det:stop" onclick="stopGame(${pkg})">${ic("stop")}Stop</button>` : ""}
           ${lepton ? `<button type="button" class="e-btn${g.is_running ? " e-sq" : ""}" data-e-key="det:settings" onclick="openSettingsModal(${pkg})" aria-label="Settings" title="Settings">${ic("settings")}<span>Settings</span></button>` : ""}
         </div>

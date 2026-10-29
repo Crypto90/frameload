@@ -1313,9 +1313,10 @@ function libraryCardHtml(game) {
           <span>${game.is_external ? 'External' : 'Internal'}</span>
           <span>${escapeHtml(playedLabel(game))}</span>
         </div>
-        <div class="card-actions">
+        <div class="card-actions${libraryUpdateButton(game) ? " has-update" : ""}">
           ${libraryPrimaryButton(game)}
           <button class="card-btn download" onclick="event.stopPropagation(); openSettingsModal(${pkg})">Settings</button>
+          ${libraryUpdateButton(game)}
         </div>
       </div>
     </div>`;
@@ -1331,7 +1332,7 @@ function recentCardHtml(game) {
       <div class="recent-info">
         <div class="recent-title" title="${escapeHtml(game.title)}">${escapeHtml(game.title)}</div>
         <div class="recent-meta">${escapeHtml(playedLabel(game))}${total ? ` · ${escapeHtml(total)}` : ""}</div>
-        <div class="recent-actions">${showButtonHtml(game, "card-btn play", { short: true })}${libraryPrimaryButton(game)}</div>
+        <div class="recent-actions">${showButtonHtml(game, "card-btn play", { short: true })}${libraryPrimaryButton(game)}${libraryUpdateButton(game)}</div>
       </div>
     </div>`;
 }
@@ -1348,15 +1349,27 @@ function libraryUpdateFor(game) {
     ? state.updates.games.find(u => u.package === game.package) : null;
 }
 
+// What the Update button says about the update ("" without one): the new version and its size.
+function libraryUpdateTitle(game) {
+  const u = libraryUpdateFor(game);
+  if (!u) return "";
+  const size = u.size_formatted ? ` (${u.size_formatted})` : "";
+  return `Update to ${u.new_version || "the newest version"}${size}. Saves are kept. Play starts the version you have.`;
+}
+
+// Update beside Play, never instead of it: the player decides whether to play the version they have first.
+// Nothing while the game runs (an update replaces its APK).
+function libraryUpdateButton(game, cls = "card-btn update", inner = "Update") {
+  if (!libraryUpdateFor(game) || game.is_running) return "";
+  return `<button type="button" class="${cls}" title="${escapeHtml(libraryUpdateTitle(game))}" onclick="event.stopPropagation(); updateGame(${jsArg(game.package)})">${inner}</button>`;
+}
+
 // The one button a game's card leads with: Stop while it runs, otherwise what starts it.
 function libraryPrimaryButton(game) {
   const pkg = jsArg(game.package);
   const level = (game.compat && game.compat.level) || "";
   if (game.is_running) {
     return `<button class="card-btn stop" onclick="event.stopPropagation(); stopGame(${pkg})">Stop</button>`;
-  }
-  if (libraryUpdateFor(game)) {
-    return `<button class="card-btn update" title="1-Click Update" onclick="event.stopPropagation(); updateGame(${pkg})">Update</button>`;
   }
   if (level === "needs_port" && game.kind === "quest") {
     return `<button class="card-btn play" title="Ports the game for the Steam Frame, then starts it" onclick="event.stopPropagation(); ${game.port_failed ? "portGame" : "launchGame"}(${pkg})">${game.port_failed ? "Port Again" : "Port & Play"}</button>`;
@@ -2259,8 +2272,11 @@ function openGameModal(id, mode = "catalog") {
           ? `<button class="btn-primary" onclick="closeModal(); portGame(${arg})">Port Again</button>`
           : `<button class="btn-primary" onclick="closeModal(); launchGame(${arg})">Port &amp; Play</button>`)
       : `<button class="btn-primary" onclick="launchGame(${arg}); closeModal();">${game.is_vr ? "Launch in VR" : "Open"}</button>`;
+    const update = libraryUpdateFor(game) && !game.is_running
+      ? `<button class="btn-secondary" title="${escapeHtml(libraryUpdateTitle(game))}" onclick="closeModal(); updateGame(${arg})">Update to ${escapeHtml(libraryUpdateFor(game).new_version || "newest")}</button>` : "";
     actionContainer.innerHTML = `
       ${primary}
+      ${update}
       ${lepton ? `<button class="btn-secondary" onclick="openTuningModal(${arg})">Settings</button>` : ""}
       ${needsPort && game.port_failed && game.port_error ? `<span class="tuning-micro-note" style="flex-basis:100%; color:var(--accent-amber);">Last port failed: ${escapeHtml(game.port_error)}</span>` : ""}
       ${lepton ? `<button class="btn-secondary" onclick="openLogModal(${arg})">Launch Log</button>` : ""}
@@ -6016,6 +6032,8 @@ function skinContext() {
     playtime: formatPlaytime,
     ago: timeAgo,
     primaryButton: libraryPrimaryButton,
+    updateButton: libraryUpdateButton,
+    updateTitle: libraryUpdateTitle,
     // showButton(game, cls, {short, icon}): Show for a running VR game, "" for anything else.
     showButton: showButtonHtml,
     updateFor: libraryUpdateFor,

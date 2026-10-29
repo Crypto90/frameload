@@ -53,16 +53,17 @@
         : "";
       return `${show}<button type="button" class="sp-round stop" aria-label="Stop ${name}" title="Stop" onclick="event.stopPropagation(); stopGame(${pkg})">${ctx.icon("stop")}</button>`;
     }
-    if (ctx.updateFor(game)) {
-      return `<button type="button" class="sp-round update" aria-label="Update ${name}" title="Update" onclick="event.stopPropagation(); updateGame(${pkg})">${ctx.icon("update")}</button>`;
-    }
-    if (l === "blocked") return "";
+    // Update sits beside Play: the player chooses whether to play the version they have first.
+    const update = ctx.updateFor(game)
+      ? `<button type="button" class="sp-round update" aria-label="Update ${name}" title="${ctx.esc(ctx.updateTitle(game))}" onclick="event.stopPropagation(); updateGame(${pkg})">${ctx.icon("update")}</button>`
+      : "";
+    if (l === "blocked") return update;
     if (l === "needs_port" && game.kind === "quest") {
       const fn = game.port_failed ? "portGame" : "launchGame";
       const label = game.port_failed ? "Port again" : "Port and play";
-      return `<button type="button" class="sp-round" aria-label="${label}: ${name}" title="${label}" onclick="event.stopPropagation(); ${fn}(${pkg})">${ctx.icon("port")}</button>`;
+      return `<button type="button" class="sp-round" aria-label="${label}: ${name}" title="${label}" onclick="event.stopPropagation(); ${fn}(${pkg})">${ctx.icon("port")}</button>${update}`;
     }
-    return `<button type="button" class="sp-round" aria-label="Play ${name}" title="Play" onclick="event.stopPropagation(); launchGame(${pkg})">${ctx.icon("play")}</button>`;
+    return `<button type="button" class="sp-round" aria-label="Play ${name}" title="Play" onclick="event.stopPropagation(); launchGame(${pkg})">${ctx.icon("play")}</button>${update}`;
   }
 
   function cardHtml(ctx, game) {

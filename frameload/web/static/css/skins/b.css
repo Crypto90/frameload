@@ -911,6 +911,9 @@ a { color: inherit; }
 .sp-round.stop,
 .sp-round.stop:hover { background: #ffffff; color: var(--accent-ink); border-color: #ffffff; }
 .sp-round.update { background: var(--warn); color: #2a1800; border-color: var(--warn); }
+/* Update beside Play: the player chooses whether to play the version they have first */
+.sp-round + .sp-round.update { right: 78px; }
+.sp-card:has(.sp-round + .sp-round.update) .sp-card-info { right: 142px; }
 /* A running VR game: Show beside Stop */
 .sp-round.show { right: 78px; }
 .sp-card:has(.sp-round.show) .sp-card-info { right: 142px; }
