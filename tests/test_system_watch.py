@@ -409,7 +409,8 @@ class TestFreezeGuard(Case):
         # Lepton's copy ended after "Waiting for app" without a word (SWORDS of GARGANTUA ran at 72 fps unseen).
         seen = iter(range(1000))
         patch.object(guard, "container_pacing",
-                     side_effect=lambda appid: f"I FrameBridge: pacing: 72.{next(seen) % 10} fps".encode()).start()
+                     # `logcat -v brief`, as container_logcat() asks for it
+                     side_effect=lambda appid: f"I/FrameBridge( 1212): pacing: 72.{next(seen) % 10} fps".encode()).start()
         self.log("Waiting for app com.game.a to exit...\n")
         self.ticks(1000, 1030)
         state = next(g for g in FreezeGuard.status(now=1030.0)["games"] if g["package"] == "com.game.a")

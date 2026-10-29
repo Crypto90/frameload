@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Apps that need a newer Android than Lepton's are judged correctly.** Lepton's Android is 11 (API 30), not 14: CineVoid (API 32) was shown as "Should run" and then failed to install with `INSTALL_FAILED_OLDER_SDK`. A VR app that declares more than API 30 now shows **Needs porting first** (porting lowers the declaration), and a 2D app shows **Cannot run** with the reason. Installed games are judged again after the update. Apps built for Android 13 or newer get a warning that they may stop at start even once installed.
 - The 2D app catalogs list only apps that install on Android 11.
+- **Now Playing and the Freeze Guard show the frame rate again when Lepton's copy of the game's log dies.** FrameLoad then reads the game's container, whose lines look different (`I/FrameBridge( 1234): pacing: …`): the guard saw that the game still drew, but never its fps. In the 90 Hz test, 10 of 18 games showed no fps for that reason.
 
 ---
 

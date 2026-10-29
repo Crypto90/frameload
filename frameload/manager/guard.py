@@ -41,7 +41,9 @@ from . import sessions as records
 
 # FrameBridge's pacing line (every 5 s while xrEndFrame runs) and its focus log (session_fixes.c), and
 # the 2 s pacing line of games bridged from VrApi.
-FRAME_RE = re.compile(rb"FrameBridge: (?:pacing: ([0-9.]+) fps|focus: (lost|back after|session ending))"
+# launch.log has logcat's threadtime format ("I FrameBridge: pacing: ..."); the container is asked with
+# `logcat -v brief` ("I/FrameBridge( 1234): pacing: ...").
+FRAME_RE = re.compile(rb"FrameBridge(?:\(\s*\d+\))?: (?:pacing: ([0-9.]+) fps|focus: (lost|back after|session ending))"
                       rb"|OVRPortVrApi: pacing 2s: waits=([1-9]\d*)")
 HMD_STATE_RE = re.compile(rb"\[CCVTrackedHmdDriver\] in State(\w+)")
 CONTAINER_PREFIX = "lepton-steamlaunch-"
