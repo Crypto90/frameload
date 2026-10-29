@@ -16,8 +16,11 @@ from .axml import AxmlError, ManifestInfo, read_manifest, resolve_string_resourc
 
 # Libraries FramePort's FrameBridge adapter adds to an APK it has ported.
 FRAMEBRIDGE_LIBS = ("libframe_settings.so", "libopenxr_loader_original.so")
-# Lepton's newest Android image (image-14). Apps that need more cannot install.
-LEPTON_MAX_SDK = 34
+# Lepton's Android is 11 (API 30; games log "Android OS 11 (API 30)"). It refuses an APK that declares more
+# (INSTALL_FAILED_OLDER_SDK). Porting lowers the declaration (FramePort's OVRPort sets minSdk 29), and up to 32
+# (Quest's Android 12L) runs in practice; above 32 an app may call Android 13 classes at start (FramePort's PLAYBOOK).
+LEPTON_MAX_SDK = 30
+QUEST_SDK = 32
 ARM64 = "arm64-v8a"
 
 # Apps that verify their own signing certificate. Porting re-signs the APK, so they stop at their
@@ -95,9 +98,20 @@ def _build_compat(a: ApkAnalysis, manifest: ManifestInfo, platform_sdk: bool) ->
     if a.libs and ARM64 not in a.abis:
         level = BLOCKED
         issue("error", "abi", f"Only built for {', '.join(a.abis) or 'another CPU'}. Lepton runs 64-bit ARM (arm64-v8a) apps only.")
-    if a.min_sdk > LEPTON_MAX_SDK:
-        level = BLOCKED
-        issue("error", "min_sdk", f"Needs Android API {a.min_sdk}; Lepton provides up to API {LEPTON_MAX_SDK}.")
+    # Declares a newer Android than Lepton's: a VR app gets a lower declaration from porting, anything else cannot run.
+    sdk_needs_port = False
+    if a.min_sdk > LEPTON_MAX_SDK and a.xr_runtime != "framebridge":
+        if a.is_vr:
+            sdk_needs_port = True
+            issue("error", "min_sdk", f"Declares Android API {a.min_sdk}; Lepton's Android is 11 (API {LEPTON_MAX_SDK}), "
+                  f"which refuses to install it. Porting lowers that. {PORTED_ON_HEADSET}")
+        else:
+            level = BLOCKED
+            issue("error", "min_sdk", f"Needs Android API {a.min_sdk}; Lepton's Android is 11 (API {LEPTON_MAX_SDK}), "
+                  "which refuses to install it.")
+    if a.min_sdk > QUEST_SDK:
+        issue("warn", "min_sdk_new", f"Built for Android API {a.min_sdk} (13 or newer): even installed, it may call parts "
+              "of Android that Lepton's Android 11 lacks and stop at start.")
     if manifest.split_required:
         level = BLOCKED
         issue("error", "splits", "This is one part of a split APK. Lepton installs a single APK, so the app needs a merged (universal) build.")
@@ -121,7 +135,7 @@ def _build_compat(a: ApkAnalysis, manifest: ManifestInfo, platform_sdk: bool) ->
             issue("error", "meta_runtime", "Built against Meta's Quest runtime (OVRPlugin). It needs porting with FramePort "
                   f"before it starts on the Frame. {PORTED_ON_HEADSET}")
         else:
-            level = LIKELY
+            level = NEEDS_PORT if sdk_needs_port else LIKELY
             issue("info", "openxr", "Native OpenXR app. The Frame's runtime accepts OpenXR 1.0; apps that request 1.1 fail to start.")
 
     if level != BLOCKED and a.manifest_parsed and not a.launch_activity:

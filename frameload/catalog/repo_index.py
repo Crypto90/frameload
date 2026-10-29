@@ -34,9 +34,9 @@ MAX_INDEX_JSON_BYTES = 192 * 1024 * 1024
 MAX_SIGNATURE_FILE_BYTES = 1024 * 1024  # MANIFEST.MF, the .SF file and the signature block
 MIN_RSA_BITS = 2048
 
-# Lepton runs 64-bit ARM apps only, on Android images up to API 34.
+# Lepton runs 64-bit ARM apps only, on Android 11 (API 30), which refuses an APK that declares more.
 LEPTON_ABI = "arm64-v8a"
-LEPTON_MAX_SDK = 34
+LEPTON_MAX_SDK = 30
 LOCALES = ("en-US", "en-GB", "en")
 SCREENSHOT_KINDS = ("phoneScreenshots", "sevenInchScreenshots", "tenInchScreenshots")
 MAX_SCREENSHOTS = 10
@@ -468,7 +468,7 @@ def _is_compatible(release: Dict[str, Any]) -> bool:
             return False
     except (TypeError, ValueError):
         pass
-    try:  # an app that declares it stops before Android 14 cannot be installed there
+    try:  # an app that declares it stops before Android 11 cannot be installed there
         if release.get("maxSdkVersion") is not None and int(release["maxSdkVersion"]) < LEPTON_MAX_SDK:
             return False
     except (TypeError, ValueError):

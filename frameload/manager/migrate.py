@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from ..config import DATA_DIR
 from .installed import InstalledManager
 
-LAYOUT_VERSION = 13  # 13: launch.sh sets SteamVR's per-game refresh rate before Lepton starts
+LAYOUT_VERSION = 14  # 14: APKs judged again against Lepton's Android 11 (API 30)
 # 11: launch.sh sets the permissions a release's install.txt asks for (container_setup.txt)
 # 10: install.txt data placed in another game of the same version code is moved to its own
 # 9: a left-behind release's install.txt is carried out; 8: its OBB folder is moved in

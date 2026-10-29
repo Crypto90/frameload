@@ -370,7 +370,7 @@ class LeptonInstaller:
             "framebridge_keys": previous.get("framebridge_keys", []),
             "headset": headset_identity(dest_apk),
             "installed_by": "frameload",
-            "layout_version": 13,
+            "layout_version": 14,
             "time": time.time(),
         }
         # Learnt on this game, not on this APK: the rate it asks for, and which FramePort already re-ported it.

@@ -123,6 +123,23 @@ class TestCompatVerdict(unittest.TestCase):
         self.assertEqual(a.engine, "Godot")
         self.assertEqual(a.compat["level"], "likely")
 
+    def test_newer_android_than_lepton_needs_porting_or_cannot_run(self):
+        # Lepton's Android 11 (API 30) refuses the install; porting lowers a VR app's declaration.
+        vr = inspect_apk(self.apk("vr.apk", manifest_node=manifest("org.example.xr", categories=(LAUNCHER, VR), min_sdk=32),
+                                  libs=["libopenxr_loader.so"]))
+        self.assertEqual(vr.compat["level"], "needs_port")
+        self.assert_ported_on_the_headset(vr, "min_sdk")
+        flat = inspect_apk(self.apk("flat.apk", manifest_node=manifest("org.example.flat", min_sdk=31)))
+        self.assertEqual(flat.compat["level"], "blocked")
+        self.assertIn("min_sdk", self.codes(flat))
+        newest = inspect_apk(self.apk("new.apk", manifest_node=manifest("org.example.new", categories=(LAUNCHER, VR),
+                                                                        min_sdk=33), libs=["libopenxr_loader.so"]))
+        self.assertIn("min_sdk_new", self.codes(newest))
+        ported = inspect_apk(self.apk("ported.apk", manifest_node=manifest("org.example.p", categories=(LAUNCHER, VR),
+                                                                          min_sdk=29),
+                                      libs=["libopenxr_loader.so", "libopenxr_loader_original.so", "libframe_settings.so"]))
+        self.assertEqual(ported.compat["level"], "ready")
+
     def test_flat_app_with_resource_label(self):
         path = self.apk(manifest_node=manifest("org.example.flat", label=ref(LABEL_RES_ID)),
                         arsc=build_arsc("Pocket Notes"))
