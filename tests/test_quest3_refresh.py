@@ -119,6 +119,9 @@ class TestRefreshRate(unittest.TestCase):
         self.assertEqual(TuningManager.display_rate({"refresh_rate": 120}, {"game_refresh_rate": 90}), 120)
         self.assertEqual(TuningManager.display_rate({"refresh_rate": 0}, {"game_refresh_rate": 90}), 90)
         self.assertEqual(TuningManager.display_rate({"refresh_rate": 0}, {}), 0)
+        # The default under System is a floor: a game that asks for more gets more.
+        self.assertEqual(TuningManager.display_rate({"refresh_rate": 90}, {"game_refresh_rate": 120}), 120)
+        self.assertEqual(TuningManager.display_rate({"refresh_rate": 90}, {}), 90)
 
     def test_the_rate_a_game_asked_for_is_kept_for_its_next_start(self):
         lines = ["10-28 19:38:52.307  1212  1236 I FrameBridge: refresh rate: app asked for 90.0 Hz, "

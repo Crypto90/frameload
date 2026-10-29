@@ -57,7 +57,10 @@ class TestAutomaticQuality(unittest.TestCase):
                 patch.object(quality, "enabled", return_value=True):
             self.assertEqual(TuningManager.effective_settings(dep)["scale"], 1.2)
             self.assertEqual(TuningManager.display_rate({"refresh_rate": 0}, dep), 72)
-            self.assertEqual(TuningManager.display_rate({"refresh_rate": 120}, dep), 120)
+            # A default under System (90 Hz for every game) is capped like a rate the game asked for...
+            self.assertEqual(TuningManager.display_rate({"refresh_rate": 90}, dep), 72)
+            # ...the game's own Refresh rate is not.
+            self.assertEqual(TuningManager.display_rate({"refresh_rate": 120}, dict(dep, settings={"refresh_rate": 120})), 120)
             dep["settings"] = {"scale": 1.0}
             self.assertEqual(TuningManager.effective_settings(dep)["scale"], 1.0)
         with patch.object(TuningManager, "recommended_settings", return_value={}), \

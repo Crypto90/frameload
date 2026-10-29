@@ -416,14 +416,16 @@ class TuningManager:
 
     @staticmethod
     def display_rate(settings: Dict[str, Any], dep: Dict[str, Any]) -> int:
-        """The panel rate launch.sh asks SteamVR for: the player's Refresh rate, else ("Game's choice") the rate the
-        game itself asked for in an earlier session (sessions.learn_refresh_rate), lowered to automatic quality's
-        cap when it could not hold it, else 0 (SteamVR's own)."""
+        """The panel rate launch.sh asks SteamVR for. The game's own Refresh rate wins; else the higher of the default
+        under System and the rate the game asked for in an earlier session (sessions.learn_refresh_rate), lowered to
+        automatic quality's cap when the game could not hold it; else 0 (SteamVR's own)."""
         from . import quality
 
-        if settings.get("refresh_rate"):
-            return int(settings["refresh_rate"])
-        rate, cap = int(dep.get("game_refresh_rate") or 0), quality.rate_cap(dep)
+        own = normalize_settings(dep.get("settings", {}), keep_defaults=True).get("refresh_rate")
+        if own:
+            return int(own)
+        rate = max(int(settings.get("refresh_rate") or 0), int(dep.get("game_refresh_rate") or 0))
+        cap = quality.rate_cap(dep)
         return min(rate, cap) if rate and cap else rate
 
     @staticmethod
