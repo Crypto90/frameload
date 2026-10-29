@@ -46,8 +46,8 @@ from frameload.server import FrameLoadApiHandler  # noqa: E402
 from frameload.system import access  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures", "fdroid_repo")
-FIXTURE_FINGERPRINT = "daa0af5ddead06e9424c83b609f919cc1608c3e89aa754fd18e396a36a9bfcc7"
-OTHER_FINGERPRINT = "11c4a7fdd7f22daf68b041d3c2e30d36da2c421bb2e9663c873a6e405ebe9eb7"
+FIXTURE_FINGERPRINT = "93a24cd3d79c799f00a8861dfb05c4ab073107964e49374787a6dbd51a52baab"
+OTHER_FINGERPRINT = "a487bbf27c7d459a687b634663073df88bda0d1f71e6e6d25aa494d91ff7d1f0"
 FIXTURE_TIMESTAMP = 1760000000000
 REPO_URL = "https://repo.example.org/fdroid/repo"
 MIRROR_URL = "https://mirror.example.net/fdroid/repo"
@@ -590,7 +590,7 @@ class TestCustomSources(TempCase):
         with patch.object(app_sources, "_http_get", fake):
             info = self.sources.probe(REPO_URL)
             self.assertEqual((info["fingerprint"], info["apps"], info["compatible"], info["pinned"], info["name"]),
-                             (FIXTURE_FINGERPRINT, 5, 1, False, "FrameLoad Test Repo"))
+                             (FIXTURE_FINGERPRINT, 6, 1, False, "FrameLoad Test Repo"))
             with self.assertRaisesRegex(IndexSignatureError, "different key"):
                 self.sources.probe(REPO_URL, OTHER_FINGERPRINT)
         self.assertTrue(fake.calls[0][2])  # public addresses only

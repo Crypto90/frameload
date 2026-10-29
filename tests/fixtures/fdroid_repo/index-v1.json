@@ -57,6 +57,11 @@
    "packageName": "org.example.oldsdk",
    "suggestedVersionCode": "1",
    "name": "Old SDK"
+  },
+  {
+   "packageName": "org.example.newsdk",
+   "suggestedVersionCode": "1",
+   "name": "New SDK"
   }
  ],
  "packages": {
@@ -128,7 +133,17 @@
     "hash": "2222222222222222222222222222222222222222222222222222222222222222",
     "hashType": "sha256",
     "size": 1,
-    "maxSdkVersion": 30
+    "maxSdkVersion": 29
+   }
+  ],
+  "org.example.newsdk": [
+   {
+    "versionCode": 1,
+    "apkName": "newsdk_1.apk",
+    "hash": "3333333333333333333333333333333333333333333333333333333333333333",
+    "hashType": "sha256",
+    "size": 1,
+    "minSdkVersion": 31
    }
   ]
  }

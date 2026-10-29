@@ -47,6 +47,7 @@ INDEX = {
         {"packageName": "com.google.android.gms", "suggestedVersionCode": "1", "name": "microG Services"},
         {"packageName": "org.example.module", "suggestedVersionCode": "1", "name": "Some Module", "categories": ["Xposed"]},
         {"packageName": "org.example.oldsdk", "suggestedVersionCode": "1", "name": "Old SDK"},
+        {"packageName": "org.example.newsdk", "suggestedVersionCode": "1", "name": "New SDK"},
     ],
     "packages": {
         "org.example.notes": [
@@ -69,7 +70,11 @@ INDEX = {
         ],
         "org.example.oldsdk": [
             {"versionCode": 1, "apkName": "oldsdk_1.apk", "hash": "2" * 64, "hashType": "sha256", "size": 1,
-             "maxSdkVersion": 30},
+             "maxSdkVersion": 29},
+        ],
+        "org.example.newsdk": [
+            {"versionCode": 1, "apkName": "newsdk_1.apk", "hash": "3" * 64, "hashType": "sha256", "size": 1,
+             "minSdkVersion": 31},
         ],
     },
 }
