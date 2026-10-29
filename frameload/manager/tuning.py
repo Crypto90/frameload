@@ -63,6 +63,12 @@ SETTINGS_SCHEMA: List[Dict[str, Any]] = [
         "description": "The game renders every frame itself. For games whose picture flickers or smears.",
     },
     {
+        "key": "gl_error_clear", "type": "bool", "default": False, "scope": "vr", "needs_framebridge": True,
+        "title": "Clear OpenGL errors",
+        "description": "For OpenGL ES games whose memory keeps growing: errors the game leaves behind make SteamVR "
+                       "take new memory every frame. FrameBridge clears them before each frame.",
+    },
+    {
         "key": "stable_local", "type": "bool", "default": False, "scope": "vr", "needs_framebridge": True,
         "title": "Keep the play space still",
         "description": "For games whose menus jump to where you look.",
@@ -109,7 +115,8 @@ TU_DEBUG_FLAGS: Dict[str, str] = {
     "default": "", "sysmem": "sysmem", "nocb": "nocb", "nolrz": "nolrz", "noubwc": "noubwc", "flushall": "flushall",
 }
 DEFAULTS: Dict[str, Any] = {s["key"]: s["default"] for s in SETTINGS_SCHEMA}
-FRAMEBRIDGE_KEYS = ("controller_fix", "scale", "refresh_rate", "haptic_scale", "hide_space_warp", "stable_local")
+FRAMEBRIDGE_KEYS = ("controller_fix", "scale", "refresh_rate", "haptic_scale", "hide_space_warp", "stable_local",
+                    "gl_error_clear")
 
 # Each preset sets only its own settings, so presets combine (Sharper and 120 Hz together); none touches
 # foveation, which FrameLoad turns off by itself for games that hang the graphics processor.
@@ -402,7 +409,7 @@ class TuningManager:
             conf["refresh_rate"] = settings["refresh_rate"]
         if settings["haptic_scale"] != 1.0:
             conf["haptic_scale"] = f"{settings['haptic_scale']:.2f}"
-        for key in ("hide_space_warp", "stable_local"):
+        for key in ("hide_space_warp", "stable_local", "gl_error_clear"):
             if settings[key]:
                 conf[key] = 1
         return conf
