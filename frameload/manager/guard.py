@@ -408,6 +408,7 @@ class FreezeGuard:
         if pids and now - session.get("mem_at", -1e9) >= 10:
             session["mem_at"] = now
             mem = perf.game_memory({pid: fds.get(pid, []) for pid in pids}, proc)
+            session["mem_render_maps"] = mem.get("render_maps")
             for key in ("rss", "gpu"):
                 value = mem.get(key)
                 session[f"mem_{key}"] = value
@@ -661,7 +662,7 @@ class FreezeGuard:
     @staticmethod
     def memory_info(session: Dict[str, Any], now: float) -> Dict[str, Any]:
         """The game's memory now, at its peak and how fast it grows (MB per minute since it was first read)."""
-        out: Dict[str, Any] = {}
+        out: Dict[str, Any] = {"render_maps": session.get("mem_render_maps")}
         for key in ("rss", "gpu"):
             value, first = session.get(f"mem_{key}"), session.get(f"mem_{key}_first")
             out[key] = value

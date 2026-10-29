@@ -228,7 +228,9 @@ class TestGameGpuTime(Case):
         self.write("proc/1205/status", "Name:\tMainThread-UE4\nVmRSS:\t  3000 kB\n")
         self.assertEqual(perf.app_pids(pkg, proc), [1205])
         mem = perf.game_memory({1205: ["9", "10"]}, proc)
-        self.assertEqual(mem, {"rss": 3000 * 1024, "gpu": 1024 * 1024})  # resident, the same client once
+        self.assertEqual(mem, {"rss": 3000 * 1024, "gpu": 1024 * 1024, "render_maps": None})  # same client once
+        self.write("proc/1205/maps", "7f00-7f10 rw-s 0 00:05 9 /dev/dri/renderD128\n7f10-7f20 rw-p 0 0 0 [heap]\n")
+        self.assertEqual(perf.game_memory({1205: []}, proc)["render_maps"], 1)
 
     def test_a_render_device_found_later_gives_no_share_spike(self):
         # Red Matter on the headset: a second render device appeared with its earlier GPU time -> "1972 %".

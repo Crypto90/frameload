@@ -251,7 +251,16 @@ def game_memory(fds: Dict[int, List[str]], proc: str = PROC) -> Dict[str, Option
             seen.add(key)
             gpu += amount
             read_gpu = True
-    return {"rss": rss if read_rss else None, "gpu": gpu if read_gpu else None}
+    # GPU buffers mapped into the processes: SteamVR's GL interop leaking a command buffer per frame grows this by
+    # about six a frame (FramePort's PLAYBOOK, Vader Immortal); a leak of the game's own heap leaves it flat.
+    maps, read_maps = 0, False
+    for pid in fds:
+        text = _read(os.path.join(proc, str(pid), "maps"))
+        if text:
+            read_maps = True
+            maps += text.count("/dev/dri/renderD")
+    return {"rss": rss if read_rss else None, "gpu": gpu if read_gpu else None,
+            "render_maps": maps if read_maps else None}
 
 
 def boot_time(proc: str = PROC) -> Optional[int]:
