@@ -144,6 +144,9 @@ def gpu(sys_root: str = SYS) -> Dict[str, Any]:
     return out
 
 
+RENAMED_MAIN_THREADS = ("MainThread-UE4", "GameThread", "UnityMain", "main")
+
+
 def app_pids(package: str, proc: str = PROC) -> List[int]:
     """Processes of an Android app running in a Lepton container, as the host sees them. The kernel keeps
     15 characters of a process name (Android's is the package), the full name is in cmdline; an app's
@@ -154,11 +157,21 @@ def app_pids(package: str, proc: str = PROC) -> List[int]:
         entries = os.listdir(proc)
     except OSError:
         return pids
+    renamed = []
     for entry in entries:
         if not entry.isdigit():
             continue
-        if _read(os.path.join(proc, entry, "comm")).strip() not in names:
+        comm = _read(os.path.join(proc, entry, "comm")).strip()
+        if comm not in names:
+            # Unreal renames its main thread (MainThread-UE4), and a process's name is its main thread's: such a
+            # process is found by its command line, which only app processes start with the package.
+            if comm in RENAMED_MAIN_THREADS:
+                renamed.append(entry)
             continue
+        first = _read(os.path.join(proc, entry, "cmdline")).split("\0", 1)[0]
+        if first == package or first.startswith(package + ":"):
+            pids.append(int(entry))
+    for entry in renamed:
         first = _read(os.path.join(proc, entry, "cmdline")).split("\0", 1)[0]
         if first == package or first.startswith(package + ":"):
             pids.append(int(entry))

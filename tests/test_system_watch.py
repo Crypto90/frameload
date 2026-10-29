@@ -218,6 +218,18 @@ class TestGameGpuTime(Case):
         self.assertIsNone(perf.gpu_time_ns({321: ["3"]}, proc))  # nothing readable: no veto
         self.assertEqual(perf.app_pids(pkg, os.path.join(self.tmp, "nothing")), [])
 
+    def test_an_unreal_game_with_a_renamed_main_thread_and_its_memory(self):
+        proc = os.path.join(self.tmp, "proc")
+        pkg = "co.yomune.gargantua"
+        drm = ("drm-client-id:\t7\ndrm-engine-gpu:\t100 ns\ndrm-total-memory:\t2048 KiB\n"
+               "drm-resident-memory:\t1024 KiB\n")
+        self.process(1205, "MainThread-UE4", pkg, {"9": drm, "10": drm})  # Unreal renames the main thread
+        self.process(1300, "MainThread-UE4", "com.other.unreal.game")
+        self.write("proc/1205/status", "Name:\tMainThread-UE4\nVmRSS:\t  3000 kB\n")
+        self.assertEqual(perf.app_pids(pkg, proc), [1205])
+        mem = perf.game_memory({1205: ["9", "10"]}, proc)
+        self.assertEqual(mem, {"rss": 3000 * 1024, "gpu": 1024 * 1024})  # resident, the same client once
+
     def test_a_render_device_found_later_gives_no_share_spike(self):
         # Red Matter on the headset: a second render device appeared with its earlier GPU time -> "1972 %".
         fds = {"now": {1: ["7"]}}
