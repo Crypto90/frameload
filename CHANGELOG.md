@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.5.8] - 2026-10-29
+
+### Added
+- **Live View is one click away on a paired PC or phone**: a pulsing **Live View** button in the header (every look) and on the Now Playing screen next to Settings. The headset itself never shows them (the server marks pages for paired devices), and System > Self-Test keeps its Live View button.
+
+---
+
 ## [v1.5.7] - 2026-10-28
 
 ### Added
