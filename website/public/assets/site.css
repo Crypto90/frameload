@@ -266,3 +266,9 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
   .btn, .game { transition: none; }
   .btn:hover { transform: none; }
 }
+
+/* Impressum and privacy policy */
+.legal h1 { margin-top: 0.4em; }
+.legal hr { border: 0; border-top: 1px solid var(--line-strong); margin: 3em 0 1.5em; }
+.legal p, .legal li { line-height: 1.65; }
+.legal-missing { padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(255, 183, 3, 0.5); background: rgba(255, 183, 3, 0.1); }

@@ -29,6 +29,17 @@ website/
 3. Make `data/` writable by PHP. The database and the team's test results (`app/seed.php`) are created
    on the first request.
 4. Needs the `pdo_sqlite` extension. HTTPS is expected; FrameLoad talks to `https://frameload.crypto90.de`.
+5. Fill in `operator` in `config.php`: name, postal address, email (and, if you like, phone), the hosting
+   provider and how many days the web server keeps its access logs. The legal notice (`/impressum.php`, § 5 DDG)
+   and the privacy policy (`/datenschutz.php`, GDPR) read them from there, so they never reach the repository; until
+   they are filled in, both pages show a warning. Set the web server's access-log retention to the days you name.
+
+## Legal pages and data kept
+
+The site sets no cookies, has no tracking and loads nothing from third parties. Reports keep the headset's random
+id and the sender's address only as HMACs; `purge_old_data()` (bootstrap.php, at most hourly from the report and icon
+endpoints) blanks the address hash after 24 hours and deletes reports after `REPORT_KEEP_DAYS` (180; they stop
+counting after 120). Change the privacy policy (`public/datenschutz.php`) whenever what the site processes changes.
 
 On nginx, deny `app/`, `data/` and dotfiles yourself and add the headers from `public/.htaccess`.
 

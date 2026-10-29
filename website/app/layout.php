@@ -22,7 +22,7 @@ function page_start(string $title, string $description, string $active = ''): vo
 <meta name="darkreader-lock">
 <script src="/assets/guard.js?v=2"></script>
 <link rel="icon" href="/assets/img/favicon.png">
-<link rel="stylesheet" href="/assets/site.css?v=4">
+<link rel="stylesheet" href="/assets/site.css?v=5">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -57,6 +57,8 @@ function page_end(): void
       <a href="<?= h(GITHUB_URL) ?>/releases" rel="noopener">Releases</a>
       <a href="/api.php">Reporting API</a>
       <a href="<?= h(KOFI_URL) ?>" rel="noopener">Ko-fi</a>
+      <a href="/impressum.php">Impressum</a>
+      <a href="/datenschutz.php">Datenschutz / Privacy</a>
     </nav>
   </div>
 </footer>

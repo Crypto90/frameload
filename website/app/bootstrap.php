@@ -168,5 +168,39 @@ function relative_time(?int $time): string
     return date('M Y', $time);
 }
 
+// Data minimisation (Art. 5 (1) c and e GDPR), as the privacy page states: the address hash is needed only for the
+// hourly rate limit and is blanked after a day; reports stop counting after REPORT_WINDOW (120 days) and are deleted
+// after REPORT_KEEP_DAYS. Runs at most once an hour, from the report and icon endpoints.
+const IP_HASH_KEEP = 86400;
+const REPORT_KEEP_DAYS = 180;
+
+function purge_old_data(PDO $pdo): void
+{
+    $last = (int)$pdo->query("SELECT value FROM meta WHERE key = 'last_purge'")->fetchColumn();
+    if (time() - $last < 3600) {
+        return;
+    }
+    $pdo->prepare("UPDATE reports SET ip_hash = '' WHERE ip_hash != '' AND created_at < ?")->execute([time() - IP_HASH_KEEP]);
+    $pdo->prepare('DELETE FROM reports WHERE created_at < ?')->execute([time() - REPORT_KEEP_DAYS * 86400]);
+    $pdo->exec('CREATE TABLE IF NOT EXISTS icon_uploads (ip_hash TEXT NOT NULL, created_at INTEGER NOT NULL)');
+    $pdo->prepare('DELETE FROM icon_uploads WHERE created_at < ?')->execute([time() - IP_HASH_KEEP]);
+    $pdo->prepare("INSERT INTO meta (key, value) VALUES ('last_purge', ?)
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value")->execute([(string)time()]);
+}
+
+/** The site operator's details for the legal notice and privacy page (config.php 'operator'). */
+function operator(): array
+{
+    $op = config()['operator'] ?? [];
+    return array_merge(['name' => '', 'street' => '', 'city' => '', 'country' => 'Deutschland', 'email' => '',
+                        'phone' => '', 'responsible' => '', 'hoster' => '', 'log_days' => 7], is_array($op) ? $op : []);
+}
+
+function operator_ready(): bool
+{
+    $op = operator();
+    return $op['name'] !== '' && $op['street'] !== '' && $op['city'] !== '' && $op['email'] !== '';
+}
+
 require_once APP_DIR . '/status.php';
 require_once APP_DIR . '/icons.php';

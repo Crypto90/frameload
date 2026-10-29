@@ -23,6 +23,7 @@ $package = is_array($in) ? (string)($in['package'] ?? '') : '';
 if (!valid_package($package)) {
     json_out(['ok' => false, 'error' => 'invalid package'], 422);
 }
+purge_old_data(db());
 $error = accept_icon_upload(db(), $package, $in['icon'] ?? null, hmac('ip:' . client_ip()));
 if ($error !== '') {
     $status = str_starts_with($error, 'too many') ? 429 : (str_contains($error, 'already') ? 409 : 422);

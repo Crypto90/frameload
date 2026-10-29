@@ -48,6 +48,7 @@ if ($sessionEnd < time() - 30 * 86400 || $sessionEnd > time() + 3600) {
 }
 
 $pdo = db();
+purge_old_data($pdo);
 $installHash = hmac('install:' . $installId);
 $ipHash = hmac('ip:' . client_ip());
 $hour = time() - 3600;
