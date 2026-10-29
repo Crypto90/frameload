@@ -62,6 +62,7 @@
       </div>
       <div id="header-lepton" class="telemetry-chip lepton missing" style="display:none;"></div>
       <button id="header-perf" class="telemetry-chip perf-chip" style="display:none;" onclick="openPerformanceCard()" title="CPU and memory use"></button>
+      <a id="header-live" class="telemetry-chip live-chip remote-only" href="/live" target="_blank" rel="noopener" title="Watch and hear what the headset shows"><i aria-hidden="true"></i>Live View</a>
       <button id="header-now-playing" class="telemetry-chip playing-chip" style="display:none;" onclick="openPlayOverlay()" title="Open the running game's screen"></button>
       <button id="header-show-game" class="telemetry-chip show-chip" style="display:none;" onclick="showRunningGame()" title="Close Steam's menu so the running game is in front"></button>
       <button id="header-stop-game" class="telemetry-chip stop-chip" style="display:none;" onclick="stopRunningGames()" title="Stop the running game"></button>
@@ -898,6 +899,7 @@
         <button id="play-stop" type="button" class="btn-danger" onclick="playOverlayStop()"></button>
         <button id="play-restart" type="button" class="btn-secondary" onclick="playOverlayRestart()">Restart</button>
         <button id="play-settings" type="button" class="btn-secondary" onclick="playOverlaySettings()">Settings</button>
+        <a id="play-live" class="btn-secondary remote-only" href="/live" target="_blank" rel="noopener" title="Watch and hear what the headset shows">Live View</a>
         <button id="play-back" type="button" class="btn-secondary" data-back onclick="closePlayOverlay(true)">Back to Library</button>
       </div>
       <p id="play-hint" class="play-hint"></p>

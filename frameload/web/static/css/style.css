@@ -3587,3 +3587,32 @@ button.dropdown-item { width: 100%; border: 0; background: none; font: inherit; 
 @media (prefers-reduced-motion: reduce) {
   .play-progress.busy span { animation-duration: 4s; }
 }
+
+/* Shown only on a paired PC or phone (server.serve_index marks the page data-remote="1"), never in the headset */
+html:not([data-remote="1"]) .remote-only { display: none !important; }
+
+/* Live View chip in the header: what the headset shows, with its sound (/live) */
+.telemetry-chip.live-chip {
+  min-height: 40px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-decoration: none;
+  cursor: pointer;
+  border-color: rgb(var(--danger-rgb) / 0.45);
+  background: rgb(var(--danger-rgb) / 0.12);
+}
+.telemetry-chip.live-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex: none;
+  animation: live-chip-pulse 1.8s ease-in-out infinite;
+}
+.telemetry-chip.live-chip:hover,
+.telemetry-chip.live-chip:focus-visible { border-color: var(--danger); box-shadow: 0 0 18px rgb(var(--danger-rgb) / 0.35); }
+@keyframes live-chip-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(var(--danger-rgb) / 0.55); } 50% { box-shadow: 0 0 0 5px rgb(var(--danger-rgb) / 0); } }
+#play-live { display: inline-flex; align-items: center; text-decoration: none; }
+@media (prefers-reduced-motion: reduce) { .telemetry-chip.live-chip i { animation: none; } }

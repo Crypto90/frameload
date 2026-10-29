@@ -1335,6 +1335,8 @@ class FrameLoadApiHandler(SimpleHTTPRequestHandler):
             page = f.read()
         page = page.replace('data-skin="a" data-mode="light"', f'data-skin="{skin}" data-mode="{daylight}"', 1)
         page = page.replace('href="/static/css/skins/a.css"', f'href="/static/css/skins/{skin}.css"', 1)
+        if not self.client_is_local():  # a paired PC or phone: it gets what only makes sense away from the headset
+            page = page.replace('<html lang="en"', '<html lang="en" data-remote="1"', 1)
         body = page.encode("utf-8")
         try:
             self.send_response(HTTPStatus.OK)
