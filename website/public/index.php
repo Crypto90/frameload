@@ -63,6 +63,19 @@ page_start('FrameLoad', 'Install and play Quest games and Android apps on the Va
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 0 1 5.96 12.06l4.24 4.24-1.42 1.42-4.24-4.24A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"/></svg>
       <input id="search" type="search" placeholder="Search by game or package" autocomplete="off">
     </label>
+    <label class="sort-menu">
+      <span>Sort by</span>
+      <select id="sort-menu">
+        <option value="">Recommended order</option>
+        <option value="title-asc">Game, A to Z</option>
+        <option value="title-desc">Game, Z to A</option>
+        <option value="status-asc">Status, working first</option>
+        <option value="status-desc">Status, not working first</option>
+        <option value="reports-desc">Most reports</option>
+        <option value="reports-asc">Fewest reports</option>
+        <option value="note-asc">Notes, A to Z</option>
+      </select>
+    </label>
     <div class="chips" role="group" aria-label="Filter by status">
       <button class="chip" type="button" data-filter="all" aria-pressed="true">All <span><?= count($games) ?></span></button>
       <?php foreach (STATUSES as $key => $status): ?>
@@ -72,12 +85,18 @@ page_start('FrameLoad', 'Install and play Quest games and Android apps on the Va
   </div>
 
   <div class="table" id="games">
-    <div class="row row-head" aria-hidden="true">
-      <span>Game</span><span>Status</span><span>Notes and best settings</span><span>Reports</span>
+    <div class="row row-head" role="group" aria-label="Sort the list">
+      <button type="button" class="sort" data-sort="title">Game</button>
+      <button type="button" class="sort" data-sort="status">Status</button>
+      <button type="button" class="sort" data-sort="note">Notes and best settings</button>
+      <button type="button" class="sort" data-sort="reports">Reports</button>
     </div>
     <?php foreach ($games as $game): $settings = settings_text($game['settings']); ?>
       <a class="row game" href="/game.php?package=<?= h(rawurlencode($game['package'])) ?>"
-         data-status="<?= h($game['status']) ?>" data-search="<?= h(strtolower($game['title'] . ' ' . $game['package'])) ?>">
+         data-status="<?= h($game['status']) ?>" data-search="<?= h(strtolower($game['title'] . ' ' . $game['package'])) ?>"
+         data-title="<?= h(strtolower($game['title'])) ?>" data-rank="<?= array_search($game['status'], array_keys(STATUSES), true) ?>"
+         data-note="<?= h(strtolower($game['note'] ?: STATUSES[$game['status']]['blurb'])) ?>"
+         data-reports="<?= (int)$game['reports'] ?>" data-tested="<?= (int)($game['tested_at'] ?? 0) ?>">
         <span class="game-id">
           <?= game_avatar($game['package'], $game['title']) ?>
           <span><strong><?= h($game['title']) ?></strong><small><?= h($game['package']) ?></small></span>

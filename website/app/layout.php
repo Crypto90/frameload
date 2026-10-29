@@ -22,7 +22,7 @@ function page_start(string $title, string $description, string $active = ''): vo
 <meta name="darkreader-lock">
 <script src="/assets/guard.js?v=2"></script>
 <link rel="icon" href="/assets/img/favicon.png">
-<link rel="stylesheet" href="/assets/site.css?v=5">
+<link rel="stylesheet" href="/assets/site.css?v=6">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -62,7 +62,7 @@ function page_end(): void
     </nav>
   </div>
 </footer>
-<script src="/assets/site.js?v=1" defer></script>
+<script src="/assets/site.js?v=2" defer></script>
 </body>
 </html>
 <?php
