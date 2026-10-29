@@ -203,6 +203,44 @@ def gpu_time_ns(fds: Dict[int, List[str]], proc: str = PROC) -> Optional[int]:
     return total if read_any else None
 
 
+UNITS = {"B": 1, "KiB": 1024, "MiB": 1024 ** 2, "GiB": 1024 ** 3}
+
+
+def game_memory(fds: Dict[int, List[str]], proc: str = PROC) -> Dict[str, Optional[int]]:
+    """Memory of a game's processes ({pid: [render fd, ...]}): "rss", what they hold in RAM (VmRSS), and "gpu",
+    the GPU buffers their render devices hold (DRM fdinfo drm-resident-memory, else drm-total-memory; each client
+    once). GPU buffers live in the same RAM on the Frame, but RSS does not show all of them, so a leak of either
+    kind is told apart. None for what could not be read."""
+    rss, read_rss = 0, False
+    for pid in fds:
+        for line in _read(os.path.join(proc, str(pid), "status")).splitlines():
+            if line.startswith("VmRSS:"):
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    rss += int(parts[1]) * 1024
+                    read_rss = True
+    gpu, read_gpu, seen = 0, False, set()
+    for pid, numbers in fds.items():
+        for fd in numbers:
+            values: Dict[str, int] = {}
+            client = None
+            for line in _read(os.path.join(proc, str(pid), "fdinfo", fd)).splitlines():
+                name, _, value = line.partition(":")
+                parts = value.split()
+                if name == "drm-client-id":
+                    client = value.strip()
+                elif name in ("drm-resident-memory", "drm-total-memory") and parts and parts[0].isdigit():
+                    values[name] = int(parts[0]) * UNITS.get(parts[1] if len(parts) > 1 else "B", 1)
+            amount = values.get("drm-resident-memory", values.get("drm-total-memory"))
+            key = client if client is not None else (pid, fd)
+            if amount is None or key in seen:
+                continue
+            seen.add(key)
+            gpu += amount
+            read_gpu = True
+    return {"rss": rss if read_rss else None, "gpu": gpu if read_gpu else None}
+
+
 def boot_time(proc: str = PROC) -> Optional[int]:
     """When the system booted (unix time), from /proc/stat."""
     for line in _read(os.path.join(proc, "stat")).splitlines():

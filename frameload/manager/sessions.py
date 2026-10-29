@@ -882,7 +882,7 @@ def _store(pkg: str, dep: Dict[str, Any], session: Dict[str, Any], guard_state: 
         "sources": sources, "lepton": f"{lepton.group(1)} (rootfs {lepton.group(2)})" if lepton else "",
         "kind": "vr" if dep.get("is_vr", True) else "2d", "seen": quiet, "time": now,
         "auto_fix": result.get("auto_fix", ""), "settings": ran_with, "asked_refresh_rate": asked_rate,
-        "quality": quality_note,
+        "quality": quality_note, "memory": gs.get("memory") or {},
     }
     _write_json(_record_path(pkg), record)
     print(f"[FrameLoad] Session of {pkg}: {record['outcome']} ({record['headline']})")

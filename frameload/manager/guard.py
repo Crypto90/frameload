@@ -404,6 +404,16 @@ class FreezeGuard:
                 session["gpu_samples"].clear()
             fds = new_fds
             session["fds"], session["fds_at"] = fds, now
+        # Memory of the game's own processes, at most every 10 s: a growing number names a leak (Gargantua).
+        if pids and now - session.get("mem_at", -1e9) >= 10:
+            session["mem_at"] = now
+            mem = perf.game_memory({pid: fds.get(pid, []) for pid in pids}, proc)
+            for key in ("rss", "gpu"):
+                value = mem.get(key)
+                session[f"mem_{key}"] = value
+                if value is not None:
+                    session.setdefault(f"mem_{key}_first", (now, value))
+                    session[f"mem_{key}_peak"] = max(value, session.get(f"mem_{key}_peak") or 0)
         ns = perf.gpu_time_ns(fds, proc) if pids else None
         samples = session["gpu_samples"]
         if ns is not None and samples and samples[-1][1] is not None and ns >= samples[-1][1] and now > samples[-1][0]:
@@ -519,7 +529,8 @@ class FreezeGuard:
         last = state.get("last_frame")
         guard_state = {"fps": state.get("fps"), "last_frame_age": int(now - last) if last else None,
                        "drew": bool(last or state.get("gpu_drawing")), "limit": state.get("limit", ""),
-                       "gpu": state.get("gpu"), "gpu_p80": share_percentile(state.get("gpu_history") or [], 0.8)}
+                       "gpu": state.get("gpu"), "gpu_p80": share_percentile(state.get("gpu_history") or [], 0.8),
+                       "memory": cls.memory_info(state, now)}
         cls.run_async(records.finalize, pkg, guard_state)
 
     @classmethod
@@ -647,6 +658,18 @@ class FreezeGuard:
         cls._thread = threading.Thread(target=loop, name="freeze-guard", daemon=True)
         cls._thread.start()
 
+    @staticmethod
+    def memory_info(session: Dict[str, Any], now: float) -> Dict[str, Any]:
+        """The game's memory now, at its peak and how fast it grows (MB per minute since it was first read)."""
+        out: Dict[str, Any] = {}
+        for key in ("rss", "gpu"):
+            value, first = session.get(f"mem_{key}"), session.get(f"mem_{key}_first")
+            out[key] = value
+            out[f"{key}_peak"] = session.get(f"mem_{key}_peak")
+            if value is not None and first and now - first[0] >= 30:
+                out[f"{key}_growth_mb_min"] = round((value - first[1]) / 1048576 / ((now - first[0]) / 60), 1)
+        return out
+
     @classmethod
     def status(cls, now: Optional[float] = None) -> Dict[str, Any]:
         now = time.monotonic() if now is None else now
@@ -668,7 +691,8 @@ class FreezeGuard:
             games.append({"package": pkg, "title": game.get("title") or pkg, "fps": session.get("fps"),
                           "frame_age": age, "memory_limit": session.get("limit", ""), "state": state,
                           "paused": session.get("paused", ""), "gpu": None if gpu is None else round(gpu * 100),
-                          "framebridge": bool(game.get("framebridge") or last), "vr": bool(game.get("vr", True))})
+                          "framebridge": bool(game.get("framebridge") or last), "vr": bool(game.get("vr", True)),
+                          "memory": cls.memory_info(session, now)})
         return {
             "settings": cls.settings(),
             "running": cls._thread is not None and cls._thread.is_alive(),
